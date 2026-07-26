@@ -19,6 +19,9 @@ Bildebank ikke leser ennå.
 Dette er en feilsøkingskommando for å forbedre metadata-lesingen i
 Bildebank. Ikke ment for vanlige brukere.
 
+Kommandoen leser bare vanlige, databaseførte filer uten symlinker, junctions
+eller andre Windows reparse points. Hvert ExifTool-kall har en tidsgrense.
+
 Kommandoen bruker ExifTool fra Bildebanks programmappe. Hvis ExifTool mangler,
 kjør:
 

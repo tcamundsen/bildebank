@@ -27,6 +27,13 @@ from tests.cli_helpers import capture_cli
 from tests.db_test_helpers import register_target_file
 
 
+VALID_MP4 = (
+    b"\x00\x00\x00\x14ftypisom\x00\x00\x00\x00isom"
+    b"\x00\x00\x00\x08moov"
+    b"\x00\x00\x00\x09mdatx"
+)
+
+
 class ExportPersonTests(unittest.TestCase):
     def make_collection(self, root: Path) -> tuple[Path, AppConfig, dict[str, int]]:
         target = root / "target"
@@ -521,7 +528,7 @@ class ExportPersonTests(unittest.TestCase):
                     face_conn.close()
                 preview = video_preview_absolute_path(target, video_hash)
                 preview.parent.mkdir(parents=True, exist_ok=True)
-                preview.write_bytes(b"browser-compatible MP4")
+                preview.write_bytes(VALID_MP4)
                 destination_root = root / "exports"
                 destination_root.mkdir()
 
@@ -560,7 +567,7 @@ class ExportPersonTests(unittest.TestCase):
                 self.assertEqual(video_entry.destination.read_bytes(), b"video original")
                 self.assertEqual(
                     exported_preview.read_bytes(),
-                    b"browser-compatible MP4",
+                    VALID_MP4,
                 )
                 self.assertEqual(len(plan.entries), 5)
                 self.assertEqual(len(plan.browser_items), 4)

@@ -62,6 +62,7 @@ from .server_request import (
     positive_int_param,
 )
 from .server_assets import SERVER_CSS, SERVER_JS
+from .media import ImageDecodeLimitError, require_safe_pillow_image_size
 
 
 PREVIEW_MAX_SIZE = 1600
@@ -845,6 +846,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         try:
             with server_files.open_server_file(served_file) as stream:
                 with Image.open(stream) as image:
+                    require_safe_pillow_image_size(image)
                     preview = ImageOps.exif_transpose(image)
                     if apply_view_rotation:
                         rotation = db.normalize_view_rotation(
@@ -864,10 +866,18 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         except FileNotFoundError as exc:
             respond_exception_text(self, exc, "Filen finnes ikke.", HTTPStatus.NOT_FOUND)
             return False
+        except (ImageDecodeLimitError, Image.DecompressionBombError) as exc:
+            respond_exception_text(
+                self,
+                exc,
+                "Bildet er for stort til sikker preview-dekoding.",
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+            )
+            return False
         except UnidentifiedImageError:
             self.respond_text("Filen er ikke et bilde.", status=HTTPStatus.BAD_REQUEST)
             return False
-        except OSError as exc:
+        except Exception as exc:  # noqa: BLE001 - media decoders raise library-specific errors
             respond_exception_text(self, exc, "Filen kunne ikke leses.", HTTPStatus.INTERNAL_SERVER_ERROR)
             return False
         self.respond_bytes(output.getvalue(), "image/jpeg")

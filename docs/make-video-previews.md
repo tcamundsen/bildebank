@@ -31,6 +31,10 @@ Første kjøring kan ta lang tid. Bildebank hopper senere over kopier som allere
 finnes. Avspillingskopiene ligger under `video-previews\v1` i bildesamlingen.
 De kan regenereres og tas derfor ikke med i snapshots.
 
+En eksisterende kopi brukes bare når den er en vanlig fil uten lenker og har
+forventet MP4-container. En skadet eller ufullstendig kopi regnes som manglende
+og kan lages på nytt.
+
 FFmpeg og FFprobe installeres automatisk i Bildebank-programmappen på Windows.
 Hvis installasjonen tidligere har feilet, prøver Bildebank igjen ved neste
 oppstart. Du kan også reparere installasjonen med
@@ -53,3 +57,14 @@ feilet.
 `--rebuild` lager alle AVI- og 3GP-avspillingskopiene på nytt. Den ferdige kopien får
 ikke sitt endelige navn før FFmpeg-jobben er fullført og resultatet er
 kontrollert.
+
+Originalen må ligge på sin databaseførte plass som en vanlig fil uten
+symlinker, junctions eller andre Windows reparse points. Bildebank kontrollerer
+også at originalen ikke ble byttet eller endret under konverteringen.
+`video-previews`-mappen kan heller ikke være en slik lenke.
+
+FFprobe og FFmpeg har tidsgrenser slik at en skadet fil ikke kan låse jobben for
+alltid. Grensen for selve konverteringen tilpasses videoens varighet. Ved
+timeout, feil eller Ctrl-C fjernes den upubliserte delkopien, mens originalen
+forblir urørt. Videoer som oppgir mer enn 100 millioner piksler per bilde,
+avvises før FFmpeg startes.

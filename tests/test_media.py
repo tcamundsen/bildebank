@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 
 from bildebank.media import (
+    MAX_PILLOW_DECODE_PIXELS,
+    ImageDecodeLimitError,
     camera_info,
     image_dimensions,
     image_orientation,
@@ -13,6 +15,7 @@ from bildebank.media import (
     media_date,
     media_kind,
     metadata_datetime,
+    require_safe_pillow_image_size,
 )
 
 
@@ -223,6 +226,13 @@ def minimal_png(width: int, height: int) -> bytes:
 
 
 class MediaDateTests(unittest.TestCase):
+    def test_pillow_image_size_limit_rejects_oversized_decode(self) -> None:
+        class FakeImage:
+            size = (MAX_PILLOW_DECODE_PIXELS + 1, 1)
+
+        with self.assertRaisesRegex(ImageDecodeLimitError, "for stort"):
+            require_safe_pillow_image_size(FakeImage())
+
     def test_raw_nef_and_psd_are_supported_archive_images(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

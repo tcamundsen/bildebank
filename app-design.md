@@ -75,6 +75,25 @@ HTTP-forespørsel, og registreres ikke som nye canonical-filer eller
 validering. Regenererbare videokopier utelates fra snapshots; AVI- og 3GP-originaler,
 også under `deleted/`, følger de vanlige snapshotreglene.
 
+Thumbnails lagres under den versjonerte mappen `thumbs/v2`. Filnavnet avledes
+entydig fra originalens relative samlingssti, slik at forskjellige formater og
+filnavn ikke kan dele thumbnail. Thumbnails og videoavspillingskopier skal bare
+lages fra gyldige aktive `files`-stier. Originalen og alle eksisterende
+stikomponenter skal kontrolleres uten å følge symlinker eller Windows reparse
+points.
+
+Avledede mapper skal opprettes komponentvis og avvises hvis en eksisterende
+komponent er en lenke eller ikke er en vanlig mappe. Midlertidige thumbnail-filer
+skal opprettes med et unikt navn og eksklusiv filoppretting, skrives gjennom den
+åpnede filbeskrivelsen og valideres før atomisk publisering. FFmpeg skal bruke et
+unikt delnavn, nekte å overskrive et eksisterende delnavn og kontrollere både
+resultatet og at originalfilens identitet er uendret før publisering.
+
+Eksisterende thumbnails og videoavspillingskopier skal bare brukes når de er
+vanlige filer uten lenker og består en lett formatkontroll. Pillow-dekoding skal
+ha en eksplisitt pikselgrense. FFprobe, FFmpeg og ExifTool skal ha endelige
+tidsgrenser og rydde upubliserte delresultater ved feil eller avbrudd.
+
 unimport må være konservativ, verifiser filene i kilden før endring, aldri føre til
 tap, og fjerne bare proveniens når andre kilder fortsatt peker på samme fil.
 Alle registrerte originalfiler skal kontrolleres på nytt etter at brukeren har

@@ -10,7 +10,7 @@ from typing import Any, Callable
 from . import __version__, db
 from .geo import h3_column_for_resolution, h3_resolution
 from .media import IMAGE_EXTENSIONS
-from .thumbnails import active_thumbnail_candidates, thumbnail_absolute_path, thumbnail_is_current
+from .thumbnails import active_thumbnail_candidates, thumbnail_is_current
 from .config import (
     AppConfig,
     BrowserHotkeyConfig,
@@ -126,12 +126,10 @@ def maintenance_statuses(target: Path, config: AppConfig) -> tuple[MaintenanceSt
 def thumbnail_maintenance_status(target: Path) -> MaintenanceStatus:
     total = scanned = 0
     for relative_path in active_thumbnail_candidates(target):
-        original_path = db.absolute_target_path(target, relative_path)
-        if original_path.suffix.lower() not in IMAGE_EXTENSIONS:
+        if relative_path.suffix.lower() not in IMAGE_EXTENSIONS:
             continue
         total += 1
-        thumb_path = thumbnail_absolute_path(target, relative_path)
-        if thumbnail_is_current(original_path, thumb_path):
+        if thumbnail_is_current(target, relative_path):
             scanned += 1
     return MaintenanceStatus("thumbnails", total, scanned, max(total - scanned, 0), "/help/make-thumbnails.md")
 

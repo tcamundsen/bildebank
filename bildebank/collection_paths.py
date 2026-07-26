@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import BinaryIO, Iterator
 
 
 class InvalidCollectionRelativePath(ValueError):
@@ -12,6 +14,14 @@ class InvalidCollectionRelativePath(ValueError):
 
 
 class CollectionFileHashError(ValueError):
+    pass
+
+
+class CollectionFileAccessError(ValueError):
+    pass
+
+
+class CollectionDirectoryError(ValueError):
     pass
 
 
@@ -116,6 +126,49 @@ def inspect_existing_collection_path_components(
     return None
 
 
+def ensure_collection_directory_without_links(
+    target: Path,
+    relative_directory: Path,
+) -> Path:
+    relative_directory = parse_collection_relative_path(
+        relative_directory.as_posix()
+    )
+    current = target.resolve()
+    for part in relative_directory.parts:
+        current = current / part
+        try:
+            path_stat = current.stat(follow_symlinks=False)
+        except FileNotFoundError:
+            try:
+                current.mkdir()
+            except FileExistsError:
+                pass
+            except OSError as exc:
+                raise CollectionDirectoryError(
+                    f"Kunne ikke opprette avledet mappe uten lenker: {current}: {exc}"
+                ) from exc
+            try:
+                path_stat = current.stat(follow_symlinks=False)
+            except OSError as exc:
+                raise CollectionDirectoryError(
+                    f"Kunne ikke kontrollere opprettet mappe: {current}: {exc}"
+                ) from exc
+        except OSError as exc:
+            raise CollectionDirectoryError(
+                f"Kunne ikke kontrollere avledet mappe: {current}: {exc}"
+            ) from exc
+
+        if (
+            stat.S_ISLNK(path_stat.st_mode)
+            or is_reparse_stat(path_stat)
+            or not stat.S_ISDIR(path_stat.st_mode)
+        ):
+            raise CollectionDirectoryError(
+                f"Avledet mappe er ikke en vanlig mappe uten lenker: {current}"
+            )
+    return current
+
+
 def inspect_collection_file(
     target: Path,
     relative_path: Path,
@@ -166,6 +219,56 @@ def inspect_collection_file(
         size_bytes=path_stat.st_size,
         path_stat=path_stat,
     )
+
+
+@contextmanager
+def open_stable_collection_file(
+    target: Path,
+    relative_path: Path,
+) -> Iterator[BinaryIO]:
+    before = inspect_collection_file(target, relative_path)
+    if before.status != COLLECTION_FILE_OK or before.path_stat is None:
+        raise CollectionFileAccessError(
+            before.message or "filen finnes ikke som en vanlig fil uten lenker"
+        )
+
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        file_descriptor = os.open(before.path, flags)
+    except OSError as exc:
+        raise CollectionFileAccessError(
+            f"filen kunne ikke åpnes uten å følge lenker: {exc}"
+        ) from exc
+
+    try:
+        opened_before = os.fstat(file_descriptor)
+        if not same_collection_file_version(before.path_stat, opened_before):
+            raise CollectionFileAccessError(
+                "filen ble byttet eller endret før den kunne åpnes"
+            )
+        with os.fdopen(file_descriptor, "rb", closefd=True) as stream:
+            file_descriptor = -1
+            yield stream
+            opened_after = os.fstat(stream.fileno())
+    except BaseException:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
+        raise
+
+    after = inspect_collection_file(target, relative_path)
+    if after.status != COLLECTION_FILE_OK or after.path_stat is None:
+        raise CollectionFileAccessError(
+            "filen forsvant eller ble utrygg mens den var åpnet"
+        )
+    if not (
+        same_collection_file_version(before.path_stat, opened_after)
+        and same_collection_file_version(opened_after, after.path_stat)
+    ):
+        raise CollectionFileAccessError("filen ble endret mens den var åpnet")
 
 
 def hash_stable_collection_file(
@@ -248,6 +351,17 @@ def same_file_identity(
     second: os.stat_result,
 ) -> bool:
     return first.st_dev == second.st_dev and first.st_ino == second.st_ino
+
+
+def same_collection_file_version(
+    first: os.stat_result,
+    second: os.stat_result,
+) -> bool:
+    return (
+        same_file_identity(first, second)
+        and first.st_size == second.st_size
+        and first.st_mtime_ns == second.st_mtime_ns
+    )
 
 
 def is_reparse_stat(path_stat: os.stat_result) -> bool:

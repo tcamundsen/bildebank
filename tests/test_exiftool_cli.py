@@ -16,6 +16,10 @@ from unittest.mock import patch
 from bildebank import exiftool
 from bildebank.cli import main
 from bildebank.exiftool import managed_exiftool_path, resolve_exiftool_path
+from bildebank.exiftool_probe import (
+    EXIFTOOL_TIMEOUT_SECONDS,
+    exiftool_dates_batch,
+)
 from tests.cli_helpers import capture_cli, run_cli, write_fake_exiftool
 
 
@@ -37,6 +41,19 @@ if "-ver" in sys.argv:
 
 
 class ExiftoolCliTests(unittest.TestCase):
+    def test_exiftool_metadata_timeout_is_reported(self) -> None:
+        with (
+            patch(
+                "bildebank.exiftool_probe.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(
+                    ["exiftool"],
+                    EXIFTOOL_TIMEOUT_SECONDS,
+                ),
+            ),
+            self.assertRaisesRegex(RuntimeError, "brukte mer enn"),
+        ):
+            exiftool_dates_batch("exiftool", [Path("image.jpg")])
+
     def test_exiftool_archive_is_version_and_hash_pinned(self) -> None:
         self.assertEqual(exiftool.EXIFTOOL_VERSION, "13.58")
         self.assertTrue(
@@ -322,6 +339,56 @@ class ExiftoolCliTests(unittest.TestCase):
             self.assertIn("Oppsummering: exiftool_metadata_funnet=1", stdout)
             self.assertIn("exiftool: kontrollert=1/1", stderr)
             self.assertIn("gjenstår=0s", stderr)
+
+    def test_exiftool_metadata_gaps_rejects_linked_collection_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"image")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            imported = target / "2024" / "01" / source_file.name
+            external = root / "external.jpg"
+            external.write_bytes(b"private")
+            imported.unlink()
+            try:
+                imported.symlink_to(external)
+            except OSError as exc:
+                self.skipTest(f"Kan ikke opprette symlink: {exc}")
+
+            with patch(
+                "bildebank.exiftool_probe.subprocess.run",
+                side_effect=AssertionError("ExifTool skal ikke startes"),
+            ):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "exiftool-metadata-gaps",
+                        "--exiftool",
+                        str(root / "exiftool.exe"),
+                    ]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("vanlig fil uten lenker", stderr)
 
     def test_exiftool_metadata_gaps_reads_files_in_batches(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

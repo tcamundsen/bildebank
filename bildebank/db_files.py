@@ -778,6 +778,7 @@ def metadata_refresh_files(conn: sqlite3.Connection, *, rescan: bool = False) ->
             files.id,
             primary_sources.source_path,
             files.target_path,
+            files.target_path_key,
             files.taken_date,
             files.date_source,
             files.sha256,

@@ -41,6 +41,7 @@ from bildebank.server_assets import (
 from bildebank.server_pages import app_status_page_html
 from bildebank.server_search import OpenClipSearchCache
 from bildebank.thumbnails import thumbnail_absolute_path
+from tests.cli_helpers import write_test_image
 from tests.db_test_helpers import insert_test_file
 
 
@@ -339,8 +340,7 @@ class ServerSettingsTests(unittest.TestCase):
             insert_test_file(target, "2024/01/not-image.txt", sha256="sha-text")
             current_original = target / "2024/01/current.jpg"
             thumb_path = thumbnail_absolute_path(target, Path("2024/01/current.jpg"))
-            thumb_path.parent.mkdir(parents=True)
-            thumb_path.write_bytes(b"thumb")
+            write_test_image(thumb_path)
             os.utime(
                 thumb_path,
                 ns=(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import subprocess
 import unittest
 import urllib.parse
 import uuid
@@ -13,6 +14,7 @@ from bildebank import db, server_endpoints_admin, server_endpoints_browser
 from bildebank.cli import main
 from bildebank.db import init_database
 from bildebank.geo import (
+    EXIFTOOL_TIMEOUT_SECONDS,
     PREDEFINED_GEO_PLACES,
     PredefinedGeoPlace,
     extract_gps_from_metadata,
@@ -22,6 +24,7 @@ from bildebank.geo import (
     h3_column_for_resolution,
     h3_resolution,
     h3_resolution_label,
+    read_gps_metadata_batch,
     scan_geo,
 )
 from bildebank.media import sha256_file
@@ -109,6 +112,19 @@ def set_file_h3_cells(target: Path, file_id: int, cells: dict[str, str]) -> None
 
 
 class GeoTests(unittest.TestCase):
+    def test_geo_exiftool_timeout_is_reported(self) -> None:
+        with (
+            patch(
+                "bildebank.geo.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(
+                    ["exiftool"],
+                    EXIFTOOL_TIMEOUT_SECONDS,
+                ),
+            ),
+            self.assertRaisesRegex(RuntimeError, "brukte mer enn"),
+        ):
+            read_gps_metadata_batch("exiftool", [Path("image.jpg")])
+
     def test_extract_gps_from_metadata_returns_none_without_gps(self) -> None:
         self.assertIsNone(extract_gps_from_metadata({"SourceFile": "image.jpg"}))
 
@@ -651,6 +667,45 @@ class GeoTests(unittest.TestCase):
         self.assertEqual(float(row["gps_lon"]), 10.74609)
         self.assertTrue(row["h3_res7"])
         self.assertTrue(row["h3_res11"])
+
+    def test_geo_scan_rejects_linked_collection_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            init_database(target)
+            file_id = register_target_file(target, Path("2024/01/image.jpg"))
+            image = target / "2024/01/image.jpg"
+            external = root / "external.jpg"
+            external.write_bytes(b"private metadata")
+            image.unlink()
+            try:
+                image.symlink_to(external)
+            except OSError as exc:
+                self.skipTest(f"Kan ikke opprette symlink: {exc}")
+
+            with patch(
+                "bildebank.geo.read_gps_metadata_batch",
+                side_effect=AssertionError("ExifTool skal ikke startes"),
+            ):
+                with redirect_stderr(StringIO()):
+                    stats = scan_geo(
+                        target,
+                        exiftool_path="exiftool",
+                        batch_size=1,
+                    )
+
+            conn = db.connect(target)
+            try:
+                row = conn.execute(
+                    "SELECT gps_error FROM files WHERE id = ?",
+                    (file_id,),
+                ).fetchone()
+            finally:
+                conn.close()
+
+        self.assertEqual(stats.errors, 1)
+        self.assertEqual(stats.updated, 1)
+        self.assertEqual(row["gps_error"], db.GPS_ERROR_EXIFTOOL)
 
     def test_geo_scan_refuses_to_run_while_target_is_locked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

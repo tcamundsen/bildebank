@@ -23,6 +23,7 @@ from bildebank.server_pages import month_page_html
 from bildebank.server_files import resolve_server_thumbnail_file
 from bildebank.target_lock import LOCK_FILENAME
 from bildebank.thumbnails import (
+    ensure_thumbnail,
     existing_thumbnail_url,
     thumbnail_absolute_path,
     thumbnail_is_current,
@@ -514,14 +515,18 @@ class StaticBrowserCliTests(unittest.TestCase):
             thumb_relative = thumbnail_relative_path(relative)
             thumb_path = thumbnail_absolute_path(target, relative)
 
-            self.assertEqual(thumb_relative, Path("thumbs/2024/01/image.jpg"))
+            self.assertEqual(thumb_relative.parts[:4], ("thumbs", "v2", "2024", "01"))
+            self.assertEqual(thumb_relative.suffix, ".jpg")
             self.assertEqual(existing_thumbnail_url(target, relative), "2024/01/image.png")
 
             write_test_image(thumb_path)
             os.utime(thumb_path, ns=(original.stat().st_mtime_ns + 1_000_000, original.stat().st_mtime_ns + 1_000_000))
 
-            self.assertTrue(thumbnail_is_current(original, thumb_path))
-            self.assertEqual(existing_thumbnail_url(target, relative), "thumbs/2024/01/image.jpg")
+            self.assertTrue(thumbnail_is_current(target, relative))
+            self.assertEqual(
+                existing_thumbnail_url(target, relative),
+                thumb_relative.as_posix(),
+            )
 
     def test_existing_thumbnail_url_falls_back_when_thumbnail_is_stale(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -534,8 +539,122 @@ class StaticBrowserCliTests(unittest.TestCase):
             write_test_image(thumb_path)
             os.utime(thumb_path, ns=(original.stat().st_mtime_ns - 1_000_000, original.stat().st_mtime_ns - 1_000_000))
 
-            self.assertFalse(thumbnail_is_current(original, thumb_path))
+            self.assertFalse(thumbnail_is_current(target, relative))
             self.assertEqual(existing_thumbnail_url(target, relative), "2024/01/image.jpg")
+
+    def test_thumbnail_paths_do_not_collide_for_equal_stems(self) -> None:
+        paths = {
+            thumbnail_relative_path(Path(f"2024/01/image{suffix}"))
+            for suffix in (".jpg", ".png", ".gif", ".webp")
+        }
+
+        self.assertEqual(len(paths), 4)
+        self.assertTrue(
+            all(path.parts[:4] == ("thumbs", "v2", "2024", "01") for path in paths)
+        )
+
+    def test_current_thumbnail_must_be_a_complete_jpeg(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            original = target / "2024" / "01" / "image.jpg"
+            write_test_image(original)
+            relative = Path("2024/01/image.jpg")
+            thumb_path = thumbnail_absolute_path(target, relative)
+            thumb_path.parent.mkdir(parents=True)
+            thumb_path.write_bytes(b"\xff\xd8truncated")
+            os.utime(
+                thumb_path,
+                ns=(
+                    original.stat().st_mtime_ns + 1_000_000,
+                    original.stat().st_mtime_ns + 1_000_000,
+                ),
+            )
+
+            self.assertFalse(thumbnail_is_current(target, relative))
+            self.assertEqual(existing_thumbnail_url(target, relative), relative.as_posix())
+
+    def test_thumbnail_generation_rejects_linked_cache_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            outside = root / "outside"
+            init_database(target)
+            outside.mkdir()
+            original = target / "2024" / "01" / "image.jpg"
+            write_test_image(original)
+            original_before = original.read_bytes()
+            try:
+                (target / "thumbs").symlink_to(
+                    outside,
+                    target_is_directory=True,
+                )
+            except OSError as exc:
+                self.skipTest(f"Kan ikke opprette symlink: {exc}")
+            database_before = (target / DB_FILENAME).read_bytes()
+
+            with self.assertRaisesRegex(ValueError, "vanlig mappe uten lenker"):
+                ensure_thumbnail(target, Path("2024/01/image.jpg"))
+
+            self.assertEqual((target / DB_FILENAME).read_bytes(), database_before)
+            self.assertEqual(list(outside.iterdir()), [])
+            self.assertEqual(original.read_bytes(), original_before)
+
+    def test_thumbnail_interrupt_removes_unpublished_temp_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            original = target / "2024" / "01" / "image.jpg"
+            write_test_image(original)
+            original_before = original.read_bytes()
+
+            with (
+                patch("PIL.Image.Image.save", side_effect=KeyboardInterrupt),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                ensure_thumbnail(target, Path("2024/01/image.jpg"))
+
+            self.assertEqual(original.read_bytes(), original_before)
+            self.assertFalse(
+                thumbnail_absolute_path(
+                    target,
+                    Path("2024/01/image.jpg"),
+                ).exists()
+            )
+            self.assertEqual(list(target.rglob("*.tmp")), [])
+
+    def test_make_thumbnails_rejects_dotdot_path_from_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            init_database(target)
+            original = target / "2024" / "01" / "image.jpg"
+            write_test_image(original)
+            original_before = original.read_bytes()
+            file_id = register_target_file(target, Path("2024/01/image.jpg"))
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET target_path = '../outside/image.jpg',
+                        target_path_key = '../outside/image.jpg'
+                    WHERE id = ?
+                    """,
+                    (file_id,),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "make-thumbnails"]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("kan ikke inneholde ..", stderr)
+            self.assertEqual(original.read_bytes(), original_before)
 
     def test_make_thumbnails_continues_after_corrupt_file_and_returns_2(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -601,7 +720,8 @@ class StaticBrowserCliTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev HTML-browser", stdout)
             html = (target / "browser" / "index.html").read_text(encoding="utf-8")
-            self.assertIn('"thumbnailSrc": "../thumbs/2024/01/image.jpg"', html)
+            relative_thumbnail = thumb_path.relative_to(target).as_posix()
+            self.assertIn(f'"thumbnailSrc": "../{relative_thumbnail}"', html)
             self.assertIn("item.thumbnailSrc || item.url", html)
 
     def test_server_month_uses_current_thumbnail_via_file_thumbs_url(self) -> None:

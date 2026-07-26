@@ -33,7 +33,7 @@ def geo_scan_files(
         else:
             where.append(missing_or_unscanned)
     sql = """
-        SELECT id, target_path
+        SELECT id, target_path, target_path_key
         FROM files
         WHERE {where_sql}
         ORDER BY target_path

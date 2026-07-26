@@ -12,14 +12,18 @@ from bildebank.collection_paths import (
     COLLECTION_FILE_MISSING,
     COLLECTION_FILE_NOT_REGULAR,
     COLLECTION_FILE_OK,
+    CollectionDirectoryError,
+    CollectionFileAccessError,
     CollectionFileHashError,
     InvalidCollectionRelativePath,
+    ensure_collection_directory_without_links,
     hash_stable_collection_file,
     inspect_collection_file,
     inspect_existing_collection_path_components,
     is_active_collection_file_path,
     is_deleted_collection_file_path,
     is_reparse_stat,
+    open_stable_collection_file,
     parse_collection_relative_path,
 )
 
@@ -90,6 +94,27 @@ def test_existing_component_check_rejects_path_outside_target(
             target,
             Path("../outside.jpg"),
         )
+
+
+def test_derived_directory_creation_rejects_linked_component(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    outside = tmp_path / "outside"
+    target.mkdir()
+    outside.mkdir()
+    try:
+        (target / "thumbs").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"Kan ikke opprette test-symlink: {exc}")
+
+    with pytest.raises(CollectionDirectoryError, match="uten lenker"):
+        ensure_collection_directory_without_links(
+            target,
+            Path("thumbs/v2/2024/01"),
+        )
+
+    assert list(outside.iterdir()) == []
 
 
 def test_collection_file_inspection_reports_regular_missing_and_directory(
@@ -178,6 +203,27 @@ def test_stable_collection_hash_rejects_final_symlink(
             target,
             Path("2024/01/linked.jpg"),
         )
+
+
+def test_stable_collection_open_rejects_final_symlink(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    outside = tmp_path / "outside.jpg"
+    linked = target / "2024" / "01" / "linked.jpg"
+    linked.parent.mkdir(parents=True)
+    outside.write_bytes(b"outside")
+    try:
+        linked.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"Kan ikke opprette test-symlink: {exc}")
+
+    with pytest.raises(CollectionFileAccessError):
+        with open_stable_collection_file(
+            target,
+            Path("2024/01/linked.jpg"),
+        ):
+            pass
 
 
 def test_stable_collection_hash_rejects_file_replaced_before_open(

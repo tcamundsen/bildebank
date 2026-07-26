@@ -18,20 +18,23 @@ gjør at månedsvisningen laster mye lettere.
 Jobben som `make-thumbnails` gjør kan også gjøres direkte fra Bildebank-vinduet.
 
 Kommandoen går gjennom de importerte bildene i bildesamlingen og lager
-thumbnail-filer i mappen `thumbs`.
+thumbnail-filer i mappen `thumbs\v2`.
 
 Eksempel:
 
 ```text
 C:\Bilder\Samling\2012\10\image1.jpg
-C:\Bilder\Samling\thumbs\2012\10\image1.jpg
+C:\Bilder\Samling\thumbs\v2\2012\10\<maskinlaget navn>.jpg
 ```
 
-Hvis originalen er PNG, WEBP eller HEIC/HEIF, får thumbnail-filen likevel
-filendelsen `.jpg`.
+Thumbnailen får et fast maskinlaget navn fra originalens plassering i
+bildesamlingen. Dermed kan for eksempel `image.jpg`, `image.png` og `image.webp`
+aldri overskrive hverandres thumbnails. Thumbnail-filen får alltid filendelsen
+`.jpg`.
 
 Kommandoen endrer ikke originalbildene. Hvis en thumbnail allerede finnes og er
-nyere enn originalbildet, blir den ikke laget på nytt.
+nyere enn originalbildet, er en vanlig fil uten lenker og ser ut som en komplett
+JPEG-fil, blir den ikke laget på nytt.
 
 ## Når bør du kjøre den?
 
@@ -68,6 +71,11 @@ Vis hvilke filer som feilet.
 
 Hvis én bildefil er korrupt eller ikke kan åpnes, fortsetter kommandoen med
 neste bilde. Til slutt viser den hvor mange feil som oppstod.
+
+Bildet må ligge på sin databaseførte plass som en vanlig fil uten symlinker,
+junctions eller andre Windows reparse points. Bildebank avviser også en
+`thumbs`-mappe som er en slik lenke. Bilder over 80 millioner piksler avvises for
+å hindre at en skadet bildefil bruker opp minnet.
 
 Hvis det oppstod feil for én eller flere filer, avslutter kommandoen med
 exit-code `2`.

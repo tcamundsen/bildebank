@@ -8,7 +8,9 @@ from pathlib import Path
 
 from . import db
 from .collection_paths import (
+    COLLECTION_FILE_NOT_REGULAR,
     COLLECTION_FILE_OK,
+    COLLECTION_FILE_UNSAFE,
     hash_stable_collection_file,
     inspect_collection_file,
 )
@@ -26,6 +28,7 @@ from .target_lock import TargetLock
 from .video_previews import (
     VIDEO_PREVIEW_SOURCE_EXTENSIONS,
     existing_video_preview_path,
+    video_preview_absolute_path,
     video_preview_relative_path,
 )
 
@@ -165,6 +168,20 @@ def build_export_plan(
         playback_url: str | None = None
         if relative_destination.suffix.casefold() in VIDEO_PREVIEW_SOURCE_EXTENSIONS:
             preview_source = existing_video_preview_path(target, item)
+            if preview_source is None:
+                candidate_relative = video_preview_relative_path(hashes[file_id])
+                candidate_inspection = inspect_collection_file(
+                    target,
+                    candidate_relative,
+                )
+                if candidate_inspection.status in {
+                    COLLECTION_FILE_NOT_REGULAR,
+                    COLLECTION_FILE_UNSAFE,
+                }:
+                    preview_source = video_preview_absolute_path(
+                        target,
+                        hashes[file_id],
+                    )
             if preview_source is not None:
                 preview_relative = video_preview_relative_path(hashes[file_id])
                 entries.append(

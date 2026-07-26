@@ -7,6 +7,7 @@ import struct
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 IMAGE_EXTENSIONS = {
@@ -40,6 +41,11 @@ VIDEO_EXTENSIONS = {
     ".wmv",
 }
 SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS | ARCHIVE_IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+MAX_PILLOW_DECODE_PIXELS = 80_000_000
+
+
+class ImageDecodeLimitError(ValueError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -79,6 +85,22 @@ class ImageDimensions:
 class CameraInfo:
     make: str | None
     model: str | None
+
+
+def require_safe_pillow_image_size(image: Any) -> None:
+    try:
+        width, height = image.size
+        width = int(width)
+        height = int(height)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ImageDecodeLimitError("Bildet har ugyldige dimensjoner.") from exc
+    if width <= 0 or height <= 0:
+        raise ImageDecodeLimitError("Bildet har ugyldige dimensjoner.")
+    if width * height > MAX_PILLOW_DECODE_PIXELS:
+        raise ImageDecodeLimitError(
+            "Bildet er for stort til sikker dekoding "
+            f"({width}x{height} piksler, grense={MAX_PILLOW_DECODE_PIXELS})."
+        )
 
 
 def is_supported_media(path: Path) -> bool:

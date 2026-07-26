@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import sys
@@ -12,6 +13,16 @@ from pathlib import Path
 from typing import Any
 
 from . import db
+from .collection_paths import (
+    COLLECTION_FILE_OK,
+    CollectionFileAccessError,
+    ensure_collection_directory_without_links,
+    inspect_collection_file,
+    is_active_collection_file_path,
+    open_stable_collection_file,
+    parse_collection_relative_path,
+    same_collection_file_version,
+)
 from .ffmpeg_tools import FFmpegTools
 from .target_lock import TargetLock
 
@@ -19,6 +30,11 @@ from .target_lock import TargetLock
 VIDEO_PREVIEW_ROOT_NAME = "video-previews"
 VIDEO_PREVIEW_PROFILE = "v1"
 VIDEO_PREVIEW_SOURCE_EXTENSIONS = frozenset({".avi", ".3gp"})
+MAX_VIDEO_DECODE_PIXELS = 100_000_000
+FFPROBE_TIMEOUT_SECONDS = 120
+FFMPEG_MIN_TIMEOUT_SECONDS = 10 * 60
+FFMPEG_DURATION_TIMEOUT_FACTOR = 20
+FFMPEG_MAX_TIMEOUT_SECONDS = 12 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -58,20 +74,22 @@ def video_preview_absolute_path(target: Path, sha256: str) -> Path:
 
 
 def existing_video_preview_path(target: Path, item: Any) -> Path | None:
-    target_path = Path(str(item["target_path"]))
-    if target_path.suffix.casefold() not in VIDEO_PREVIEW_SOURCE_EXTENSIONS:
+    try:
+        _require_active_video_path(item)
+    except ValueError:
         return None
     preview_path = video_preview_absolute_path(target, str(item["sha256"]))
-    try:
-        return preview_path if preview_path.is_file() and preview_path.stat().st_size > 0 else None
-    except OSError:
-        return None
+    return (
+        preview_path
+        if video_preview_is_valid(target, str(item["sha256"]))
+        else None
+    )
 
 
 def active_video_preview_candidates(target: Path) -> list[Any]:
     conn = db.connect(target)
     try:
-        return list(
+        rows = list(
             conn.execute(
                 """
                 SELECT id, target_path, target_path_key, stored_filename, sha256, size_bytes
@@ -85,28 +103,37 @@ def active_video_preview_candidates(target: Path) -> list[Any]:
                 """
             )
         )
+        for row in rows:
+            _require_active_video_path(row)
+        return rows
     finally:
         conn.close()
 
 
 def probe_video(ffprobe: Path | str, path: Path) -> VideoProbe:
-    result = subprocess.run(
-        [
-            str(ffprobe),
-            "-v",
-            "error",
-            "-show_entries",
-            "stream=codec_type,codec_name,pix_fmt,width,height,field_order,duration:format=duration",
-            "-of",
-            "json",
-            str(path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    try:
+        result = subprocess.run(
+            [
+                str(ffprobe),
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type,codec_name,pix_fmt,width,height,field_order,duration:format=duration",
+                "-of",
+                "json",
+                str(path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=FFPROBE_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"FFprobe brukte mer enn {FFPROBE_TIMEOUT_SECONDS} sekunder."
+        ) from exc
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or f"FFprobe feilet med exitkode {result.returncode}")
     try:
@@ -135,18 +162,29 @@ def probe_video(ffprobe: Path | str, path: Path) -> VideoProbe:
 
 
 def ensure_video_preview(target: Path, item: Any, tools: FFmpegTools, *, rebuild: bool = False) -> Path:
-    original_path = db.absolute_target_path(target, Path(str(item["target_path"])))
-    if original_path.suffix.casefold() not in VIDEO_PREVIEW_SOURCE_EXTENSIONS:
-        raise ValueError(f"Videoavspillingskopi støttes bare for AVI og 3GP: {original_path}")
-    if not original_path.is_file():
-        raise FileNotFoundError(f"Videooriginalen finnes ikke: {original_path}")
+    target = target.resolve()
+    original_relative = _require_active_video_path(item)
+    original = inspect_collection_file(target, original_relative)
+    if original.status != COLLECTION_FILE_OK or original.path_stat is None:
+        raise CollectionFileAccessError(
+            original.message
+            or f"Videooriginalen er ikke en vanlig fil uten lenker: {original.path}"
+        )
+    original_path = original.path
 
     output_path = video_preview_absolute_path(target, str(item["sha256"]))
-    if not rebuild and output_path.is_file() and output_path.stat().st_size > 0:
+    if not rebuild and video_preview_is_valid(target, str(item["sha256"])):
         return output_path
 
     input_probe = probe_video(tools.ffprobe, original_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if input_probe.width * input_probe.height > MAX_VIDEO_DECODE_PIXELS:
+        raise RuntimeError(
+            "Videoen er for stor til sikker dekoding "
+            f"({input_probe.width}x{input_probe.height} piksler, "
+            f"grense={MAX_VIDEO_DECODE_PIXELS})."
+        )
+    output_relative = video_preview_relative_path(str(item["sha256"]))
+    ensure_collection_directory_without_links(target, output_relative.parent)
     temporary_path = output_path.with_name(f".{output_path.name}.{uuid.uuid4().hex}.partial")
     filters = [
         "scale=trunc(iw/2)*2:trunc(ih/2)*2:out_range=tv",
@@ -157,6 +195,7 @@ def ensure_video_preview(target: Path, item: Any, tools: FFmpegTools, *, rebuild
     command = [
         str(tools.ffmpeg),
         "-nostdin",
+        "-n",
         "-hide_banner",
         "-loglevel",
         "error",
@@ -193,20 +232,41 @@ def ensure_video_preview(target: Path, item: Any, tools: FFmpegTools, *, rebuild
         str(temporary_path),
     ]
     try:
-        result = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        timeout_seconds = _ffmpeg_timeout_seconds(input_probe.duration)
+        try:
+            result = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"FFmpeg brukte mer enn {timeout_seconds} sekunder."
+            ) from exc
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or f"FFmpeg feilet med exitkode {result.returncode}")
+        temporary_relative = temporary_path.relative_to(target)
+        if not _is_valid_mp4_file(target, temporary_relative):
+            raise RuntimeError("FFmpeg laget ikke en gyldig MP4-container.")
         output_probe = probe_video(tools.ffprobe, temporary_path)
         _validate_video_preview(input_probe, output_probe)
-        if not temporary_path.is_file() or temporary_path.stat().st_size <= 0:
-            raise RuntimeError("FFmpeg laget en tom avspillingskopi.")
+        original_after = inspect_collection_file(target, original_relative)
+        if (
+            original_after.status != COLLECTION_FILE_OK
+            or original_after.path_stat is None
+            or not same_collection_file_version(
+                original.path_stat,
+                original_after.path_stat,
+            )
+        ):
+            raise RuntimeError(
+                "Videooriginalen ble endret eller utrygg under konverteringen."
+            )
+        ensure_collection_directory_without_links(target, output_relative.parent)
         os.replace(temporary_path, output_path)
     finally:
         try:
@@ -240,8 +300,7 @@ def run_make_video_previews(
                 break
             relative_path = db.relative_path(Path(str(item["target_path"])))
             stats.checked += 1
-            preview_path = video_preview_absolute_path(target, str(item["sha256"]))
-            if not rebuild and preview_path.is_file() and preview_path.stat().st_size > 0:
+            if not rebuild and video_preview_is_valid(target, str(item["sha256"])):
                 stats.skipped_current += 1
                 if progress is not None:
                     progress("check", current, len(candidates), stats, relative_path)
@@ -291,7 +350,7 @@ def _probe_duration(video: dict[str, object], format_value: object) -> float:
             duration = float(str(value))
         except (TypeError, ValueError):
             continue
-        if duration > 0:
+        if math.isfinite(duration) and duration > 0:
             return duration
     raise RuntimeError("FFprobe returnerte ingen gyldig videovarighet.")
 
@@ -311,3 +370,98 @@ def _validate_video_preview(original: VideoProbe, preview: VideoProbe) -> None:
             "Avspillingskopien har uventet varighet: "
             f"original={original.duration:.3f}s, kopi={preview.duration:.3f}s."
         )
+
+
+def video_preview_is_valid(target: Path, sha256: str) -> bool:
+    try:
+        return _is_valid_mp4_file(
+            target,
+            video_preview_relative_path(sha256),
+        )
+    except (CollectionFileAccessError, OSError, ValueError):
+        return False
+
+
+def _is_valid_mp4_file(target: Path, relative_path: Path) -> bool:
+    inspection = inspect_collection_file(target, relative_path)
+    if (
+        inspection.status != COLLECTION_FILE_OK
+        or inspection.path_stat is None
+        or inspection.path_stat.st_size < 12
+    ):
+        return False
+    with open_stable_collection_file(target, relative_path) as stream:
+        return _is_complete_mp4_container(
+            stream,
+            inspection.path_stat.st_size,
+        )
+
+
+def _is_complete_mp4_container(stream: Any, size_bytes: int) -> bool:
+    offset = 0
+    box_types: list[bytes] = []
+    while offset < size_bytes:
+        stream.seek(offset)
+        header = stream.read(8)
+        if len(header) != 8:
+            return False
+        box_size = int.from_bytes(header[:4], "big")
+        box_type = header[4:8]
+        header_size = 8
+        if box_size == 1:
+            extended_size = stream.read(8)
+            if len(extended_size) != 8:
+                return False
+            box_size = int.from_bytes(extended_size, "big")
+            header_size = 16
+        elif box_size == 0:
+            box_size = size_bytes - offset
+        if box_size < header_size or offset + box_size > size_bytes:
+            return False
+        box_types.append(box_type)
+        offset += box_size
+    return (
+        offset == size_bytes
+        and bool(box_types)
+        and box_types[0] == b"ftyp"
+        and b"moov" in box_types
+        and b"mdat" in box_types
+    )
+
+
+def _require_active_video_path(item: Any) -> Path:
+    relative_path = parse_collection_relative_path(str(item["target_path"]))
+    if (
+        not is_active_collection_file_path(relative_path)
+        or relative_path.suffix.casefold() not in VIDEO_PREVIEW_SOURCE_EXTENSIONS
+    ):
+        raise ValueError(
+            "Videoavspillingskopi støttes bare for aktive AVI- og 3GP-filer: "
+            f"{relative_path.as_posix()}"
+        )
+    target_path_key = _optional_item_value(item, "target_path_key")
+    if (
+        target_path_key is not None
+        and str(target_path_key) != db.relative_path_key(relative_path)
+    ):
+        file_id = _optional_item_value(item, "id")
+        label = f"files #{file_id}" if file_id is not None else "files-raden"
+        raise ValueError(
+            f"{label} har target_path_key som ikke stemmer med target_path."
+        )
+    return relative_path
+
+
+def _optional_item_value(item: Any, key: str) -> object | None:
+    try:
+        return item[key]
+    except (IndexError, KeyError):
+        return None
+
+
+def _ffmpeg_timeout_seconds(duration: float) -> int:
+    estimated = int(duration * FFMPEG_DURATION_TIMEOUT_FACTOR)
+    return min(
+        max(estimated, FFMPEG_MIN_TIMEOUT_SECONDS),
+        FFMPEG_MAX_TIMEOUT_SECONDS,
+    )

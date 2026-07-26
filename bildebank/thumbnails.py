@@ -1,18 +1,35 @@
 from __future__ import annotations
 
+import hashlib
+import os
 import sys
+import tempfile
 from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
 from . import db
+from .collection_paths import (
+    COLLECTION_FILE_OK,
+    CollectionFileAccessError,
+    ensure_collection_directory_without_links,
+    inspect_collection_file,
+    is_active_collection_file_path,
+    open_stable_collection_file,
+    parse_collection_relative_path,
+    same_collection_file_version,
+)
 from .html_paths import path_to_url
-from .media import IMAGE_EXTENSIONS
+from .media import (
+    IMAGE_EXTENSIONS,
+    require_safe_pillow_image_size,
+)
 from .target_lock import TargetLock
 
 
 THUMB_ROOT_NAME = "thumbs"
+THUMB_PROFILE = "v2"
 THUMB_MAX_SIZE = (360, 360)
 THUMB_QUALITY = 82
 
@@ -37,10 +54,9 @@ ThumbnailProgress = Callable[[str, int, int, ThumbnailStats, Path | None], None]
 
 
 def thumbnail_relative_path(original_relative_path: Path) -> Path:
-    relative = Path(original_relative_path)
-    suffix = relative.suffix.lower()
-    filename = relative.name if suffix in {".jpg", ".jpeg"} else f"{relative.stem}.jpg"
-    return Path(THUMB_ROOT_NAME, *relative.parent.parts, filename)
+    relative = parse_collection_relative_path(Path(original_relative_path).as_posix())
+    filename = hashlib.sha256(relative.as_posix().encode("utf-8")).hexdigest() + ".jpg"
+    return Path(THUMB_ROOT_NAME, THUMB_PROFILE, *relative.parent.parts, filename)
 
 
 def thumbnail_absolute_path(target: Path, original_relative_path: Path) -> Path:
@@ -56,50 +72,107 @@ def existing_thumbnail_url(target: Path, original_relative_path: Path) -> str:
 
 
 def existing_thumbnail_relative_path(target: Path, original_relative_path: Path) -> Path:
-    original_path = db.absolute_target_path(target, original_relative_path)
     thumb_rel = thumbnail_relative_path(original_relative_path)
-    thumb_path = target / thumb_rel
-    if thumbnail_is_current(original_path, thumb_path):
+    if thumbnail_is_current(target, original_relative_path):
         return thumb_rel
     return original_relative_path
 
 
-def thumbnail_is_current(original_path: Path, thumb_path: Path) -> bool:
+def thumbnail_is_current(target: Path, original_relative_path: Path) -> bool:
     try:
-        return (
-            thumb_path.is_file()
-            and thumb_path.stat().st_mtime_ns >= original_path.stat().st_mtime_ns
+        relative_path = parse_collection_relative_path(
+            Path(original_relative_path).as_posix()
         )
-    except OSError:
+        original = inspect_collection_file(target, relative_path)
+        thumbnail = inspect_collection_file(
+            target,
+            thumbnail_relative_path(relative_path),
+        )
+        if (
+            original.status != COLLECTION_FILE_OK
+            or original.path_stat is None
+            or thumbnail.status != COLLECTION_FILE_OK
+            or thumbnail.path_stat is None
+            or thumbnail.path_stat.st_mtime_ns < original.path_stat.st_mtime_ns
+        ):
+            return False
+        return _thumbnail_jpeg_is_valid(
+            target,
+            thumbnail_relative_path(relative_path),
+        )
+    except (CollectionFileAccessError, OSError, ValueError):
         return False
 
 
 def ensure_thumbnail(target: Path, original_relative_path: Path) -> Path | None:
-    original_path = db.absolute_target_path(target, original_relative_path)
-    if not original_path.is_file():
+    target = target.resolve()
+    relative_path = _require_active_relative_path(original_relative_path)
+    if relative_path.suffix.lower() not in IMAGE_EXTENSIONS:
         return None
 
-    if original_path.suffix.lower() not in IMAGE_EXTENSIONS:
-        return None
+    original = inspect_collection_file(target, relative_path)
+    if original.status != COLLECTION_FILE_OK:
+        raise CollectionFileAccessError(
+            original.message
+            or f"Originalen er ikke en vanlig fil uten lenker: {original.path}"
+        )
 
-    thumb_path = thumbnail_absolute_path(target, original_relative_path)
-    if thumbnail_is_current(original_path, thumb_path):
+    thumb_rel = thumbnail_relative_path(relative_path)
+    thumb_path = target / thumb_rel
+    if thumbnail_is_current(target, relative_path):
         return thumb_path
 
     Image, ImageOps = require_pillow()
 
-    thumb_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = thumb_path.with_name(f".{thumb_path.name}.tmp")
+    thumb_parent = ensure_collection_directory_without_links(
+        target,
+        thumb_rel.parent,
+    )
+    temporary_fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{thumb_path.name}.",
+        suffix=".tmp",
+        dir=thumb_parent,
+    )
+    tmp_path = Path(temporary_name)
 
     try:
-        with Image.open(original_path) as image:
-            image = ImageOps.exif_transpose(image)
-            image.thumbnail(THUMB_MAX_SIZE)
-            if image.mode not in {"RGB", "L"}:
-                image = image.convert("RGB")
-            image.save(tmp_path, format="JPEG", quality=THUMB_QUALITY, optimize=True)
-        tmp_path.replace(thumb_path)
+        with os.fdopen(temporary_fd, "w+b", closefd=True) as output:
+            temporary_fd = -1
+            with open_stable_collection_file(target, relative_path) as source:
+                with Image.open(source) as image:
+                    require_safe_pillow_image_size(image)
+                    image = ImageOps.exif_transpose(image)
+                    image.thumbnail(THUMB_MAX_SIZE)
+                    if image.mode not in {"RGB", "L"}:
+                        image = image.convert("RGB")
+                    image.save(
+                        output,
+                        format="JPEG",
+                        quality=THUMB_QUALITY,
+                        optimize=True,
+                    )
+            output.flush()
+        tmp_rel = tmp_path.relative_to(target)
+        if not _thumbnail_jpeg_is_valid(target, tmp_rel):
+            raise RuntimeError("Pillow laget en ugyldig thumbnail.")
+        original_after = inspect_collection_file(target, relative_path)
+        if (
+            original.path_stat is None
+            or original_after.status != COLLECTION_FILE_OK
+            or original_after.path_stat is None
+            or not same_collection_file_version(
+                original.path_stat,
+                original_after.path_stat,
+            )
+        ):
+            raise RuntimeError(
+                "Originalbildet ble endret eller utrygt under thumbnail-genereringen."
+            )
+        ensure_collection_directory_without_links(target, thumb_rel.parent)
+        os.replace(tmp_path, thumb_path)
     finally:
+        if temporary_fd >= 0:
+            os.close(temporary_fd)
         try:
             tmp_path.unlink()
         except FileNotFoundError:
@@ -118,7 +191,17 @@ def active_thumbnail_candidates(target: Path) -> list[Path]:
             ORDER BY target_path_key
             """
         )
-        return [db.relative_path(Path(str(row["target_path"]))) for row in rows]
+        candidates: list[Path] = []
+        for row in rows:
+            relative_path = _require_active_relative_path(
+                Path(str(row["target_path"]))
+            )
+            if str(row["target_path_key"]) != db.relative_path_key(relative_path):
+                raise ValueError(
+                    f"files #{int(row['id'])} har target_path_key som ikke stemmer med target_path."
+                )
+            candidates.append(relative_path)
+        return candidates
     finally:
         conn.close()
 
@@ -153,15 +236,13 @@ def run_make_thumbnails(
             stats.total += 1
             if limit is not None and stats.checked >= limit:
                 break
-            original_path = db.absolute_target_path(target, relative_path)
-            if original_path.suffix.lower() not in IMAGE_EXTENSIONS:
+            if relative_path.suffix.lower() not in IMAGE_EXTENSIONS:
                 stats.skipped_non_image += 1
                 if progress is not None:
                     progress("check", current, len(candidates), stats, relative_path)
                 continue
             stats.checked += 1
-            thumb_path = thumbnail_absolute_path(target, relative_path)
-            if thumbnail_is_current(original_path, thumb_path):
+            if thumbnail_is_current(target, relative_path):
                 stats.skipped_current += 1
                 if progress is not None:
                     progress("check", current, len(candidates), stats, relative_path)
@@ -184,3 +265,29 @@ def run_make_thumbnails(
         if progress is not None:
             progress("done", current, len(candidates), stats, None)
     return stats
+
+
+def _require_active_relative_path(path: Path) -> Path:
+    relative_path = parse_collection_relative_path(Path(path).as_posix())
+    if not is_active_collection_file_path(relative_path):
+        raise ValueError(
+            f"Ugyldig aktiv samlingssti for thumbnail: {relative_path.as_posix()}"
+        )
+    return relative_path
+
+
+def _thumbnail_jpeg_is_valid(target: Path, relative_path: Path) -> bool:
+    try:
+        Image, _ImageOps = require_pillow()
+        with open_stable_collection_file(target, relative_path) as stream:
+            with Image.open(stream) as image:
+                if (
+                    image.format != "JPEG"
+                    or image.width > THUMB_MAX_SIZE[0]
+                    or image.height > THUMB_MAX_SIZE[1]
+                ):
+                    return False
+                image.verify()
+        return True
+    except Exception:  # noqa: BLE001 - invalid cache files are treated as missing
+        return False

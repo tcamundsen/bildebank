@@ -9,10 +9,17 @@ from pathlib import Path
 from typing import Any
 
 from . import db
+from .collection_paths import (
+    COLLECTION_FILE_OK,
+    inspect_collection_file,
+    is_active_collection_file_path,
+    parse_collection_relative_path,
+)
 from .exiftool import resolve_exiftool_path
 from .progress import ProgressMeter
 
 
+EXIFTOOL_TIMEOUT_SECONDS = 180
 EXIFTOOL_DATE_TAGS = (
     "DateTimeOriginal",
     "CreateDate",
@@ -61,7 +68,10 @@ def exiftool_metadata_gaps(
             progress_meter.message(f"exiftool: {total} filer skal kontrolleres.")
         checked = 0
         for batch in batched(rows, batch_size):
-            target_paths = [db.absolute_target_path(target, Path(str(row["target_path"]))) for row in batch]
+            target_paths = [
+                _safe_exiftool_target_path(target, row)
+                for row in batch
+            ]
             found_dates = exiftool_dates_batch(tool, target_paths)
             for row, target_path in zip(batch, target_paths, strict=True):
                 found = found_dates.get(target_path)
@@ -98,19 +108,25 @@ def batched(items: list[Any], batch_size: int) -> list[list[Any]]:
 def exiftool_dates_batch(exiftool_path: Path | str, paths: list[Path]) -> dict[Path, tuple[str, str, str]]:
     if not paths:
         return {}
-    result = subprocess.run(
-        [
-            str(exiftool_path),
-            "-j",
-            *[f"-{tag}" for tag in EXIFTOOL_DATE_TAGS],
-            *[str(path) for path in paths],
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    try:
+        result = subprocess.run(
+            [
+                str(exiftool_path),
+                "-j",
+                *[f"-{tag}" for tag in EXIFTOOL_DATE_TAGS],
+                *[str(path) for path in paths],
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=EXIFTOOL_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"exiftool brukte mer enn {EXIFTOOL_TIMEOUT_SECONDS} sekunder."
+        ) from exc
     if result.returncode != 0:
         raise RuntimeError(f"exiftool feilet: {result.stderr.strip()}")
     try:
@@ -131,6 +147,26 @@ def exiftool_dates_batch(exiftool_path: Path | str, paths: list[Path]) -> dict[P
         if found is not None:
             dates[path] = found
     return dates
+
+
+def _safe_exiftool_target_path(target: Path, row: Any) -> Path:
+    relative_path = parse_collection_relative_path(str(row["target_path"]))
+    if not is_active_collection_file_path(relative_path):
+        raise ValueError(
+            f"files #{int(row['id'])} har ugyldig aktiv target_path: "
+            f"{relative_path.as_posix()}"
+        )
+    if str(row["target_path_key"]) != db.relative_path_key(relative_path):
+        raise ValueError(
+            f"files #{int(row['id'])} har target_path_key som ikke stemmer med target_path."
+        )
+    inspection = inspect_collection_file(target, relative_path)
+    if inspection.status != COLLECTION_FILE_OK:
+        raise ValueError(
+            inspection.message
+            or f"Filen er ikke en vanlig fil uten lenker: {inspection.path}"
+        )
+    return inspection.path
 
 
 def first_date_from_exiftool_item(item: dict[str, object]) -> tuple[str, str, str] | None:

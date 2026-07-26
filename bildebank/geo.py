@@ -8,6 +8,14 @@ from pathlib import Path
 from typing import Iterable
 
 from . import db
+from .collection_paths import (
+    COLLECTION_FILE_MISSING,
+    COLLECTION_FILE_OK,
+    inspect_collection_file,
+    is_active_collection_file_path,
+    parse_collection_relative_path,
+    same_collection_file_version,
+)
 from .exiftool import resolve_exiftool_path
 from .progress import ProgressMeter
 from .target_lock import TargetLock
@@ -35,6 +43,7 @@ H3_AREA_LABELS_KM2 = {
     11: "ca. 2000 m²",
 }
 DEFAULT_EXIFTOOL_BATCH_SIZE = 200
+EXIFTOOL_TIMEOUT_SECONDS = 180
 
 
 @dataclass(frozen=True)
@@ -203,20 +212,26 @@ def default_exiftool_path(repo_root: Path | None = None) -> Path | str:
 def read_gps_metadata_batch(exiftool_path: Path | str, paths: list[Path]) -> dict[Path, dict[str, object]]:
     if not paths:
         return {}
-    result = subprocess.run(
-        [
-            str(exiftool_path),
-            "-json",
-            "-n",
-            *[f"-{tag}" for tag in GPS_TAGS],
-            *[str(path) for path in paths],
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    try:
+        result = subprocess.run(
+            [
+                str(exiftool_path),
+                "-json",
+                "-n",
+                *[f"-{tag}" for tag in GPS_TAGS],
+                *[str(path) for path in paths],
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=EXIFTOOL_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"exiftool brukte mer enn {EXIFTOOL_TIMEOUT_SECONDS} sekunder."
+        ) from exc
     if not result.stdout.strip():
         message = result.stderr.strip() or f"exiftool feilet med exitkode {result.returncode}"
         raise RuntimeError(message)
@@ -276,6 +291,7 @@ def _scan_geo_unlocked(
     batch_size: int = DEFAULT_EXIFTOOL_BATCH_SIZE,
     repo_root: Path | None = None,
 ) -> GeoScanStats:
+    target = target.resolve()
     tool = exiftool_path or default_exiftool_path(repo_root)
     progress = ProgressMeter("geo-scan", stream=sys.stderr)
     conn = db.connect(target)
@@ -293,10 +309,22 @@ def _scan_geo_unlocked(
             limit=limit,
         )
         file_ids_by_path: dict[Path, int] = {}
+        relative_paths_by_path: dict[Path, Path] = {}
         paths: list[Path] = []
         for row in rows:
-            path = db.absolute_target_path(target, Path(str(row["target_path"])))
+            relative_path = parse_collection_relative_path(str(row["target_path"]))
+            if not is_active_collection_file_path(relative_path):
+                raise ValueError(
+                    f"files #{int(row['id'])} har ugyldig aktiv target_path: "
+                    f"{relative_path.as_posix()}"
+                )
+            if str(row["target_path_key"]) != db.relative_path_key(relative_path):
+                raise ValueError(
+                    f"files #{int(row['id'])} har target_path_key som ikke stemmer med target_path."
+                )
+            path = target / relative_path
             file_ids_by_path[path] = int(row["id"])
+            relative_paths_by_path[path] = relative_path
             paths.append(path)
 
         total = len(paths)
@@ -304,9 +332,14 @@ def _scan_geo_unlocked(
             progress.message(f"geo-scan: {total} filer skal kontrolleres.")
         for batch in batched(paths, batch_size):
             existing_batch: list[Path] = []
+            inspections_before = {}
             for path in batch:
                 checked += 1
-                if not path.exists():
+                inspection = inspect_collection_file(
+                    target,
+                    relative_paths_by_path[path],
+                )
+                if inspection.status == COLLECTION_FILE_MISSING:
                     errors += 1
                     updated += 1
                     db.update_file_gps(
@@ -322,7 +355,30 @@ def _scan_geo_unlocked(
                     if verbose:
                         print(f"Mangler fil: {path}")
                     continue
+                if (
+                    inspection.status != COLLECTION_FILE_OK
+                    or inspection.path_stat is None
+                ):
+                    errors += 1
+                    updated += 1
+                    db.update_file_gps(
+                        conn,
+                        file_id=file_ids_by_path[path],
+                        gps_lat=None,
+                        gps_lon=None,
+                        gps_alt=None,
+                        h3_cells=None,
+                        gps_source="exiftool",
+                        gps_error=db.GPS_ERROR_EXIFTOOL,
+                    )
+                    if verbose:
+                        print(
+                            f"Utrygg eller uleselig fil: {path}: "
+                            f"{inspection.message or inspection.status}"
+                        )
+                    continue
                 existing_batch.append(path)
+                inspections_before[path] = inspection.path_stat
 
             if existing_batch:
                 try:
@@ -331,9 +387,39 @@ def _scan_geo_unlocked(
                     errors += len(existing_batch)
                     if verbose:
                         print(f"ExifTool-feil for batch med {len(existing_batch)} filer: {exc}")
+                    conn.commit()
                     continue
                 else:
                     for path in existing_batch:
+                        inspection_after = inspect_collection_file(
+                            target,
+                            relative_paths_by_path[path],
+                        )
+                        if (
+                            inspection_after.status != COLLECTION_FILE_OK
+                            or inspection_after.path_stat is None
+                            or not same_collection_file_version(
+                                inspections_before[path],
+                                inspection_after.path_stat,
+                            )
+                        ):
+                            errors += 1
+                            updated += 1
+                            db.update_file_gps(
+                                conn,
+                                file_id=file_ids_by_path[path],
+                                gps_lat=None,
+                                gps_lon=None,
+                                gps_alt=None,
+                                h3_cells=None,
+                                gps_source="exiftool",
+                                gps_error=db.GPS_ERROR_EXIFTOOL,
+                            )
+                            if verbose:
+                                print(
+                                    f"Filen ble endret eller utrygg under ExifTool-kjøringen: {path}"
+                                )
+                            continue
                         meta = metadata_by_path.get(path)
                         if meta is None:
                             meta = metadata_by_path.get(Path(str(path)))

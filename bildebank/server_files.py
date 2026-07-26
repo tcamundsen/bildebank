@@ -22,8 +22,12 @@ from .collection_paths import (
     parse_collection_relative_path,
     same_file_identity,
 )
-from .thumbnails import thumbnail_absolute_path
-from .video_previews import VIDEO_PREVIEW_SOURCE_EXTENSIONS, video_preview_absolute_path
+from .thumbnails import thumbnail_absolute_path, thumbnail_is_current
+from .video_previews import (
+    VIDEO_PREVIEW_SOURCE_EXTENSIONS,
+    video_preview_absolute_path,
+    video_preview_is_valid,
+)
 
 
 @dataclass(frozen=True)
@@ -110,16 +114,14 @@ def resolve_server_thumbnail_file(
         require_active=require_active,
     )
     relative_path = original.path.relative_to(original.root)
+    if not thumbnail_is_current(original.root, relative_path):
+        return original
     thumbnail_path = thumbnail_absolute_path(original.root, relative_path)
     try:
         thumbnail = describe_server_file(original.root, thumbnail_path)
     except (FileNotFoundError, PermissionError, OSError):
         return original
-    return (
-        thumbnail
-        if thumbnail.path_stat.st_mtime_ns >= original.path_stat.st_mtime_ns
-        else original
-    )
+    return thumbnail
 
 
 def resolve_video_preview_file(target: Path, raw_file_id: str) -> ServerFilePath:
@@ -136,6 +138,7 @@ def resolve_video_preview_file(target: Path, raw_file_id: str) -> ServerFilePath
     if (
         row is None
         or source_path.suffix.casefold() not in VIDEO_PREVIEW_SOURCE_EXTENSIONS
+        or not video_preview_is_valid(target, str(row["sha256"]))
     ):
         raise FileNotFoundError("Fant ikke en video med avspillingskopi.")
     path = video_preview_absolute_path(target.resolve(), str(row["sha256"]))
