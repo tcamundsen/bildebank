@@ -93,3 +93,63 @@ def test_invalid_existing_install_is_replaced(tmp_path: Path) -> None:
 
     assert result.installed
     assert not (destination / "broken.txt").exists()
+
+
+def test_install_restores_existing_ffmpeg_when_interrupted_after_backup_rename(
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path / "repo"
+    destination = ffmpeg_tools.managed_ffmpeg_dir(repo_root)
+    destination.mkdir(parents=True)
+    (destination / "original.txt").write_text("original", encoding="utf-8")
+    archive = tmp_path / "ffmpeg.zip"
+    with zipfile.ZipFile(archive, "w") as output:
+        output.writestr("build/bin/ffmpeg.exe", b"ffmpeg")
+        output.writestr("build/bin/ffprobe.exe", b"ffprobe")
+    expected_hash = hashlib.sha256(archive.read_bytes()).hexdigest()
+    original_rename = Path.rename
+
+    def rename_then_interrupt(path: Path, target: Path) -> Path:
+        renamed = original_rename(path, target)
+        if path == destination:
+            raise KeyboardInterrupt
+        return renamed
+
+    def validate(
+        ffmpeg: Path | str,
+        ffprobe: Path | str,
+        *,
+        managed: bool = False,
+    ) -> FFmpegTools:
+        return FFmpegTools(
+            Path(ffmpeg),
+            Path(ffprobe),
+            "ffmpeg version 8.1.2",
+            managed,
+        )
+
+    with (
+        patch.object(ffmpeg_tools, "FFMPEG_ARCHIVE_SHA256", expected_hash),
+        patch.object(
+            ffmpeg_tools,
+            "_download_file",
+            side_effect=lambda _url, path: shutil.copyfile(archive, path),
+        ),
+        patch.object(
+            ffmpeg_tools,
+            "validate_ffmpeg_tools",
+            side_effect=validate,
+        ),
+        patch.object(
+            Path,
+            "rename",
+            autospec=True,
+            side_effect=rename_then_interrupt,
+        ),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        ffmpeg_tools.install_managed_ffmpeg(repo_root, force=True)
+
+    assert (destination / "original.txt").read_text(encoding="utf-8") == "original"
+    assert list(destination.parent.glob(".8.1.2.installing-*")) == []
+    assert list(destination.parent.glob(".8.1.2.previous-*")) == []

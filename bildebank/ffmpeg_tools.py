@@ -119,14 +119,12 @@ def install_managed_ffmpeg(repo_root: Path, *, force: bool = False) -> FFmpegIns
         staged_ffprobe = staging / "bin" / "ffprobe.exe"
         validate_ffmpeg_tools(staged_ffmpeg, staged_ffprobe, managed=True)
 
-        replaced = False
         try:
             if destination.exists():
                 destination.rename(backup)
-                replaced = True
             staging.rename(destination)
-        except Exception:
-            if replaced and backup.exists() and not destination.exists():
+        except BaseException:
+            if backup.exists() and not destination.exists():
                 backup.rename(destination)
             raise
         finally:

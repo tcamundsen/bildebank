@@ -136,6 +136,14 @@ Launcheren skal kontrollere native InsightFace- og OpenCV-avhengigheter i en
 kortlivet underprosess. Launcherprosessen skal ikke selv laste `cv2.pyd`, fordi
 Windows da hindrer pip i å reinstallere OpenCV fra Oppsett-fanen.
 
+## Eksterne programinstallasjoner
+
+En ny administrert programinstallasjon skal bygges og valideres i staging før
+den erstatter en eksisterende installasjon. Hvis utskiftingen feiler eller
+avbrytes kontrollert etter at den gamle mappen er flyttet til backup, skal
+rollback bruke den faktiske tilstanden på disk og gjenopprette backupen når
+målmappen mangler.
+
 ## Programoppdatering
 
 Programoppdatering skal nekte å starte når Git-repoet har lokale endringer i

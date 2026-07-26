@@ -188,7 +188,9 @@ bildebank geo-scan --exiftool "C:\Tools\exiftool.exe"
 - Bildebank foretrekker den administrerte installasjonen og faller tilbake til
   et komplett `ffmpeg`/`ffprobe`-par i `PATH`.
 - `ffmpeg-install --force` reparerer eller erstatter den administrerte
-  installasjonen atomisk etter validering.
+  installasjonen atomisk etter validering. Feil og kontrollerte avbrudd under
+  publisering gjenoppretter en eksisterende installasjon fra backup hvis
+  målmappen mangler.
 
 ## Nåværende statusvisning
 
