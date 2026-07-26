@@ -26,7 +26,19 @@ if (-not (Test-Path -LiteralPath $VenvPython)) {
 Push-Location $RepoDir
 try {
     Write-Host "Installerer valgfri OpenCLIP-stotte i Bildebanks lokale Python-miljo"
-    Invoke-Native -FilePath $VenvPython -ArgumentList @("-m", "pip", "install", "-e", ".[openclip]")
+    $DependencyLock = Join-Path $RepoDir "requirements\windows-py313-openclip.lock"
+    if (-not (Test-Path -LiteralPath $DependencyLock)) {
+        throw "Installasjonen mangler dependency-lockfilen: $DependencyLock"
+    }
+    Invoke-Native -FilePath $VenvPython -ArgumentList @(
+        "-m",
+        "pip",
+        "install",
+        "--require-hashes",
+        "--only-binary=:all:",
+        "-r",
+        $DependencyLock
+    )
 
     New-Item -ItemType Directory -Force -Path $ModelRoot | Out-Null
 

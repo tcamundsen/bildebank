@@ -273,7 +273,28 @@ function Ensure-Venv {
     Push-Location $RepoDir
     try {
         Remove-LegacyPythonMetadata -RepoDir $RepoDir
-        Invoke-Native -FilePath $venvPython -ArgumentList @("-m", "pip", "install", "-e", ".")
+        $dependencyLock = Join-Path $RepoDir "requirements\windows-py313-base.lock"
+        if (-not (Test-Path -LiteralPath $dependencyLock)) {
+            throw "Installasjonen mangler dependency-lockfilen: $dependencyLock"
+        }
+        Invoke-Native -FilePath $venvPython -ArgumentList @(
+            "-m",
+            "pip",
+            "install",
+            "--require-hashes",
+            "--only-binary=:all:",
+            "-r",
+            $dependencyLock
+        )
+        Invoke-Native -FilePath $venvPython -ArgumentList @(
+            "-m",
+            "pip",
+            "install",
+            "--no-deps",
+            "--no-build-isolation",
+            "-e",
+            "."
+        )
         Assert-BildebankPythonPackage -RepoDir $RepoDir
     } finally {
         Pop-Location

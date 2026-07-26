@@ -78,12 +78,30 @@ function Install-And-Test {
     Push-Location $RepoDir
     try {
         Remove-LegacyPythonMetadata -RepoDir $RepoDir
-        $pipArguments = @("-m", "pip", "install")
-        if ($NoDependencies) {
-            $pipArguments += @("--no-deps", "--no-build-isolation")
+        if (-not $NoDependencies) {
+            $dependencyLock = Join-Path $RepoDir "requirements\windows-py313-base.lock"
+            if (-not (Test-Path -LiteralPath $dependencyLock)) {
+                throw "Oppdateringen mangler dependency-lockfilen: $dependencyLock"
+            }
+            Invoke-Native -FilePath $venvPython -ArgumentList @(
+                "-m",
+                "pip",
+                "install",
+                "--require-hashes",
+                "--only-binary=:all:",
+                "-r",
+                $dependencyLock
+            )
         }
-        $pipArguments += @("-e", ".")
-        Invoke-Native -FilePath $venvPython -ArgumentList $pipArguments
+        Invoke-Native -FilePath $venvPython -ArgumentList @(
+            "-m",
+            "pip",
+            "install",
+            "--no-deps",
+            "--no-build-isolation",
+            "-e",
+            "."
+        )
     } finally {
         Pop-Location
     }

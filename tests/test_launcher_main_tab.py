@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -61,6 +62,35 @@ def bare_main_tab(collection_path: Path) -> MainTab:
     tab.server_launch_options = None
     tab.root = object()
     return tab
+
+
+def test_update_button_icons_are_loaded_by_tk_without_pillow() -> None:
+    loaded: list[tuple[str, str, tuple[int, int]]] = []
+
+    class FakeImage:
+        def __init__(self, data: str, image_format: str) -> None:
+            self.data = data
+            self.image_format = image_format
+
+        def subsample(self, x: int, y: int):
+            loaded.append((self.data, self.image_format, (x, y)))
+            return self
+
+    class FakeTk:
+        @staticmethod
+        def PhotoImage(*, data: str, format: str):
+            return FakeImage(data, format)
+
+    tab = MainTab.__new__(MainTab)
+    tab.tk = FakeTk()
+    tab._log = lambda _message: None
+
+    icons = tab._load_update_button_icons()
+
+    assert set(icons) == {"search", "green-check"}
+    assert len(loaded) == 2
+    assert all(image_format == "png" and size == (16, 16) for _data, image_format, size in loaded)
+    assert all(base64.b64decode(data).startswith(b"\x89PNG\r\n\x1a\n") for data, _format, _size in loaded)
 
 
 def test_main_tab_refresh_builds_normal_and_migration_actions(tmp_path: Path) -> None:

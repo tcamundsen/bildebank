@@ -7,10 +7,13 @@ aktivert.
 
 ## Basisinstallasjon
 
-Basisinstallasjonen gjøres av `setup-windows.ps1`, som lager `.venv` og kjører:
+Basisinstallasjonen gjøres av `setup-windows.ps1`, som lager `.venv`, installerer
+den komplette Windows-låsen med pips hashkontroll og installerer Bildebank-koden
+separat:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m pip install --require-hashes --only-binary=:all: -r .\requirements\windows-py313-base.lock
+.\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
 ```
 
 Dette installerer avhengighetene i `pyproject.toml`.
@@ -61,10 +64,10 @@ vanlig `setup-windows.ps1`.
 .\install-insightface.ps1
 ```
 
-Scriptet kjører:
+Scriptet installerer den komplette InsightFace-låsen:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e .[face]
+.\.venv\Scripts\python.exe -m pip install --require-hashes --only-binary=:all: -r .\requirements\windows-py313-face.lock
 ```
 
 `face` extra inneholder:
@@ -108,10 +111,10 @@ Status vises i dag av `bildebank doctor` og på `/app` i `run-server`.
 .\install-openclip.ps1
 ```
 
-Scriptet kjører:
+Scriptet installerer den komplette OpenCLIP-låsen:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e .[openclip]
+.\.venv\Scripts\python.exe -m pip install --require-hashes --only-binary=:all: -r .\requirements\windows-py313-openclip.lock
 ```
 
 `openclip` extra inneholder:

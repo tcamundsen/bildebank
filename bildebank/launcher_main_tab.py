@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import resources
@@ -8,8 +9,6 @@ import subprocess
 import threading
 from typing import Any, Protocol
 import webbrowser
-
-from PIL import Image, ImageTk
 
 from .launcher_commands import (
     create_command,
@@ -313,8 +312,8 @@ class MainTab:
             return "Installer oppdatering"
         return "Se etter oppdateringer"
 
-    def _load_update_button_icons(self) -> dict[str, ImageTk.PhotoImage]:
-        icons: dict[str, ImageTk.PhotoImage] = {}
+    def _load_update_button_icons(self) -> dict[str, Any]:
+        icons: dict[str, Any] = {}
         try:
             icon_root = resources.files("bildebank").joinpath("assets", "icons")
             for key, filename in {
@@ -322,15 +321,15 @@ class MainTab:
                 "green-check": "green-check.png",
             }.items():
                 with icon_root.joinpath(filename).open("rb") as icon_file:
-                    image = Image.open(icon_file)
-                    resized = image.resize((18, 18), Image.Resampling.LANCZOS)
-                    icons[key] = ImageTk.PhotoImage(resized)
+                    encoded = base64.b64encode(icon_file.read()).decode("ascii")
+                    source = self.tk.PhotoImage(data=encoded, format="png")
+                    icons[key] = source.subsample(16, 16)
         except Exception as exc:  # noqa: BLE001 - launcher must work without button icons
             self._log(f"Kunne ikke laste ikon for oppdateringsknapp: {exc}")
             return {}
         return icons
 
-    def _update_button_icon(self) -> ImageTk.PhotoImage | None:
+    def _update_button_icon(self) -> Any | None:
         icon_key = "green-check" if self.update_status.status == "available" else "search"
         return self.update_button_icons.get(icon_key)
 

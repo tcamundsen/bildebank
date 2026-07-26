@@ -133,8 +133,10 @@ embeddings laget med akkurat denne modellen. Mappen skal bevares og kreve
 manuell avklaring før en annen modell installeres under samme navn.
 
 Launcheren skal kontrollere native InsightFace- og OpenCV-avhengigheter i en
-kortlivet underprosess. Launcherprosessen skal ikke selv laste `cv2.pyd`, fordi
-Windows da hindrer pip i å reinstallere OpenCV fra Oppsett-fanen.
+kortlivet underprosess. Den varige launcherprosessen skal ikke selv laste
+native Python-avhengigheter som `cv2.pyd` eller Pillow, fordi Windows da kan
+hindre pip i å installere den låste pakken fra Oppsett-fanen eller ved
+programoppdatering.
 
 ## Eksterne programinstallasjoner
 

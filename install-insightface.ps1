@@ -23,8 +23,19 @@ if (-not (Test-Path -LiteralPath $VenvPython)) {
 Push-Location $RepoDir
 try {
     Write-Host "Installerer valgfri InsightFace-stotte i Bildebanks lokale Python-miljo"
-    # .[face] betyr optional-dependencies face, som listet i pyprosject.toml
-    Invoke-Native -FilePath $VenvPython -ArgumentList @("-m", "pip", "install", "-e", ".[face]")
+    $DependencyLock = Join-Path $RepoDir "requirements\windows-py313-face.lock"
+    if (-not (Test-Path -LiteralPath $DependencyLock)) {
+        throw "Installasjonen mangler dependency-lockfilen: $DependencyLock"
+    }
+    Invoke-Native -FilePath $VenvPython -ArgumentList @(
+        "-m",
+        "pip",
+        "install",
+        "--require-hashes",
+        "--only-binary=:all:",
+        "-r",
+        $DependencyLock
+    )
 
     if (-not (Test-Path -LiteralPath $ConfigFile)) {
         Copy-Item -LiteralPath $ConfigExample -Destination $ConfigFile

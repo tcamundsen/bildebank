@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -165,3 +166,57 @@ def test_generator_writes_three_separate_full_locks(tmp_path: Path) -> None:
         "windows-py313-openclip.lock",
     ]
     assert all(path.read_text(encoding="utf-8").count("pillow==12.2.0") == 1 for path in generated)
+
+
+def read_checked_in_lock(path: Path) -> dict[str, tuple[str, str]]:
+    content = path.read_text(encoding="ascii")
+    lines = content.splitlines()
+    assert "--only-binary=:all:" in lines
+    assert "--require-hashes" in lines
+    package_lines = [index for index, line in enumerate(lines) if line and not line.startswith(("#", "-", " "))]
+    distributions: dict[str, tuple[str, str]] = {}
+    for index in package_lines:
+        match = re.fullmatch(r"([a-z0-9][a-z0-9.-]*)==([^ ]+) \\", lines[index])
+        assert match is not None, f"Ugyldig pakkelinje i {path}: {lines[index]!r}"
+        assert index + 1 < len(lines)
+        hash_match = re.fullmatch(r"    --hash=sha256:([0-9a-f]{64})", lines[index + 1])
+        assert hash_match is not None, f"Ugyldig hash-linje i {path}: {lines[index + 1]!r}"
+        name, version = match.groups()
+        assert name not in distributions
+        distributions[name] = (version, hash_match.group(1))
+    return distributions
+
+
+def test_checked_in_windows_locks_are_complete_and_consistent() -> None:
+    root = Path(__file__).resolve().parents[1]
+    base = read_checked_in_lock(root / "requirements" / "windows-py313-base.lock")
+    face = read_checked_in_lock(root / "requirements" / "windows-py313-face.lock")
+    openclip = read_checked_in_lock(root / "requirements" / "windows-py313-openclip.lock")
+
+    assert set(base) == {"h3", "numpy", "pillow", "setuptools"}
+    assert {"insightface", "onnxruntime", "opencv-python"} <= set(face)
+    assert {"open-clip-torch", "torch", "torchvision"} <= set(openclip)
+    assert all(face[name] == locked for name, locked in base.items())
+    assert all(openclip[name] == locked for name, locked in base.items())
+
+
+def test_windows_install_scripts_enforce_the_matching_hash_lock() -> None:
+    root = Path(__file__).resolve().parents[1]
+    scripts = {
+        "setup-windows.ps1": "windows-py313-base.lock",
+        "update.ps1": "windows-py313-base.lock",
+        "install-insightface.ps1": "windows-py313-face.lock",
+        "install-openclip.ps1": "windows-py313-openclip.lock",
+    }
+    for filename, lock_filename in scripts.items():
+        script = (root / filename).read_text(encoding="utf-8-sig")
+        assert lock_filename in script
+        assert '"--require-hashes"' in script
+        assert '"--only-binary=:all:"' in script
+
+    setup = (root / "setup-windows.ps1").read_text(encoding="utf-8")
+    update = (root / "update.ps1").read_text(encoding="utf-8-sig")
+    assert '"--no-deps"' in setup and '"--no-build-isolation"' in setup
+    assert '"--no-deps"' in update and '"--no-build-isolation"' in update
+    assert '".[face]"' not in (root / "install-insightface.ps1").read_text(encoding="utf-8")
+    assert '".[openclip]"' not in (root / "install-openclip.ps1").read_text(encoding="utf-8")
