@@ -20,7 +20,10 @@ oppdateringen. Hvis en slik fil har samme navn som en ny programfil, stopper
 Git oppdateringen uten å overskrive filen. Før nedlasting lagres gjeldende
 programversjon. Den nye versjonen installeres og kontrolleres før oppdateringen
 regnes som ferdig. Hvis installasjonen feiler, gjenoppretter Bildebank den
-gamle programversjonen og kontrollerer at den fortsatt starter.
+gamle programversjonen og kontrollerer at den fortsatt starter. Hvis støtte
+for ansiktsgjenkjenning eller OpenCLIP var installert, oppdateres og
+kontrolleres også disse. Ved gjenoppretting installeres de samme delene på
+nytt fra avhengighetslistene som fulgte med den gamle programversjonen.
 
 Hvis maskinen slås av eller oppdateringen avbrytes, oppdager neste
 oppdateringsforsøk recovery-markøren. Bildebank forsøker da først å

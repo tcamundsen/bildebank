@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import codecs
+import json
 import subprocess
 import sys
 import tempfile
@@ -10,6 +11,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from bildebank.cli_update import (
+    UPDATE_PROFILE_MODULES,
+    UPDATE_PROFILE_PROBE,
+    UPDATE_PROFILE_SMOKE_TESTS,
     UPDATE_SMOKE_TEST,
     UPDATE_STATE_RELATIVE_PATH,
     run_update_linux,
@@ -27,6 +31,7 @@ def fake_linux_update_run(
     fail_first_install: bool = False,
     interrupt_first_install: bool = False,
     fail_reset: bool = False,
+    installed_profiles: tuple[str, ...] = (),
 ):
     install_calls = 0
 
@@ -41,6 +46,13 @@ def fake_linux_update_run(
             stdout = status
         elif command == ["git", "rev-parse", "--verify", "HEAD"]:
             stdout = OLD_COMMIT + "\n"
+        elif len(command) == 4 and command[1:3] == ["-c", UPDATE_PROFILE_PROBE]:
+            profile_by_module = {
+                module: profile for profile, module in UPDATE_PROFILE_MODULES.items()
+            }
+            returncode = (
+                0 if profile_by_module[command[3]] in installed_profiles else 1
+            )
         elif command[1:4] == ["-m", "pip", "install"]:
             install_calls += 1
             if interrupt_first_install and install_calls == 1:
@@ -121,6 +133,18 @@ class UpdateCliTests(unittest.TestCase):
                 calls,
                 [
                     ["git", "status", "--porcelain=v1", "--untracked-files=no"],
+                    [
+                        str(venv_python),
+                        "-c",
+                        UPDATE_PROFILE_PROBE,
+                        UPDATE_PROFILE_MODULES["face"],
+                    ],
+                    [
+                        str(venv_python),
+                        "-c",
+                        UPDATE_PROFILE_PROBE,
+                        UPDATE_PROFILE_MODULES["openclip"],
+                    ],
                     ["git", "rev-parse", "--verify", "HEAD"],
                     ["git", "pull", "--ff-only"],
                     [str(venv_python), "-m", "pip", "install", "-e", "."],
@@ -216,20 +240,7 @@ class UpdateCliTests(unittest.TestCase):
             self.assertIn(["git", "reset", "--hard", OLD_COMMIT], calls)
             self.assertEqual(
                 calls.count([str(venv_python), "-m", "pip", "install", "-e", "."]),
-                1,
-            )
-            self.assertIn(
-                [
-                    str(venv_python),
-                    "-m",
-                    "pip",
-                    "install",
-                    "--no-deps",
-                    "--no-build-isolation",
-                    "-e",
-                    ".",
-                ],
-                calls,
+                2,
             )
             self.assertIn([str(venv_python), "-c", UPDATE_SMOKE_TEST], calls)
             self.assertFalse((repo / UPDATE_STATE_RELATIVE_PATH).exists())
@@ -265,22 +276,60 @@ class UpdateCliTests(unittest.TestCase):
             self.assertIn(["git", "reset", "--hard", OLD_COMMIT], calls)
             self.assertEqual(
                 calls.count([str(venv_python), "-m", "pip", "install", "-e", "."]),
-                1,
-            )
-            self.assertIn(
-                [
-                    str(venv_python),
-                    "-m",
-                    "pip",
-                    "install",
-                    "--no-deps",
-                    "--no-build-isolation",
-                    "-e",
-                    ".",
-                ],
-                calls,
+                2,
             )
             self.assertFalse((repo / UPDATE_STATE_RELATIVE_PATH).exists())
+
+    def test_linux_update_restores_detected_optional_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / ".git").mkdir()
+            (repo / "pyproject.toml").write_text(
+                "[project]\nname = 'x'\n",
+                encoding="utf-8",
+            )
+            venv_python = repo / ".venv" / "bin" / "python"
+            venv_python.parent.mkdir(parents=True)
+            venv_python.write_text("# python\n", encoding="utf-8")
+            calls: list[list[str]] = []
+
+            with (
+                patch("bildebank.cli_update.sys.platform", "linux"),
+                patch("bildebank.cli.program_repo_root", return_value=repo),
+                patch(
+                    "bildebank.cli_update.subprocess.run",
+                    side_effect=fake_linux_update_run(
+                        calls,
+                        fail_first_install=True,
+                        installed_profiles=("face", "openclip"),
+                    ),
+                ),
+            ):
+                code, stdout, stderr = capture_cli(["update"])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("gamle versjonen er gjenopprettet", stderr)
+            for profile in ("face", "openclip"):
+                self.assertIn(
+                    [
+                        str(venv_python),
+                        "-m",
+                        "pip",
+                        "install",
+                        "-e",
+                        f".[{profile}]",
+                    ],
+                    calls,
+                )
+                self.assertIn(
+                    [
+                        str(venv_python),
+                        "-c",
+                        UPDATE_PROFILE_SMOKE_TESTS[profile],
+                    ],
+                    calls,
+                )
 
     def test_failed_linux_rollback_keeps_recovery_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -329,7 +378,10 @@ class UpdateCliTests(unittest.TestCase):
                 patch("bildebank.cli.program_repo_root", return_value=repo),
                 patch(
                     "bildebank.cli_update.subprocess.run",
-                    side_effect=fake_linux_update_run(calls),
+                    side_effect=fake_linux_update_run(
+                        calls,
+                        installed_profiles=("openclip",),
+                    ),
                 ),
             ):
                 code, stdout, stderr = capture_cli(["update"])
@@ -339,6 +391,78 @@ class UpdateCliTests(unittest.TestCase):
             self.assertIn("Forrige oppdatering ble avbrutt", stderr)
             self.assertIn(["git", "reset", "--hard", OLD_COMMIT], calls)
             self.assertNotIn(["git", "pull", "--ff-only"], calls)
+            self.assertIn(
+                [
+                    str(venv_python),
+                    "-m",
+                    "pip",
+                    "install",
+                    "-e",
+                    ".[openclip]",
+                ],
+                calls,
+            )
+            self.assertFalse(state_path.exists())
+
+    def test_pending_linux_update_restores_profiles_from_structured_state(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / ".git").mkdir()
+            (repo / "pyproject.toml").write_text(
+                "[project]\nname = 'x'\n",
+                encoding="utf-8",
+            )
+            venv_python = repo / ".venv" / "bin" / "python"
+            venv_python.parent.mkdir(parents=True)
+            venv_python.write_text("# python\n", encoding="utf-8")
+            state_path = repo / UPDATE_STATE_RELATIVE_PATH
+            state_path.parent.mkdir(parents=True)
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "old_commit": OLD_COMMIT,
+                        "profiles": ["face"],
+                    }
+                ),
+                encoding="ascii",
+            )
+            calls: list[list[str]] = []
+
+            with (
+                patch("bildebank.cli_update.sys.platform", "linux"),
+                patch("bildebank.cli.program_repo_root", return_value=repo),
+                patch(
+                    "bildebank.cli_update.subprocess.run",
+                    side_effect=fake_linux_update_run(calls),
+                ),
+            ):
+                code, stdout, stderr = capture_cli(["update"])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Forrige oppdatering ble avbrutt", stderr)
+            self.assertIn(
+                [
+                    str(venv_python),
+                    "-m",
+                    "pip",
+                    "install",
+                    "-e",
+                    ".[face]",
+                ],
+                calls,
+            )
+            self.assertIn(
+                [
+                    str(venv_python),
+                    "-c",
+                    UPDATE_PROFILE_SMOKE_TESTS["face"],
+                ],
+                calls,
+            )
             self.assertFalse(state_path.exists())
 
     def test_invalid_pending_linux_update_is_not_used_for_reset(self) -> None:
@@ -378,12 +502,17 @@ class UpdateCliTests(unittest.TestCase):
         self.assertIn("Assert-CleanRepo", script)
         self.assertIn('"--untracked-files=no"', script)
         self.assertIn("bildebank-tools\\update-pending.txt", script)
-        self.assertIn("Write-UpdateState -OldCommit $oldCommit", script)
+        self.assertIn(
+            "Write-UpdateState -OldCommit $oldCommit -Profiles $installedProfiles",
+            script,
+        )
         self.assertIn(
             'Invoke-Native -FilePath "git" -ArgumentList @("reset", "--hard", $OldCommit)',
             script,
         )
-        self.assertIn("Restore-PreviousVersion -OldCommit $oldCommit", script)
+        self.assertIn('"windows-py313-face.lock"', script)
+        self.assertIn('"windows-py313-openclip.lock"', script)
+        self.assertIn("-Profiles $installedProfiles", script)
         self.assertIn('"from bildebank.cli import main"', script)
 
     @unittest.skipUnless(

@@ -235,6 +235,10 @@ oppdatering. `git pull --ff-only` skal fortsatt få stoppe trygt hvis en usporet
 fil kolliderer med en fil som skal hentes. Før kildekoden oppdateres, skal
 gjeldende commit lagres i en recovery-markør utenfor Git-sporede filer. Etter
 oppdateringen skal Python-miljøet oppdateres og en enkel importtest kjøres.
+Recovery-markøren skal også lagre hvilke valgfrie installasjonsprofiler som
+var installert før oppdateringen. Basisprofilen og de registrerte profilene
+skal installeres og importtestes fra den oppdaterte kildens komplette
+avhengighetslåser.
 
 På Windows skal det varige launcher-vinduet kjøre under Python-tolken, etter at
 det korte `bildebank.exe`-inngangspunktet har startet det og avsluttet. Dermed
@@ -242,8 +246,9 @@ skal launcheren ikke holde `bildebank.exe` låst mens programoppdateringen eller
 en rollback-installasjon må erstatte filen.
 
 Hvis installasjonen eller importtesten feiler, skal kildekoden rulles tilbake
-til den lagrede commit-en. Python-installasjonen skal deretter installeres på
-nytt fra den gamle kildekoden og kontrolleres før recovery-markøren fjernes.
+til den lagrede commit-en. Python-installasjonen og alle registrerte profiler
+skal deretter installeres på nytt fra den gamle kildens avhengighetslåser og
+kontrolleres før recovery-markøren fjernes.
 Ved avbrudd eller strømbrudd skal neste oppdateringsforsøk oppdage markøren og
 forsøke å gjenopprette den gamle versjonen før en ny oppdatering forsøkes. Hvis
 Git-sporede filer har lokale endringer eller trygg recovery ikke kan

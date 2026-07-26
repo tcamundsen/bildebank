@@ -71,27 +71,84 @@ function Ensure-PythonEnvironment {
     }
 }
 
-function Install-And-Test {
-    param([switch]$NoDependencies)
+function Assert-UpdateProfiles {
+    param([string[]]$Profiles = @())
 
+    $knownProfiles = @("face", "openclip")
+    $seenProfiles = @{}
+    foreach ($profile in @($Profiles)) {
+        if ($profile -notin $knownProfiles) {
+            throw "Recovery-markoren har en ukjent installasjonsprofil: $profile"
+        }
+        if ($seenProfiles.ContainsKey($profile)) {
+            throw "Recovery-markoren har duplisert installasjonsprofil: $profile"
+        }
+        $seenProfiles[$profile] = $true
+    }
+    foreach ($profile in $knownProfiles) {
+        if ($seenProfiles.ContainsKey($profile)) {
+            Write-Output $profile
+        }
+    }
+}
+
+function Get-InstalledProfiles {
+    $profiles = @()
+    $profileModules = [ordered]@{
+        "face" = "insightface"
+        "openclip" = "open_clip"
+    }
+    foreach ($entry in $profileModules.GetEnumerator()) {
+        & $venvPython -c (
+            "import importlib.util, sys; " +
+            "sys.exit(0 if importlib.util.find_spec(sys.argv[1]) else 1)"
+        ) $entry.Value
+        $probeExitCode = $LASTEXITCODE
+        if ($probeExitCode -eq 0) {
+            $profiles += $entry.Key
+        } elseif ($probeExitCode -ne 1) {
+            throw (
+                "Kunne ikke kontrollere installert profil $($entry.Key): " +
+                "Python avsluttet med kode $probeExitCode."
+            )
+        }
+    }
+    return $profiles
+}
+
+function Install-DependencyLock {
+    param([string]$LockName)
+
+    $dependencyLock = Join-Path $RepoDir "requirements\$LockName"
+    if (-not (Test-Path -LiteralPath $dependencyLock)) {
+        throw "Oppdateringen mangler dependency-lockfilen: $dependencyLock"
+    }
+    Invoke-Native -FilePath $venvPython -ArgumentList @(
+        "-m",
+        "pip",
+        "install",
+        "--require-hashes",
+        "--only-binary=:all:",
+        "-r",
+        $dependencyLock
+    )
+}
+
+function Install-And-Test {
+    param([string[]]$Profiles = @())
+
+    $Profiles = @(Assert-UpdateProfiles -Profiles $Profiles)
     Write-Step "Oppdaterer Python-installasjon"
     Push-Location $RepoDir
     try {
         Remove-LegacyPythonMetadata -RepoDir $RepoDir
-        if (-not $NoDependencies) {
-            $dependencyLock = Join-Path $RepoDir "requirements\windows-py313-base.lock"
-            if (-not (Test-Path -LiteralPath $dependencyLock)) {
-                throw "Oppdateringen mangler dependency-lockfilen: $dependencyLock"
+        Install-DependencyLock -LockName "windows-py313-base.lock"
+        foreach ($profile in $Profiles) {
+            $lockName = switch ($profile) {
+                "face" { "windows-py313-face.lock" }
+                "openclip" { "windows-py313-openclip.lock" }
             }
-            Invoke-Native -FilePath $venvPython -ArgumentList @(
-                "-m",
-                "pip",
-                "install",
-                "--require-hashes",
-                "--only-binary=:all:",
-                "-r",
-                $dependencyLock
-            )
+            Install-DependencyLock -LockName $lockName
         }
         Invoke-Native -FilePath $venvPython -ArgumentList @(
             "-m",
@@ -112,23 +169,39 @@ function Install-And-Test {
             "-c",
             "from bildebank.cli import main"
         )
+        foreach ($profile in $Profiles) {
+            $smokeTest = switch ($profile) {
+                "face" { "import insightface; import onnxruntime" }
+                "openclip" { "import open_clip; import torch" }
+            }
+            Invoke-Native -FilePath $venvPython -ArgumentList @("-c", $smokeTest)
+        }
     } finally {
         Pop-Location
     }
 }
 
 function Write-UpdateState {
-    param([string]$OldCommit)
+    param(
+        [string]$OldCommit,
+        [string[]]$Profiles = @()
+    )
 
     if ($OldCommit -notmatch "\A[0-9a-fA-F]{40,64}\z") {
         throw "Git ga en ugyldig commit-ID: $OldCommit"
     }
+    $Profiles = @(Assert-UpdateProfiles -Profiles $Profiles)
+    $payload = [ordered]@{
+        version = 1
+        old_commit = $OldCommit
+        profiles = @($Profiles)
+    } | ConvertTo-Json -Compress
     $stateDirectory = Split-Path -Parent $updateStatePath
     New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
     $tempPath = "$updateStatePath.tmp-$([Guid]::NewGuid().ToString('N'))"
     try {
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-        [System.IO.File]::WriteAllText($tempPath, "$OldCommit`n", $utf8NoBom)
+        [System.IO.File]::WriteAllText($tempPath, "$payload`n", $utf8NoBom)
         Move-Item -LiteralPath $tempPath -Destination $updateStatePath
     } finally {
         Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
@@ -137,9 +210,32 @@ function Write-UpdateState {
 
 function Read-UpdateState {
     try {
-        $oldCommit = (Get-Content -LiteralPath $updateStatePath -Raw).Trim()
+        $rawState = (Get-Content -LiteralPath $updateStatePath -Raw).Trim()
     } catch {
         throw "Kunne ikke lese recovery-markoren ${updateStatePath}: $($_.Exception.Message)"
+    }
+    if ($rawState -match "\A[0-9a-fA-F]{40,64}\z") {
+        $oldCommit = $rawState
+        $profiles = @()
+        $legacy = $true
+    } else {
+        try {
+            $payload = $rawState | ConvertFrom-Json
+        } catch {
+            throw "Recovery-markoren har ugyldig format: $updateStatePath"
+        }
+        $propertyNames = @($payload.PSObject.Properties.Name)
+        if (
+            $payload.version -ne 1 -or
+            "old_commit" -notin $propertyNames -or
+            "profiles" -notin $propertyNames -or
+            $payload.old_commit -isnot [string]
+        ) {
+            throw "Recovery-markoren har ugyldig format: $updateStatePath"
+        }
+        $oldCommit = $payload.old_commit
+        $profiles = @(Assert-UpdateProfiles -Profiles @($payload.profiles))
+        $legacy = $false
     }
     if ($oldCommit -notmatch "\A[0-9a-fA-F]{40,64}\z") {
         throw "Recovery-markoren har en ugyldig commit-ID: $oldCommit"
@@ -154,7 +250,11 @@ function Read-UpdateState {
     } finally {
         Pop-Location
     }
-    return $oldCommit
+    return [PSCustomObject]@{
+        OldCommit = $oldCommit
+        Profiles = @($profiles)
+        Legacy = $legacy
+    }
 }
 
 function Remove-UpdateState {
@@ -164,7 +264,10 @@ function Remove-UpdateState {
 }
 
 function Restore-PreviousVersion {
-    param([string]$OldCommit)
+    param(
+        [string]$OldCommit,
+        [string[]]$Profiles = @()
+    )
 
     Assert-CleanRepo
     Push-Location $RepoDir
@@ -174,7 +277,7 @@ function Restore-PreviousVersion {
         Pop-Location
     }
     Ensure-PythonEnvironment
-    Install-And-Test -NoDependencies
+    Install-And-Test -Profiles $Profiles
     Remove-UpdateState
 }
 
@@ -192,9 +295,15 @@ $updateSmokeDirectory = Join-Path $RepoDir "bildebank-tools\update-smoke"
 
 if (Test-Path -LiteralPath $updateStatePath) {
     Write-Step "Gjenoppretter avbrutt oppdatering"
-    $oldCommit = Read-UpdateState
+    $state = Read-UpdateState
+    if ($state.Legacy) {
+        Ensure-PythonEnvironment
+        $state.Profiles = @(Get-InstalledProfiles)
+    }
     try {
-        Restore-PreviousVersion -OldCommit $oldCommit
+        Restore-PreviousVersion `
+            -OldCommit $state.OldCommit `
+            -Profiles $state.Profiles
     } catch {
         throw (
             "Fant en avbrutt oppdatering, men klarte ikke a gjenopprette " +
@@ -210,8 +319,9 @@ if (Test-Path -LiteralPath $updateStatePath) {
 
 Assert-CleanRepo
 Ensure-PythonEnvironment
+$installedProfiles = @(Get-InstalledProfiles)
 $oldCommit = Invoke-GitCapture -ArgumentList @("rev-parse", "--verify", "HEAD")
-Write-UpdateState -OldCommit $oldCommit
+Write-UpdateState -OldCommit $oldCommit -Profiles $installedProfiles
 
 try {
     Write-Step "Henter oppdateringer"
@@ -221,13 +331,15 @@ try {
     } finally {
         Pop-Location
     }
-    Install-And-Test
+    Install-And-Test -Profiles $installedProfiles
     Remove-UpdateState
 } catch {
     $updateError = $_.Exception.Message
     Write-Step "Ruller tilbake oppdateringen"
     try {
-        Restore-PreviousVersion -OldCommit $oldCommit
+        Restore-PreviousVersion `
+            -OldCommit $oldCommit `
+            -Profiles $installedProfiles
     } catch {
         throw (
             "Oppdateringen feilet, og automatisk rollback feilet ogsa. " +

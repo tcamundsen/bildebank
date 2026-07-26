@@ -159,9 +159,12 @@ være nødvendige for noen funksjoner.
 - `update` krever at Git-sporede filer er uendret, men bevarer og tillater
   usporede filer. Gammel commit lagres i
   `bildebank-tools\\update-pending.txt` før `git pull --ff-only`.
-- Etter oppdatering installeres Python-miljøet og en importtest kjøres. Ved
-  feil gjenopprettes gammel commit og den gamle Python-installasjonen
-  reinstalleres og testes. En gjenværende recovery-markør behandles før neste
+- Recovery-markøren lagrer også hvilke av profilene `face` og `openclip` som
+  var installert. Eldre markører med bare commit-ID støttes som basisprofil.
+- Etter oppdatering installeres basislåsen og komplette låser for de
+  registrerte profilene, før hver del importtestes. Ved feil gjenopprettes
+  gammel commit, og samme profiler reinstalleres fra låsene som fulgte med
+  den gamle kilden. En gjenværende recovery-markør behandles før neste
   oppdateringsforsøk.
 
 ### ExifTool
