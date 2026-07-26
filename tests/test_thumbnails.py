@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
+import bildebank.thumbnails as thumbnails
 from bildebank.collection_paths import CollectionDirectoryError
 from bildebank.db import init_database
 from bildebank.thumbnails import (
@@ -145,6 +148,37 @@ def test_legacy_thumbnail_cleanup_does_not_enter_linked_year(
     assert stats.deleted == 0
     assert linked_year.is_symlink()
     assert (outside / "01" / "image.jpg").read_bytes() == b"outside"
+
+
+def test_legacy_scan_uses_path_stat_for_windows_compatible_identity(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "samling"
+    old_thumbnail = target / "thumbs" / "2024" / "01" / "image.jpg"
+    write_file(old_thumbnail, b"old")
+    fake_entry = SimpleNamespace(
+        name="image.jpg",
+        stat=lambda **_kwargs: pytest.fail(
+            "Filidentiteten må ikke hentes fra DirEntry.stat"
+        ),
+    )
+    files: list[thumbnails.LegacyThumbnailFile] = []
+    unsafe_paths: list[Path] = []
+
+    with patch(
+        "bildebank.thumbnails._scandir_sorted",
+        return_value=[fake_entry],
+    ):
+        thumbnails._collect_legacy_thumbnail_files(
+            target,
+            Path("thumbs/2024/01"),
+            files,
+            unsafe_paths,
+        )
+
+    assert unsafe_paths == []
+    assert len(files) == 1
+    assert files[0].path_stat.st_ino == old_thumbnail.stat().st_ino
 
 
 def test_cleanup_thumbnails_cli_is_dry_run_until_apply(tmp_path: Path) -> None:

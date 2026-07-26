@@ -460,25 +460,19 @@ def _collect_legacy_thumbnail_files(
         relative_path = directory_relative / entry.name
         if not _is_legacy_thumbnail_filename(entry.name):
             continue
-        try:
-            entry_stat = entry.stat(follow_symlinks=False)
-        except FileNotFoundError:
-            continue
-        except OSError:
-            unsafe_paths.append(relative_path)
-            continue
+        inspection = inspect_collection_file(target, relative_path)
         if (
-            stat.S_ISLNK(entry_stat.st_mode)
-            or is_reparse_stat(entry_stat)
-            or not stat.S_ISREG(entry_stat.st_mode)
+            inspection.status != COLLECTION_FILE_OK
+            or inspection.path_stat is None
+            or inspection.size_bytes is None
         ):
             unsafe_paths.append(relative_path)
             continue
         files.append(
             LegacyThumbnailFile(
                 relative_path=relative_path,
-                size_bytes=entry_stat.st_size,
-                path_stat=entry_stat,
+                size_bytes=inspection.size_bytes,
+                path_stat=inspection.path_stat,
             )
         )
 
