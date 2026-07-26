@@ -18,10 +18,12 @@ Dette installerer avhengighetene i `pyproject.toml`.
 ### Python
 
 - Obligatorisk.
-- `pyproject.toml` krever Python `>=3.13`.
+- `pyproject.toml` krever Python `>=3.13,<3.14`.
 - `setup-windows.ps1` installerer/bruker Python 3.13 via `py -3.13`.
 - Windows-oppsettet er hovedmål for brukere. WSL/Linux brukes primært under
   utvikling og testing.
+- Se [dependency-locks.md](dependency-locks.md) når pakkeversjoner skal
+  oppdateres og låses på nytt.
 
 ### Pillow
 

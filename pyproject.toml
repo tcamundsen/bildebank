@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "bildebank"
 version = "0.9.0"
 description = "Konservativt bildesorteringsprogram for å samle bilder og videoer."
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "h3",
     "numpy",

@@ -144,6 +144,20 @@ avbrytes kontrollert etter at den gamle mappen er flyttet til backup, skal
 rollback bruke den faktiske tilstanden på disk og gjenopprette backupen når
 målmappen mangler.
 
+## Python-avhengigheter
+
+Offisielle Windows-installasjoner skal inntil videre bruke 64-bit CPython 3.13.
+Basisinstallasjonen, InsightFace og OpenCLIP skal ha hver sin komplette lås av
+det transitive avhengighetstreet for denne plattformen. Alle eksterne pakker
+skal være låst til eksakt versjon og det valgte binærhjulets SHA-256.
+
+Låsene skal genereres med pip på målplattformen, inspiseres og testes før de
+committes. Generatoren skal aldri installere pakker. Installasjon skal bruke
+pips hashkontroll og nekte kildepakker. Selve Bildebank-prosjektet skal
+installeres separat fra lokal kildekode uten ny avhengighetsløsing. En ny lås
+skal ikke tvinge frem reinstallasjon i et allerede fungerende miljø; den tas i
+bruk ved neste installasjon, oppdatering eller eksplisitte reinstallasjon.
+
 ## Programoppdatering
 
 Programoppdatering skal nekte å starte når Git-repoet har lokale endringer i
@@ -207,8 +221,9 @@ lagring uten å kreve en separat databaseserver.
 
 Utvikling kan gjøres i WSL Debian, men programmet skal kjøres nativt i
 Windows 11. Implementasjonen må derfor være plattformuavhengig og ikke bygge på
-Linux-spesifikke filsystemantakelser. Python-versjon som er tilgjengelig i
-WSL nå er 3.13.5. På Windows er 3.14.3 tilgjengelig.
+Linux-spesifikke filsystemantakelser. Offisielle Windows-installasjoner bruker
+inntil videre 64-bit CPython 3.13. Nyere Python-serier tas først i bruk etter
+egen avhengighets- og Windows-test.
 
 Programmet skal bruke Python-biblioteker som fungerer godt på Windows, for
 eksempel `pathlib` for filstier, `shutil` for filkopiering og `sqlite3` for
