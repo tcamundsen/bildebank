@@ -245,6 +245,7 @@ __all__ = (
     "connect",
     "connect_read_only",
     "prepare_database",
+    "prepare_database_read_only",
     "schema_version",
     "require_current_schema",
     "ensure_compatible_columns",
