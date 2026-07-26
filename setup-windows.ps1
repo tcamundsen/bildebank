@@ -84,9 +84,101 @@ function Invoke-Native {
     }
 }
 
+function Invoke-GitCapture {
+    param(
+        [string]$RepoDir,
+        [string[]]$ArgumentList
+    )
+
+    $output = & git -C $RepoDir @ArgumentList 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $command = "git -C $RepoDir $($ArgumentList -join ' ')"
+        $details = (($output | ForEach-Object { $_.ToString() }) -join "`n").Trim()
+        if ($details) {
+            throw "Kommando feilet med exit code ${LASTEXITCODE}: ${command}: $details"
+        }
+        throw "Kommando feilet med exit code ${LASTEXITCODE}: $command"
+    }
+    return (($output | ForEach-Object { $_.ToString() }) -join "`n").Trim()
+}
+
 function ConvertTo-AbsolutePath {
     param([string]$Path)
     return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+}
+
+function Assert-PlainDirectory {
+    param(
+        [string]$Path,
+        [string]$Description
+    )
+
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    if (-not $item.PSIsContainer) {
+        throw "$Description er ikke en mappe: $Path"
+    }
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "$Description kan ikke vaere en lenke eller et reparse point: $Path"
+    }
+}
+
+function Assert-PlainFile {
+    param(
+        [string]$Path,
+        [string]$Description
+    )
+
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    if ($item.PSIsContainer) {
+        throw "$Description er ikke en fil: $Path"
+    }
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "$Description kan ikke vaere en lenke eller et reparse point: $Path"
+    }
+}
+
+function Get-ValidatedRepoUrl {
+    param([string]$Url)
+
+    if ([string]::IsNullOrWhiteSpace($Url)) {
+        throw "RepoUrl kan ikke vaere tom."
+    }
+    $Url = $Url.Trim()
+    if ($Url.StartsWith("-") -or $Url -match "[`0`r`n]") {
+        throw "RepoUrl har ugyldig format: $Url"
+    }
+    return $Url
+}
+
+function Get-NormalizedRepoUrl {
+    param([string]$Url)
+
+    $normalized = $Url.Trim().TrimEnd([char[]]@("/", "\"))
+    if ($normalized.EndsWith(".git", [StringComparison]::OrdinalIgnoreCase)) {
+        $normalized = $normalized.Substring(0, $normalized.Length - 4)
+    }
+    return $normalized
+}
+
+function Assert-ExpectedOrigin {
+    param(
+        [string]$RepoDir,
+        [string]$ExpectedUrl
+    )
+
+    $actualUrl = Invoke-GitCapture -RepoDir $RepoDir -ArgumentList @(
+        "remote",
+        "get-url",
+        "origin"
+    )
+    $actual = Get-NormalizedRepoUrl -Url $actualUrl
+    $expected = Get-NormalizedRepoUrl -Url $ExpectedUrl
+    if (-not [string]::Equals($actual, $expected, [StringComparison]::OrdinalIgnoreCase)) {
+        throw (
+            "Installasjonsmappen bruker en annen Git-origin enn oppgitt RepoUrl. " +
+            "Forventet: $ExpectedUrl. Fant: $actualUrl"
+        )
+    }
 }
 
 function Remove-LegacyPythonMetadata {
@@ -99,16 +191,17 @@ function Assert-BildebankPythonPackage {
     param([string]$RepoDir)
 
     $initFile = Join-Path $RepoDir "bildebank\__init__.py"
-    if (-not (Test-Path -LiteralPath $initFile)) {
-        throw "Installasjonen mangler $initFile. Slett installasjonsmappen og kjør setup på nytt."
-    }
+    Assert-PlainFile -Path $initFile -Description "Bildebank-pakken"
 
     $venvPython = Join-Path $RepoDir ".venv\Scripts\python.exe"
-    Push-Location $RepoDir
+    $smokeDirectory = Join-Path $RepoDir "bildebank-tools\setup-smoke"
+    New-Item -ItemType Directory -Path $smokeDirectory -Force | Out-Null
+    Push-Location $smokeDirectory
     try {
         Invoke-Native -FilePath $venvPython -ArgumentList @(
             "-c",
-            "import sys, bildebank, bildebank.cli; from pathlib import Path; p = getattr(bildebank, '__file__', None); raise_error = p is None or Path(p).name != '__init__.py'; sys.exit('bildebank importeres ikke fra installasjonsmappen: %r' % (p,)) if raise_error else None"
+            "import sys, bildebank, bildebank.cli; from pathlib import Path; actual = Path(bildebank.__file__).resolve(strict=True); expected = Path(sys.argv[1]).resolve(strict=True); sys.exit('bildebank importeres fra feil sted: %s' % actual) if actual != expected else None",
+            $initFile
         )
     } finally {
         Pop-Location
@@ -164,7 +257,13 @@ function Test-Python313 {
         return $false
     }
     try {
-        & py -3.13 --version *> $null
+        & py -3.13 -c (
+            "import platform, struct, sys; " +
+            "ok = (sys.implementation.name == 'cpython' and " +
+            "sys.version_info[:2] == (3, 13) and struct.calcsize('P') == 8 and " +
+            "platform.machine().lower() in ('amd64', 'x86_64')); " +
+            "sys.exit(0 if ok else 1)"
+        ) *> $null
         return $LASTEXITCODE -eq 0
     } catch {
         return $false
@@ -178,7 +277,10 @@ function Ensure-Python {
     }
     Ensure-WingetPackage -PackageId "Python.Python.3.13" -Name "Python 3.13"
     if (-not (Test-Python313)) {
-        throw "Python 3.13 ble installert, men py -3.13 virker ikke ennå. Lukk PowerShell og kjør setup på nytt."
+        throw (
+            "64-bit CPython 3.13 for x64 ble installert, men virker ikke ennå. " +
+            "Lukk PowerShell og kjør setup på nytt."
+        )
     }
 }
 
@@ -209,50 +311,241 @@ function Get-ValidatedBranchName {
     if ($Name -notmatch '^[A-Za-z0-9._/-]+$') {
         throw "Branch kan bare inneholde bokstaver, tall, punktum, understrek, bindestrek og skråstrek: $Name"
     }
-    if ($Name.StartsWith("/") -or $Name.EndsWith("/") -or $Name.Contains("//")) {
+    if (
+        $Name.StartsWith("-") -or
+        $Name.StartsWith("/") -or
+        $Name.EndsWith("/") -or
+        $Name.EndsWith(".") -or
+        $Name.EndsWith(".lock", [StringComparison]::OrdinalIgnoreCase) -or
+        $Name.Contains("//") -or
+        $Name.Contains("..") -or
+        $Name -in @(".", "..")
+    ) {
         throw "Branch har ugyldig format: $Name"
     }
     return $Name
 }
 
-function Ensure-Repo {
+function Assert-GitBranchName {
+    param([string]$Name)
+
+    & git check-ref-format --branch $Name *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Branch er ikke et gyldig Git-branch-navn: $Name"
+    }
+}
+
+function Assert-CleanRepo {
+    param([string]$RepoDir)
+
+    $status = Invoke-GitCapture -RepoDir $RepoDir -ArgumentList @(
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=no"
+    )
+    if ($status) {
+        throw (
+            "Programrepoet har lokale endringer i Git-sporede filer. " +
+            "Commit eller tilbakestill dem for du kjører setup:`n$status"
+        )
+    }
+}
+
+function Get-UniqueSiblingPath {
     param(
-        [string]$RepoDir,
-        [string]$Branch
+        [string]$TargetPath,
+        [string]$Purpose
     )
 
-    if (Test-Path -LiteralPath (Join-Path $RepoDir ".git")) {
-        Write-Step "Oppdaterer eksisterende repo fra $Branch"
-        Push-Location $RepoDir
-        try {
-            Invoke-Native -FilePath "git" -ArgumentList @("fetch", "origin")
-            & git rev-parse --verify --quiet "refs/heads/$Branch" *> $null
-            if ($LASTEXITCODE -eq 0) {
-                Invoke-Native -FilePath "git" -ArgumentList @("switch", $Branch)
-            } else {
-                Invoke-Native -FilePath "git" -ArgumentList @("switch", "--track", "origin/$Branch")
-            }
-            Invoke-Native -FilePath "git" -ArgumentList @("pull", "--ff-only")
-        } finally {
-            Pop-Location
-        }
-        return
+    $parentDir = Split-Path -Parent $TargetPath
+    $leafName = Split-Path -Leaf $TargetPath
+    if ([string]::IsNullOrWhiteSpace($parentDir) -or [string]::IsNullOrWhiteSpace($leafName)) {
+        throw "InstallDir kan ikke vaere roten av en disk: $TargetPath"
+    }
+    do {
+        $candidate = Join-Path $parentDir (
+            ".$leafName.$Purpose-$([Guid]::NewGuid().ToString('N'))"
+        )
+    } while (Test-Path -LiteralPath $candidate)
+    return $candidate
+}
+
+function Assert-ValidBildebankCheckout {
+    param(
+        [string]$RepoDir,
+        [string]$Branch,
+        [string]$ExpectedUrl
+    )
+
+    Assert-PlainDirectory -Path $RepoDir -Description "Git-repoet"
+    Assert-PlainDirectory -Path (Join-Path $RepoDir ".git") -Description "Git-metadata"
+    Assert-ExpectedOrigin -RepoDir $RepoDir -ExpectedUrl $ExpectedUrl
+    Assert-CleanRepo -RepoDir $RepoDir
+
+    $currentBranch = Invoke-GitCapture -RepoDir $RepoDir -ArgumentList @(
+        "branch",
+        "--show-current"
+    )
+    if (
+        [string]::IsNullOrWhiteSpace($currentBranch) -or
+        -not [string]::Equals(
+            $currentBranch,
+            $Branch,
+            [StringComparison]::Ordinal
+        )
+    ) {
+        throw (
+            "Git-repoet er ikke på forventet branch '$Branch'. " +
+            "Fant: '$currentBranch'. Bruk en egen InstallDir for en annen branch."
+        )
     }
 
+    $requiredFiles = @(
+        "pyproject.toml",
+        "requirements\windows-py313-base.lock",
+        "bildebank\__init__.py",
+        "bin\bildebank.cmd",
+        "update.ps1"
+    )
+    foreach ($relativePath in $requiredFiles) {
+        Assert-PlainFile `
+            -Path (Join-Path $RepoDir $relativePath) `
+            -Description "Programfil"
+    }
+}
+
+function Update-ExistingRepo {
+    param(
+        [string]$RepoDir,
+        [string]$Branch,
+        [string]$ExpectedUrl
+    )
+
+    Assert-ValidBildebankCheckout `
+        -RepoDir $RepoDir `
+        -Branch $Branch `
+        -ExpectedUrl $ExpectedUrl
+    $upstream = Invoke-GitCapture -RepoDir $RepoDir -ArgumentList @(
+        "rev-parse",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        "@{upstream}"
+    )
+    $expectedUpstream = "origin/$Branch"
+    if (-not [string]::Equals(
+        $upstream,
+        $expectedUpstream,
+        [StringComparison]::Ordinal
+    )) {
+        throw (
+            "Branch '$Branch' følger ikke '$expectedUpstream'. Fant: '$upstream'."
+        )
+    }
+
+    $updateScript = Join-Path $RepoDir "update.ps1"
+    Write-Step "Oppdaterer eksisterende installasjon fra $Branch"
+    & $updateScript -RepoDir $RepoDir
+    if (-not $?) {
+        throw "update.ps1 klarte ikke å oppdatere installasjonen."
+    }
+    Assert-ValidBildebankCheckout `
+        -RepoDir $RepoDir `
+        -Branch $Branch `
+        -ExpectedUrl $ExpectedUrl
+}
+
+function Clone-NewRepoToStaging {
+    param(
+        [string]$StagingDir,
+        [string]$Branch,
+        [string]$ExpectedUrl
+    )
+
+    Write-Step "Laster ned bildebank fra GitHub ($Branch)"
+    Invoke-Native -FilePath "git" -ArgumentList @(
+        "clone",
+        "--branch",
+        $Branch,
+        "--single-branch",
+        "--",
+        $ExpectedUrl,
+        $StagingDir
+    )
+    Assert-ValidBildebankCheckout `
+        -RepoDir $StagingDir `
+        -Branch $Branch `
+        -ExpectedUrl $ExpectedUrl
+}
+
+function Publish-NewRepo {
+    param(
+        [string]$StagingDir,
+        [string]$RepoDir
+    )
+
+    $backupDir = $null
     if (Test-Path -LiteralPath $RepoDir) {
-        $children = Get-ChildItem -LiteralPath $RepoDir -Force
+        Assert-PlainDirectory -Path $RepoDir -Description "Installasjonsmappen"
+        $children = @(Get-ChildItem -LiteralPath $RepoDir -Force)
         if ($children.Count -gt 0) {
             throw "Installasjonsmappen finnes, men er ikke et tomt git-repo: $RepoDir"
         }
-    } else {
-        $parentDir = Split-Path -Parent $RepoDir
-        if (-not [string]::IsNullOrWhiteSpace($parentDir)) {
-            New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
-        }
+        $backupDir = Get-UniqueSiblingPath -TargetPath $RepoDir -Purpose "setup-empty"
+        Move-Item -LiteralPath $RepoDir -Destination $backupDir
     }
 
-    Write-Step "Laster ned bildebank fra GitHub ($Branch)"
-    Invoke-Native -FilePath "git" -ArgumentList @("clone", "--branch", $Branch, $RepoUrl, $RepoDir)
+    try {
+        Move-Item -LiteralPath $StagingDir -Destination $RepoDir
+    } catch {
+        if (
+            -not (Test-Path -LiteralPath $RepoDir) -and
+            $backupDir -and
+            (Test-Path -LiteralPath $backupDir)
+        ) {
+            Move-Item -LiteralPath $backupDir -Destination $RepoDir
+        }
+        throw
+    }
+    return $backupDir
+}
+
+function Restore-NewRepoAfterFailure {
+    param(
+        [string]$RepoDir,
+        [AllowNull()]
+        [string]$BackupDir
+    )
+
+    $failedDir = $null
+    if (Test-Path -LiteralPath $RepoDir) {
+        $failedDir = Get-UniqueSiblingPath -TargetPath $RepoDir -Purpose "setup-failed"
+        Move-Item -LiteralPath $RepoDir -Destination $failedDir
+    }
+    if (
+        $BackupDir -and
+        (Test-Path -LiteralPath $BackupDir) -and
+        -not (Test-Path -LiteralPath $RepoDir)
+    ) {
+        Move-Item -LiteralPath $BackupDir -Destination $RepoDir
+    }
+    if ($failedDir) {
+        Write-Host "Den ufullstendige installasjonen er bevart her: $failedDir"
+    }
+}
+
+function Complete-NewRepoPublication {
+    param(
+        [AllowNull()]
+        [string]$BackupDir
+    )
+
+    if ($BackupDir -and (Test-Path -LiteralPath $BackupDir)) {
+        Assert-PlainDirectory -Path $BackupDir -Description "Backup av tom installasjonsmappe"
+        if (@(Get-ChildItem -LiteralPath $BackupDir -Force).Count -ne 0) {
+            throw "Backupen av den opprinnelige installasjonsmappen er ikke tom: $BackupDir"
+        }
+        Remove-Item -LiteralPath $BackupDir -Force
+    }
 }
 
 function Ensure-Venv {
@@ -342,17 +635,26 @@ function Ensure-CommandShim {
     )
 
     $defaultShim = Join-Path $BinDir "bildebank.cmd"
-    if (-not (Test-Path -LiteralPath $defaultShim)) {
-        throw "Fant ikke kommando-wrapper: $defaultShim"
-    }
+    Assert-PlainFile -Path $defaultShim -Description "Kommando-wrapper"
 
     $commandShim = Join-Path $BinDir "$CommandName.cmd"
     if ([string]::Equals($CommandName, "bildebank", [StringComparison]::OrdinalIgnoreCase)) {
         return
     }
+    if (Test-Path -LiteralPath $commandShim) {
+        Assert-PlainFile -Path $commandShim -Description "Eksisterende kommando-wrapper"
+    }
 
     Write-Step "Lager kommandoen $CommandName"
-    Copy-Item -LiteralPath $defaultShim -Destination $commandShim -Force
+    $tempShim = Join-Path $BinDir (
+        ".$CommandName.cmd.setup-$([Guid]::NewGuid().ToString('N'))"
+    )
+    try {
+        Copy-Item -LiteralPath $defaultShim -Destination $tempShim
+        Move-Item -LiteralPath $tempShim -Destination $commandShim -Force
+    } finally {
+        Remove-Item -LiteralPath $tempShim -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Add-ToUserPath {
@@ -408,22 +710,87 @@ function Warn-CommandCollision {
 
 $CommandName = Get-ValidatedCommandName -Name $CommandName
 $Branch = Get-ValidatedBranchName -Name $Branch
+$RepoUrl = Get-ValidatedRepoUrl -Url $RepoUrl
 $InstallDir = ConvertTo-AbsolutePath -Path $InstallDir
 
 Write-Step "Sjekker Git og Python"
 Ensure-Git
 Ensure-Python
+Assert-GitBranchName -Name $Branch
 
 $repoDir = $InstallDir
-Ensure-Repo -RepoDir $repoDir -Branch $Branch
-Ensure-Venv -RepoDir $repoDir
-Ensure-ExifTool -RepoDir $repoDir
-Ensure-FFmpeg -RepoDir $repoDir
+$gitDir = Join-Path $repoDir ".git"
+$newInstall = -not (Test-Path -LiteralPath $gitDir)
+$newInstallBackup = $null
 
-$binDir = Join-Path $repoDir "bin"
-Ensure-CommandShim -BinDir $binDir -CommandName $CommandName
-Add-ToUserPath -Directory $binDir
-Warn-CommandCollision -ExpectedBinDir $binDir -CommandName $CommandName
+if ($newInstall) {
+    if (Test-Path -LiteralPath $repoDir) {
+        Assert-PlainDirectory -Path $repoDir -Description "Installasjonsmappen"
+        if (@(Get-ChildItem -LiteralPath $repoDir -Force).Count -gt 0) {
+            throw "Installasjonsmappen finnes, men er ikke et tomt git-repo: $repoDir"
+        }
+    } else {
+        $parentDir = Split-Path -Parent $repoDir
+        if ([string]::IsNullOrWhiteSpace($parentDir)) {
+            throw "InstallDir kan ikke vaere roten av en disk: $repoDir"
+        }
+        New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+    }
+
+    $stagingDir = Get-UniqueSiblingPath -TargetPath $repoDir -Purpose "setup-staging"
+    try {
+        Clone-NewRepoToStaging `
+            -StagingDir $stagingDir `
+            -Branch $Branch `
+            -ExpectedUrl $RepoUrl
+        $newInstallBackup = Publish-NewRepo `
+            -StagingDir $stagingDir `
+            -RepoDir $repoDir
+    } catch {
+        if (Test-Path -LiteralPath $stagingDir) {
+            Write-Host "Ufullstendig staging er bevart her: $stagingDir"
+        }
+        throw
+    }
+} else {
+    Update-ExistingRepo `
+        -RepoDir $repoDir `
+        -Branch $Branch `
+        -ExpectedUrl $RepoUrl
+}
+
+try {
+    if ($newInstall) {
+        Ensure-Venv -RepoDir $repoDir
+    }
+    Ensure-ExifTool -RepoDir $repoDir
+    Ensure-FFmpeg -RepoDir $repoDir
+
+    $binDir = Join-Path $repoDir "bin"
+    Ensure-CommandShim -BinDir $binDir -CommandName $CommandName
+    Add-ToUserPath -Directory $binDir
+    Warn-CommandCollision -ExpectedBinDir $binDir -CommandName $CommandName
+
+    if ($newInstall) {
+        Complete-NewRepoPublication -BackupDir $newInstallBackup
+    }
+} catch {
+    $setupError = $_.Exception.Message
+    if ($newInstall) {
+        try {
+            Restore-NewRepoAfterFailure `
+                -RepoDir $repoDir `
+                -BackupDir $newInstallBackup
+        } catch {
+            throw (
+                "Installasjonen feilet, og den opprinnelige installasjonsmappen " +
+                "kunne ikke gjenopprettes. Installasjonsfeil: $setupError. " +
+                "Rollback-feil: $($_.Exception.Message)"
+            )
+        }
+    }
+    throw "Installasjonen feilet: $setupError"
+}
 
 Write-Step "Ferdig"
 Write-Host "Programmet ligger i: $repoDir"

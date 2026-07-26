@@ -18,11 +18,24 @@ separat:
 
 Dette installerer avhengighetene i `pyproject.toml`.
 
+Ved en ny installasjon klones repoet til en unik stagingmappe ved siden av
+målet. Setup validerer origin, branch, Git-status og nødvendige programfiler
+før checkouten flyttes til installasjonsmappen. `.venv` bygges og importtestes
+på den endelige stien. Ved feil flyttes den ufullstendige installasjonen til
+en unik `setup-failed`-mappe, og en eventuell opprinnelig tom målmappe
+gjenopprettes. Staging som ikke ble ferdig validert, beholdes med en eksakt
+sti i feilmeldingen i stedet for å slettes rekursivt.
+
+Et eksisterende repo må ha forventet origin, aktiv branch og upstream og være
+uten endringer i Git-sporede filer. Setup bytter ikke branch, men kjører
+repoets vanlige `update.ps1`, slik at samme recovery og rollback brukes.
+
 ### Python
 
 - Obligatorisk.
 - `pyproject.toml` krever Python `>=3.13,<3.14`.
-- `setup-windows.ps1` installerer/bruker Python 3.13 via `py -3.13`.
+- `setup-windows.ps1` installerer/bruker 64-bit CPython 3.13 for Windows x64
+  via `py -3.13`, som samsvarer med hjulene i låsfilene.
 - Windows-oppsettet er hovedmål for brukere. WSL/Linux brukes primært under
   utvikling og testing.
 - Se [dependency-locks.md](dependency-locks.md) når pakkeversjoner skal

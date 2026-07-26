@@ -216,6 +216,20 @@ målmappen mangler.
 ## Python-avhengigheter
 
 Offisielle Windows-installasjoner skal inntil videre bruke 64-bit CPython 3.13.
+Førstegangsoppsettet skal kontrollere at tolken er CPython 3.13 for Windows
+x64. En ny Git-checkout skal klones til en unik stagingmappe ved siden av
+installasjonsmappen. Origin, branch, påkrevde programfiler og fravær av
+Git-endringer skal kontrolleres før checkouten publiseres. Python-miljøet
+opprettes først på den endelige stien, fordi et venv ikke kan flyttes trygt.
+Hvis installasjonen deretter feiler, skal den ufullstendige installasjonen
+flyttes til en unik feilmappe, og en eventuell opprinnelig tom målmappe
+gjenopprettes.
+
+Kjøres oppsettet mot en eksisterende installasjon, skal origin, aktiv branch,
+upstream og Git-status kontrolleres før kode fra repoet kjøres. Oppsettet skal
+ikke bytte branch i en eksisterende installasjon, men bruke den vanlige
+oppdateringsflyten med recovery og rollback.
+
 Basisinstallasjonen, InsightFace og OpenCLIP skal ha hver sin komplette lås av
 det transitive avhengighetstreet for denne plattformen. Alle eksterne pakker
 skal være låst til eksakt versjon og det valgte binærhjulets SHA-256.

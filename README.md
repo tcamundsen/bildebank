@@ -77,7 +77,7 @@ kan finne ut hvorfor ikke automatikken fungerer.
 Du trenger:
 
 1. Git for Windows
-2. Python 3.13 eller nyere
+2. 64-bit Python 3.13 for x64
 3. En lokal kopi av programmet fra GitHub
 4. En Python-venv i programmappen
 
@@ -99,7 +99,7 @@ Hvis du får et versjonsnummer, er Git installert.
 ## Installer Python
 
 1. Gå til <https://www.python.org/downloads/windows/>
-2. Last ned Python 3.13 eller nyere.
+2. Last ned 64-bit-utgaven av Python 3.13 for x64.
 3. Start installasjonsprogrammet.
 4. Huk av for `Add python.exe to PATH` hvis valget vises.
 5. Velg vanlig installasjon.
@@ -110,7 +110,7 @@ Sjekk etterpå i PowerShell:
 py -3.13 --version
 ```
 
-Hvis du får et versjonsnummer på 3.13 eller nyere, er Python klar.
+Hvis du får et versjonsnummer som begynner med 3.13, er Python klar.
 
 ## Last ned programmet fra GitHub
 
@@ -135,14 +135,8 @@ Kjør disse kommandoene fra programmappen `bildebank`:
 
 ```powershell
 py -3.13 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .
-```
-
-Hvis du har installert Python 3.14, kan du også bruke:
-
-```powershell
-py -3.14 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m pip install --require-hashes --only-binary=:all: -r .\requirements\windows-py313-base.lock
+.\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
 ```
 
 Sjekk at programmet starter:
