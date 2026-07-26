@@ -9,9 +9,11 @@ from .config import (
     set_face_recognition_enabled,
     set_image_search_enabled,
 )
+from .formatting import format_bytes
 from .launcher_commands import (
     cleanup_pending_deletes_apply_command,
     cleanup_pending_deletes_list_command,
+    cleanup_thumbnails_apply_command,
     deep_doctor_command,
     doctor_command,
     export_person_command,
@@ -37,6 +39,7 @@ from .launcher_status import (
 )
 from .launcher_widgets import Tooltip, select_person_dialog
 from .pending_deletes import list_pending_deletes
+from .thumbnails import plan_legacy_thumbnail_cleanup
 from .video_previews import active_video_preview_candidates, existing_video_preview_path
 
 FACE_SCAN_TOOLTIP = (
@@ -574,8 +577,60 @@ class ToolsTab:
             running_message="Lager thumbnails ...",
             success_message="Thumbnails fullført.",
             failure_message="Thumbnail-jobb feilet.",
-            on_success=self._refresh_launcher,
+            on_success=self._thumbnail_generation_finished,
             cancellable=True,
+        )
+
+    def _thumbnail_generation_finished(self) -> None:
+        self._refresh_launcher()
+        try:
+            plan = plan_legacy_thumbnail_cleanup(self.collection_path)
+        except Exception as exc:  # noqa: BLE001 - GUI should remain usable
+            self._show_error(
+                "Kunne ikke kontrollere om det finnes gamle miniatyrbilder.",
+                exc,
+            )
+            return
+        if plan.file_count == 0:
+            return
+        if plan.file_count == 1:
+            found_text = "ett gammelt miniatyrbilde"
+            unused_text = (
+                "Denne filen ble laget med en tidligere lagringsmåte. "
+                "Bildebank bruker den ikke lenger, og den kommer ikke til å bli "
+                "brukt igjen. Det er trygt å slette den."
+            )
+        else:
+            found_text = f"{plan.file_count} gamle miniatyrbilder"
+            unused_text = (
+                "Disse filene ble laget med en tidligere lagringsmåte. "
+                "Bildebank bruker dem ikke lenger, og de kommer ikke til å bli "
+                "brukt igjen. Det er trygt å slette dem."
+            )
+        self._show_log_review_question(
+            "Slett gamle miniatyrbilder?",
+            (
+                f"Bildebank fant {found_text} "
+                f"({format_bytes(plan.total_bytes)}).\n\n"
+                f"{unused_text}\n\n"
+                r"De nye miniatyrbildene i thumbs\v2 og originalbildene dine "
+                "blir ikke berørt.\n\n"
+                "Vil du slette de gamle miniatyrbildene nå?"
+            ),
+            yes_text="Slett gamle miniatyrbilder",
+            no_text="Behold dem",
+            on_yes=self._run_cleanup_thumbnails,
+            on_no=lambda: self._log("Gamle miniatyrbilder ble beholdt."),
+        )
+
+    def _run_cleanup_thumbnails(self) -> None:
+        self._log("Sletter gamle miniatyrbilder ...")
+        self._run_waiting_command(
+            cleanup_thumbnails_apply_command(self.collection_path),
+            running_message="Sletter gamle miniatyrbilder ...",
+            success_message="Gamle miniatyrbilder er slettet.",
+            failure_message="Opprydding av gamle miniatyrbilder feilet.",
+            on_success=self._refresh_launcher,
         )
 
     def _run_make_video_previews(self) -> None:

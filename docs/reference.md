@@ -42,6 +42,7 @@ er merket har jeg ikke sett over ennå.
 - [`remove`](remove.md) **`web`**
 - [`undelete`](undelete.md) **`web`**
 - [`unimport`](unimport.md) **`vindu`**
+- [`cleanup-thumbnails`](cleanup-thumbnails.md) **`vindu`**
 - [`cleanup-pending-deletes`](cleanup-pending-deletes.md) **`vindu`**
 - [`list-removed`](list-removed.md) **`web`**
 

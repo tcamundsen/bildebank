@@ -51,6 +51,24 @@ bilder og hopper over thumbnails som fortsatt er oppdatert.
 
 Kommandoen tåler fint å avbrytes med Ctrl-C.
 
+## Gamle miniatyrbilder
+
+Eldre versjoner av Bildebank lagret miniatyrbilder direkte under mapper som
+`thumbs\2012\10` og `thumbs\udatert`. Bildebank bruker ikke disse filene etter
+overgangen til `thumbs\v2`, og kommer ikke til å bruke dem igjen.
+
+Når du lager miniatyrbilder fra Bildebank-vinduet og jobben fullføres uten feil,
+kontrollerer Bildebank om slike gamle filer finnes. Hvis de finnes, får du se
+antall filer og hvor mye plass de bruker. Du kan deretter velge om de skal
+slettes. Meldingen vises før noe slettes.
+
+Det er trygt å slette disse gamle miniatyrbildene. Originalbildene og de nye
+miniatyrbildene under `thumbs\v2` blir ikke berørt. Uventede filer og mapper blir
+heller ikke slettet.
+
+Du kan også kontrollere eller rydde dem fra PowerShell med
+[`cleanup-thumbnails`](cleanup-thumbnails.md).
+
 
 ## Valg
 

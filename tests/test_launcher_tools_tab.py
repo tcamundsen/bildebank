@@ -306,6 +306,77 @@ def test_image_scan_preflight_can_be_cancelled(tmp_path: Path) -> None:
     assert actions == ["Bildesøk-scan avbrutt."]
 
 
+def test_thumbnail_generation_offers_safe_cleanup_of_legacy_files(
+    tmp_path: Path,
+) -> None:
+    tab = bare_tools_tab(tmp_path, ready_setup())
+    old_thumbnail = (
+        tab.collection_path / "thumbs" / "2024" / "01" / "gammel.jpg"
+    )
+    old_thumbnail.parent.mkdir(parents=True)
+    old_thumbnail.write_bytes(b"old thumbnail")
+    (
+        tab.collection_path / "thumbs" / "2024" / "01" / "gammel-2.jpg"
+    ).write_bytes(b"another old thumbnail")
+    calls: list[tuple[list[str], dict[str, object]]] = []
+    questions: list[tuple[str, str, dict[str, object]]] = []
+    tab._run_waiting_command = (
+        lambda command, **options: calls.append((command, options))
+    )
+    tab._show_log_review_question = (
+        lambda title, message, **options: questions.append(
+            (title, message, options)
+        )
+    )
+
+    tab._run_make_thumbnails()
+
+    assert calls[0][0][-1] == "make-thumbnails"
+    on_generation_success = calls[0][1]["on_success"]
+    assert callable(on_generation_success)
+    on_generation_success()
+
+    title, message, options = questions[0]
+    assert title == "Slett gamle miniatyrbilder?"
+    assert "2 gamle miniatyrbilder" in message
+    assert "bruker dem ikke lenger" in message
+    assert "kommer ikke til å bli brukt igjen" in message
+    assert "trygt å slette dem" in message
+    assert r"thumbs\v2" in message
+    assert "originalbildene dine blir ikke berørt" in message
+    assert options["yes_text"] == "Slett gamle miniatyrbilder"
+    assert options["no_text"] == "Behold dem"
+
+    on_yes = options["on_yes"]
+    assert callable(on_yes)
+    on_yes()
+
+    assert calls[1][0][-4:] == [
+        "--target",
+        str(tab.collection_path),
+        "cleanup-thumbnails",
+        "--apply",
+    ]
+
+
+def test_thumbnail_generation_does_not_prompt_without_legacy_files(
+    tmp_path: Path,
+) -> None:
+    tab = bare_tools_tab(tmp_path, ready_setup())
+    (tab.collection_path / "thumbs" / "v2").mkdir(parents=True)
+    questions: list[object] = []
+    refreshed: list[bool] = []
+    tab._refresh_launcher = lambda: refreshed.append(True)
+    tab._show_log_review_question = lambda *_args, **_kwargs: questions.append(
+        True
+    )
+
+    tab._thumbnail_generation_finished()
+
+    assert refreshed == [True]
+    assert questions == []
+
+
 def test_export_person_runs_dry_run_before_confirmed_export(tmp_path: Path) -> None:
     tab = bare_tools_tab(tmp_path, ready_setup())
     person = RegisteredPerson("Kari", 3, 4, 1, "2026-07-13")

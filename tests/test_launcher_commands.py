@@ -7,6 +7,7 @@ from bildebank.launcher_commands import (
     check_source_command,
     cleanup_pending_deletes_apply_command,
     cleanup_pending_deletes_list_command,
+    cleanup_thumbnails_apply_command,
     create_command,
     deep_doctor_command,
     doctor_command,
@@ -113,6 +114,12 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "--target",
         str(collection),
         "make-thumbnails",
+    ]
+    assert cleanup_thumbnails_apply_command(collection)[-4:] == [
+        "--target",
+        str(collection),
+        "cleanup-thumbnails",
+        "--apply",
     ]
     assert make_video_previews_command(collection)[-3:] == [
         "--target",

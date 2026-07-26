@@ -81,6 +81,15 @@ def make_thumbnails_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "make-thumbnails")
 
 
+def cleanup_thumbnails_apply_command(collection_path: Path) -> list[str]:
+    return bildebank_command(
+        "--target",
+        collection_path,
+        "cleanup-thumbnails",
+        "--apply",
+    )
+
+
 def make_video_previews_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "make-video-previews")
 

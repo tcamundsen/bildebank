@@ -87,7 +87,13 @@ from .snapshot_restore import (
     restore_single_file,
 )
 from .target_lock import TargetLock
-from .thumbnails import ThumbnailStats, run_make_thumbnails
+from .thumbnails import (
+    LegacyThumbnailCleanupStats,
+    ThumbnailStats,
+    cleanup_legacy_thumbnails,
+    plan_legacy_thumbnail_cleanup,
+    run_make_thumbnails,
+)
 from .unimport import TargetContentChange, run_unimport as execute_unimport
 from .video_previews import VideoPreviewStats, run_make_video_previews
 
@@ -584,6 +590,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     make_thumbnails.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal sjekkes")
     make_thumbnails.add_argument("--verbose", action="store_true", help="Vis filer som feiler")
+
+    cleanup_thumbnails = add_command(
+        subparsers,
+        "cleanup-thumbnails",
+        usage="bildebank cleanup-thumbnails [valg]",
+        help="Vis eller slett gamle thumbnails som ikke lenger brukes",
+        description=(
+            "Vis eller slett gamle thumbnails fra lagringsmåten som ble brukt "
+            "før thumbs\\v2."
+        ),
+    )
+    cleanup_thumbnails.add_argument(
+        "--apply",
+        action="store_true",
+        help="Slett gamle thumbnails. Uten dette valget slettes ingenting.",
+    )
 
     make_video_previews = add_command(
         subparsers,
@@ -1218,6 +1240,7 @@ TARGET_COMMANDS = {
     "run-server",
     "check-source",
     "cleanup-pending-deletes",
+    "cleanup-thumbnails",
     "repair-missing-file",
 }
 
@@ -1398,6 +1421,8 @@ def should_recover_pending_file_moves(args: argparse.Namespace) -> bool:
         return False
     if getattr(args, "dry_run", False):
         return False
+    if args.command == "cleanup-thumbnails" and not args.apply:
+        return False
     if args.command == "snapshot":
         return False
     return True
@@ -1457,6 +1482,9 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
             apply=args.apply,
             limit=args.limit,
         )
+
+    if args.command == "cleanup-thumbnails":
+        return run_cleanup_thumbnails_command(target, apply=args.apply)
 
     if args.command == "repair-missing-file":
         return run_repair_missing_file(
@@ -1891,6 +1919,48 @@ def run_make_thumbnails_command(args: argparse.Namespace, target: Path) -> int:
         )
     print_thumbnail_summary(thumbnail_stats)
     return 0 if thumbnail_stats.errors == 0 else 2
+
+
+def run_cleanup_thumbnails_command(target: Path, *, apply: bool) -> int:
+    if not apply:
+        plan = plan_legacy_thumbnail_cleanup(target)
+        print(
+            "Gamle thumbnails: "
+            f"filer={plan.file_count}, størrelse={format_bytes(plan.total_bytes)}"
+        )
+        if plan.unsafe_paths:
+            print(
+                "Ignorert fordi stien ikke er en vanlig fil eller mappe uten lenker: "
+                f"{len(plan.unsafe_paths)}"
+            )
+        if plan.file_count:
+            print("Ingen filer ble slettet. Kjør med --apply for å slette dem.")
+        else:
+            print("Fant ingen gamle thumbnails som kan slettes.")
+        return 0
+
+    stats = cleanup_legacy_thumbnails(target)
+    print_legacy_thumbnail_cleanup_summary(stats)
+    return 0 if stats.errors == 0 and stats.skipped == 0 else 2
+
+
+def print_legacy_thumbnail_cleanup_summary(
+    stats: LegacyThumbnailCleanupStats,
+) -> None:
+    print(
+        "Gamle thumbnails: "
+        f"funnet={stats.found}, "
+        f"størrelse={format_bytes(stats.found_bytes)}, "
+        f"slettet={stats.deleted}, "
+        f"frigjort={format_bytes(stats.deleted_bytes)}, "
+        f"hoppet_over={stats.skipped}, "
+        f"feil={stats.errors}"
+    )
+    if stats.unsafe_paths:
+        print(
+            "Ignorert fordi stien ikke er en vanlig fil eller mappe uten lenker: "
+            f"{len(stats.unsafe_paths)}"
+        )
 
 
 def print_thumbnail_summary(stats: ThumbnailStats) -> None:

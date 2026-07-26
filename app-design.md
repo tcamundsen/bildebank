@@ -94,6 +94,15 @@ vanlige filer uten lenker og består en lett formatkontroll. Pillow-dekoding ska
 ha en eksplisitt pikselgrense. FFprobe, FFmpeg og ExifTool skal ha endelige
 tidsgrenser og rydde upubliserte delresultater ved feil eller avbrudd.
 
+Gamle thumbnails fra lagringsmåten før `thumbs/v2` er regenererbart mellomlager
+som ikke lenger brukes. Etter en vellykket full thumbnail-generering i
+Bildebank-vinduet skal brukeren få se antall filer og samlet størrelse, og få et
+tydelig tilbud om å slette dem. Meldingen skal forklare at filene ikke brukes
+igjen, at sletting er trygg, og at originaler og `thumbs/v2` ikke berøres.
+Sletting krever eksplisitt bekreftelse. Oppryddingen skal bare gjenkjenne den
+gamle, programstyrte strukturen `thumbs/<år>/<måned>` og `thumbs/udatert`, aldri
+følge lenker eller Windows reparse points, og la ukjente filer ligge.
+
 unimport må være konservativ, verifiser filene i kilden før endring, aldri føre til
 tap, og fjerne bare proveniens når andre kilder fortsatt peker på samme fil.
 Alle registrerte originalfiler skal kontrolleres på nytt etter at brukeren har
