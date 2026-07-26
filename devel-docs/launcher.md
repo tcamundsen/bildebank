@@ -40,6 +40,10 @@ miljømarkør hindrer restartsløyfe. Dette gjør at launcherens oppdateringskna
 kan erstatte `bildebank.exe`; Windows tillater ikke at `pip` erstatter en
 kjørende `.exe`-fil.
 
+Statuskontrollen for InsightFace kjøres i en kortlivet Python-underprosess.
+InsightFace importerer OpenCV, og en import direkte i launcherprosessen ville
+holde `cv2.pyd` låst og blokkere reinstallasjon fra Oppsett-fanen på Windows.
+
 Snapshotfanen bruker den eksisterende snapshotkjernen direkte. Liste- og
 browseoperasjoner leser validerte, publiserte manifester under repositorylås.
 Enkeltfiler planlegges og eksporteres med de samme funksjonene som

@@ -3,12 +3,19 @@ from __future__ import annotations
 import importlib.util
 import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from . import db
 from .config import load_config, load_launcher_collection_path, set_launcher_collection_path
 from .ffmpeg_tools import resolve_ffmpeg_tools
+from .insightface_models import insightface_model_files_exist
+
+
+INSIGHTFACE_RUNTIME_PROBE = (
+    "from insightface.app import FaceAnalysis; import onnxruntime"
+)
 
 
 @dataclass(frozen=True)
@@ -215,32 +222,59 @@ def _openclip_model_files_exist(model_root: Path) -> bool:
 
 
 def insightface_dependency_status() -> InsightFaceDependencyStatus:
-    from .face import insightface_runtime_error
+    missing = [
+        module_name
+        for module_name in ("insightface", "onnxruntime")
+        if importlib.util.find_spec(module_name) is None
+    ]
+    if missing:
+        return InsightFaceDependencyStatus(
+            "Mangler",
+            "Mangler: " + ", ".join(missing),
+        )
 
-    insightface_error = insightface_runtime_error()
-    onnxruntime_available = importlib.util.find_spec("onnxruntime") is not None
+    probe_environment = os.environ.copy()
+    probe_environment["PYTHONIOENCODING"] = "utf-8"
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", INSIGHTFACE_RUNTIME_PROBE],
+            cwd=program_repo_root(),
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=probe_environment,
+        )
+    except OSError as exc:
+        return InsightFaceDependencyStatus(
+            "Feil",
+            f"Kunne ikke starte InsightFace-kontrollen: {exc}",
+        )
+    if result.returncode != 0:
+        return InsightFaceDependencyStatus(
+            "Feil",
+            _insightface_probe_error(result.stdout, result.stderr, result.returncode),
+        )
+    return InsightFaceDependencyStatus("Klar")
 
-    if insightface_error is None and onnxruntime_available:
-        return InsightFaceDependencyStatus("Klar")
 
-    if insightface_error is not None and not _insightface_error_means_missing(insightface_error):
-        return InsightFaceDependencyStatus("Feil", insightface_error)
-
-    missing = []
-    if insightface_error is not None:
-        missing.append("insightface")
-    if not onnxruntime_available:
-        missing.append("onnxruntime")
-    return InsightFaceDependencyStatus("Mangler", "Mangler: " + ", ".join(missing))
-
-
-def _insightface_error_means_missing(message: str) -> bool:
-    return "InsightFace er ikke installert" in message or "No module named 'insightface" in message
+def _insightface_probe_error(
+    stdout: str,
+    stderr: str,
+    returncode: int,
+) -> str:
+    output = "\n".join(part.strip() for part in (stderr, stdout) if part.strip())
+    if "libGL.so.1" in output:
+        return (
+            "InsightFace er installert, men OpenCV mangler Linux-biblioteket "
+            "libGL.so.1. Installer det i WSL/Linux med `sudo apt install libgl1`."
+        )
+    last_line = output.splitlines()[-1] if output else f"avsluttet med kode {returncode}"
+    return f"InsightFace er installert, men kan ikke lastes: {last_line}"
 
 
 def insightface_model_status(repo_root: Path | None = None) -> InsightFaceModelStatus:
-    from .face import insightface_model_files_exist
-
     config = load_config(repo_root or program_repo_root()).face_recognition
     if insightface_model_files_exist(config):
         return InsightFaceModelStatus(config.model_name, "Lastet ned", str(config.model_root))

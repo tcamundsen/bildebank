@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,6 +11,7 @@ from bildebank import db
 from bildebank.launcher_status import (
     FFmpegDependencyStatus,
     InsightFaceDependencyStatus,
+    INSIGHTFACE_RUNTIME_PROBE,
     LauncherConfig,
     LauncherUpdateStatus,
     RegisteredPerson,
@@ -320,22 +322,26 @@ def test_collection_needs_migration_handles_old_schema_without_full_validation(t
 
 
 def test_insightface_status_is_ready_when_dependencies_are_available() -> None:
+    completed = SimpleNamespace(returncode=0, stdout="", stderr="")
     with (
-        patch("bildebank.face.insightface_runtime_error", return_value=None),
         patch("importlib.util.find_spec", return_value=object()),
+        patch(
+            "bildebank.launcher_status.subprocess.run",
+            return_value=completed,
+        ) as run,
     ):
         status = insightface_dependency_status()
 
     assert status.status == "Klar"
+    command = run.call_args.args[0]
+    assert command == [sys.executable, "-c", INSIGHTFACE_RUNTIME_PROBE]
+    assert run.call_args.kwargs["env"]["PYTHONIOENCODING"] == "utf-8"
 
 
 def test_insightface_status_is_missing_when_insightface_is_missing() -> None:
-    with (
-        patch(
-            "bildebank.face.insightface_runtime_error",
-            return_value="InsightFace er ikke installert. Kjør install-insightface.ps1 fra programmappen.",
-        ),
-        patch("importlib.util.find_spec", return_value=object()),
+    with patch(
+        "importlib.util.find_spec",
+        side_effect=lambda name: None if name == "insightface" else object(),
     ):
         status = insightface_dependency_status()
 
@@ -344,9 +350,9 @@ def test_insightface_status_is_missing_when_insightface_is_missing() -> None:
 
 
 def test_insightface_status_is_missing_when_onnxruntime_is_missing() -> None:
-    with (
-        patch("bildebank.face.insightface_runtime_error", return_value=None),
-        patch("importlib.util.find_spec", return_value=None),
+    with patch(
+        "importlib.util.find_spec",
+        side_effect=lambda name: None if name == "onnxruntime" else object(),
     ):
         status = insightface_dependency_status()
 
@@ -355,12 +361,17 @@ def test_insightface_status_is_missing_when_onnxruntime_is_missing() -> None:
 
 
 def test_insightface_status_is_error_when_insightface_cannot_load() -> None:
+    completed = SimpleNamespace(
+        returncode=1,
+        stdout="",
+        stderr="ImportError: runtime-feil\n",
+    )
     with (
-        patch(
-            "bildebank.face.insightface_runtime_error",
-            return_value="InsightFace er installert, men kan ikke lastes: runtime-feil",
-        ),
         patch("importlib.util.find_spec", return_value=object()),
+        patch(
+            "bildebank.launcher_status.subprocess.run",
+            return_value=completed,
+        ),
     ):
         status = insightface_dependency_status()
 
@@ -463,7 +474,7 @@ model_name = "buffalo_l"
         encoding="utf-8",
     )
     with patch(
-        "bildebank.face.insightface_model_files_exist",
+        "bildebank.launcher_status.insightface_model_files_exist",
         return_value=True,
     ):
         status = insightface_model_status(tmp_path)

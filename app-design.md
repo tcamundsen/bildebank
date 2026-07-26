@@ -132,6 +132,10 @@ fastlåste modellen, skal ikke erstattes automatisk. Face-databasen kan innehold
 embeddings laget med akkurat denne modellen. Mappen skal bevares og kreve
 manuell avklaring før en annen modell installeres under samme navn.
 
+Launcheren skal kontrollere native InsightFace- og OpenCV-avhengigheter i en
+kortlivet underprosess. Launcherprosessen skal ikke selv laste `cv2.pyd`, fordi
+Windows da hindrer pip i å reinstallere OpenCV fra Oppsett-fanen.
+
 ## Programoppdatering
 
 Programoppdatering skal nekte å starte når Git-repoet har lokale endringer i
