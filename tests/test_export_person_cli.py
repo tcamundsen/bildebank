@@ -455,46 +455,89 @@ class ExportPersonTests(unittest.TestCase):
             self.assertIn(f"Statisk browser: {destination_root / 'Kari' / 'index.html'}", stdout)
             self.assertTrue((destination_root / "Kari" / "index.html").is_file())
 
-    def test_export_person_includes_avi_original_and_existing_mp4_preview(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target, config, _ids = self.make_collection(root)
-            avi_relative = Path("2024/06/familiefilm.avi")
-            avi_path = target / avi_relative
-            avi_path.parent.mkdir(parents=True, exist_ok=True)
-            avi_path.write_bytes(b"AVI original")
-            avi_id = register_target_file(target, avi_relative)
-            conn = db.connect(target)
-            try:
-                row = conn.execute("SELECT sha256 FROM files WHERE id = ?", (avi_id,)).fetchone()
-                assert row is not None
-                avi_hash = str(row["sha256"])
-            finally:
-                conn.close()
-            face_conn = connect_face_db(target)
-            try:
-                face_conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(1, ?)", (avi_id,))
-                face_conn.commit()
-            finally:
-                face_conn.close()
-            preview = video_preview_absolute_path(target, avi_hash)
-            preview.parent.mkdir(parents=True, exist_ok=True)
-            preview.write_bytes(b"browser-compatible MP4")
-            destination_root = root / "exports"
-            destination_root.mkdir()
+    def test_export_person_includes_video_original_and_existing_mp4_preview(self) -> None:
+        for extension in (".avi", ".3gp"):
+            with self.subTest(extension=extension), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                target, config, _ids = self.make_collection(root)
+                video_relative = Path(f"2024/06/familiefilm{extension}")
+                video_path = target / video_relative
+                video_path.parent.mkdir(parents=True, exist_ok=True)
+                video_path.write_bytes(b"video original")
+                video_id = register_target_file(target, video_relative)
+                conn = db.connect(target)
+                try:
+                    row = conn.execute(
+                        "SELECT sha256 FROM files WHERE id = ?",
+                        (video_id,),
+                    ).fetchone()
+                    assert row is not None
+                    video_hash = str(row["sha256"])
+                finally:
+                    conn.close()
+                face_conn = connect_face_db(target)
+                try:
+                    face_conn.execute(
+                        "INSERT INTO person_files(person_id, file_id) VALUES(1, ?)",
+                        (video_id,),
+                    )
+                    face_conn.commit()
+                finally:
+                    face_conn.close()
+                preview = video_preview_absolute_path(target, video_hash)
+                preview.parent.mkdir(parents=True, exist_ok=True)
+                preview.write_bytes(b"browser-compatible MP4")
+                destination_root = root / "exports"
+                destination_root.mkdir()
 
-            plan = export_person(target, "Kari", destination_root, config=config)
+                with (
+                    patch("bildebank.cli.load_config", return_value=config),
+                    patch("bildebank.cli_face.load_config", return_value=config),
+                ):
+                    code, stdout, stderr = capture_cli(
+                        [
+                            "--target",
+                            str(target),
+                            "export-person",
+                            "Kari",
+                            "--dest",
+                            str(destination_root),
+                            "--dry-run",
+                        ]
+                    )
 
-            exported = destination_root / "Kari"
-            exported_preview = exported / video_preview_relative_path(avi_hash)
-            avi_entry = next(entry for entry in plan.entries if entry.source == avi_path)
-            exported_avi_relative = avi_entry.destination.relative_to(exported)
-            self.assertEqual(avi_entry.destination.read_bytes(), b"AVI original")
-            self.assertEqual(exported_preview.read_bytes(), b"browser-compatible MP4")
-            self.assertEqual(len(plan.entries), 5)
-            html = (exported / "index.html").read_text(encoding="utf-8")
-            self.assertIn(f'"originalUrl": "{exported_avi_relative.as_posix()}"', html)
-            self.assertIn(f'"playbackUrl": "{video_preview_relative_path(avi_hash).as_posix()}"', html)
+                self.assertEqual(code, 0, stderr)
+                self.assertEqual(stdout.count(" -> "), 5)
+                self.assertIn("Antall bilder: 4", stdout)
+                plan = export_person(
+                    target,
+                    "Kari",
+                    destination_root,
+                    config=config,
+                )
+
+                exported = destination_root / "Kari"
+                exported_preview = exported / video_preview_relative_path(video_hash)
+                video_entry = next(
+                    entry for entry in plan.entries if entry.source == video_path
+                )
+                exported_video_relative = video_entry.destination.relative_to(exported)
+                self.assertEqual(video_entry.destination.read_bytes(), b"video original")
+                self.assertEqual(
+                    exported_preview.read_bytes(),
+                    b"browser-compatible MP4",
+                )
+                self.assertEqual(len(plan.entries), 5)
+                self.assertEqual(len(plan.browser_items), 4)
+                html = (exported / "index.html").read_text(encoding="utf-8")
+                self.assertIn(
+                    f'"originalUrl": "{exported_video_relative.as_posix()}"',
+                    html,
+                )
+                self.assertIn(
+                    f'"playbackUrl": "{video_preview_relative_path(video_hash).as_posix()}"',
+                    html,
+                )
 
     def test_export_person_rejects_invalid_inputs_and_keeps_failed_export(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

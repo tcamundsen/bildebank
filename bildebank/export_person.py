@@ -18,7 +18,11 @@ from .server_browser_sources import person_browser_source
 from .server_faces import person_by_name
 from .static_browser import static_browser_item
 from .target_lock import TargetLock
-from .video_previews import existing_video_preview_path, video_preview_relative_path
+from .video_previews import (
+    VIDEO_PREVIEW_SOURCE_EXTENSIONS,
+    existing_video_preview_path,
+    video_preview_relative_path,
+)
 
 
 WINDOWS_INVALID_NAME_CHARS = frozenset('<>:"/\\|?*')
@@ -154,7 +158,7 @@ def build_export_plan(
             )
         )
         playback_url: str | None = None
-        if relative_destination.suffix.casefold() == ".avi":
+        if relative_destination.suffix.casefold() in VIDEO_PREVIEW_SOURCE_EXTENSIONS:
             preview_source = existing_video_preview_path(target, item)
             if preview_source is not None:
                 preview_relative = video_preview_relative_path(hashes[file_id])

@@ -114,7 +114,7 @@ def run_face_command(args: argparse.Namespace, target: Path, *, repo_root: Path)
         if args.dry_run:
             for entry in plan.entries:
                 print(f"{entry.source} -> {entry.destination}")
-        print(f"Antall bilder: {len(plan.entries)}")
+        print(f"Antall bilder: {len(plan.browser_items)}")
         if not args.dry_run:
             print(f"Eksportert til: {plan.destination}")
             print(f"Statisk browser: {plan.destination / 'index.html'}")
