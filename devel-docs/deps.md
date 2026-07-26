@@ -139,6 +139,12 @@ være nødvendige for noen funksjoner.
 
 - Trengs av `setup-windows.ps1` for å klone/oppdatere repoet.
 - Installeres av `setup-windows.ps1` via winget hvis det mangler.
+- `update` krever et rent repo, lagrer gammel commit i
+  `bildebank-tools\\update-pending.txt` og kjører `git pull --ff-only`.
+- Etter oppdatering installeres Python-miljøet og en importtest kjøres. Ved
+  feil gjenopprettes gammel commit og den gamle Python-installasjonen
+  reinstalleres og testes. En gjenværende recovery-markør behandles før neste
+  oppdateringsforsøk.
 
 ### ExifTool
 

@@ -132,6 +132,23 @@ fastlåste modellen, skal ikke erstattes automatisk. Face-databasen kan innehold
 embeddings laget med akkurat denne modellen. Mappen skal bevares og kreve
 manuell avklaring før en annen modell installeres under samme navn.
 
+## Programoppdatering
+
+Programoppdatering skal nekte å starte når Git-repoet har lokale endringer.
+Før kildekoden oppdateres, skal gjeldende commit lagres i en recovery-markør
+utenfor Git-sporede filer. Etter `git pull --ff-only` skal Python-miljøet
+oppdateres og en enkel importtest kjøres.
+
+Hvis installasjonen eller importtesten feiler, skal kildekoden rulles tilbake
+til den lagrede commit-en. Python-installasjonen skal deretter installeres på
+nytt fra den gamle kildekoden og kontrolleres før recovery-markøren fjernes.
+Ved avbrudd eller strømbrudd skal neste oppdateringsforsøk oppdage markøren og
+forsøke å gjenopprette den gamle versjonen før en ny oppdatering forsøkes. Hvis
+repoet ikke lenger er rent eller trygg recovery ikke kan fullføres, skal
+markøren beholdes og automatisk rollback stoppe uten å overskrive lokale
+endringer. Databaser skal fortsatt ikke migreres automatisk av
+programoppdateringen.
+
 ## Teknologi
 
 Programmet skal skrives i Python. Planen er at dette skal være et program

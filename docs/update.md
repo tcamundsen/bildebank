@@ -14,6 +14,18 @@ options:
 `update` oppdaterer Bildebank-programmet til siste versjon fra GitHub
 og laster ned eventuelle nye biblioteker som brukes.
 
+Oppdateringen starter bare når programmappen ikke har lokale Git-endringer.
+Før nedlasting lagres gjeldende programversjon. Den nye versjonen installeres
+og kontrolleres før oppdateringen regnes som ferdig. Hvis installasjonen
+feiler, gjenoppretter Bildebank den gamle programversjonen og kontrollerer at
+den fortsatt starter.
+
+Hvis maskinen slås av eller oppdateringen avbrytes, oppdager neste
+oppdateringsforsøk recovery-markøren. Bildebank forsøker da først å
+gjenopprette den gamle versjonen og ber deg kjøre `bildebank update` én gang
+til. Hvis trygg gjenoppretting ikke er mulig, beholdes markøren og Bildebank
+stopper uten å overskrive lokale endringer.
+
 Oppdateringen kontrollerer også den lokale FFmpeg-installasjonen. Dermed får
 eksisterende brukere støtten som trengs for AVI-avspillingskopier, ikke bare
 nye installasjoner. Hvis FFmpeg-nedlastingen feiler, beholdes den fullførte

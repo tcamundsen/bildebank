@@ -86,6 +86,11 @@ endrer seg til "Installer oppdatering" betyr det at du kan oppdatere programmet
 ved å klikke på knappen. Programmet laster da ned oppdateringen og starter seg
 selv på nytt.
 
+Hvis installasjonen av den nye versjonen feiler, forsøker Bildebank å
+gjenopprette og kontrollere den gamle versjonen. Etter et avbrudd eller
+strømbrudd forsøker neste oppdateringsforsøk først å gjenopprette den gamle
+versjonen og kan be deg starte oppdateringen én gang til.
+
 ![Skjermbilde av tilgjengelig oppdatering](screenshots/bildebank-installer-oppdatering.png)
 
 Hvis en oppdatering har ødelagt Bildebank-vinduet, slik at du ikke kan gjøre
