@@ -120,6 +120,18 @@ Kandidaten skal først kopieres til en midlertidig fil og verifiseres før
 publisering. En eksisterende målsti skal aldri overskrives. Hoveddatabasen
 skal ikke endres, og en slettet filrad skal fortsatt peke under `deleted/`.
 
+## Eksterne InsightFace-modeller
+
+Modellfiler er regenererbare, men de tolkes av eksterne biblioteker og må
+behandles som nedlastet programinnhold. Automatiske modellnedlastinger skal
+derfor bruke en fast URL og SHA-256, trekke ut bare forventede filer og
+publisere fra staging etter full kontroll.
+
+En eksisterende, ikke-tom modellmappe som er ufullstendig eller avviker fra den
+fastlåste modellen, skal ikke erstattes automatisk. Face-databasen kan inneholde
+embeddings laget med akkurat denne modellen. Mappen skal bevares og kreve
+manuell avklaring før en annen modell installeres under samme navn.
+
 ## Teknologi
 
 Programmet skal skrives i Python. Planen er at dette skal være et program

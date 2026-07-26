@@ -71,6 +71,19 @@ Scriptet kjører:
 - `numpy`
 - `onnxruntime`
 
+Modellpakkene `antelopev2` og `buffalo_l` lastes fra InsightFaces v0.7-release.
+Bildebank har fast URL, arkivstørrelse, SHA-256 og forventede ONNX-filer for
+begge. Arkivet kontrolleres før utpakking. Bare de forventede filene trekkes ut
+til staging, og modellen publiseres først når alle filnavn og størrelser
+stemmer.
+
+En komplett eksisterende modell med forventede filnavn og størrelser brukes
+uten ny nedlasting. En ikke-tom modellmappe som er ufullstendig eller avvikende,
+beholdes uendret og gir feil. Den erstattes ikke automatisk fordi eksisterende
+face-databaser kan inneholde embeddings fra akkurat disse modellfilene.
+Andre modellnavn kan fortsatt brukes når modellfilene er installert manuelt,
+men Bildebank laster dem ikke ned uten en fast SHA-256.
+
 Koden importerer også `cv2` i ansiktsskanningen. Dette kommer normalt som en
 transitiv avhengighet via InsightFace-installasjonen, men hvis dette endrer seg
 må `opencv-python` vurderes som eksplisitt dependency.

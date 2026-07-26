@@ -40,6 +40,23 @@ Sjekk at funksjonen er klar:
 bildebank doctor
 ```
 
+Første gang modellen trengs, laster Bildebank den ned fra InsightFaces
+offisielle release. Bildebank kontrollerer størrelse og SHA-256 og klargjør
+modellen i en midlertidig mappe før den tas i bruk.
+
+Hvis Bildebank sier at en eksisterende modellmappe er ufullstendig eller
+avviker, blir mappen beholdt uendret. Hvis dette skjedde under den aller første
+nedlastingen, og modellen aldri har vært brukt til scanning, kan du gi mappen
+et nytt navn og kjøre:
+
+```powershell
+bildebank download-face-model
+```
+
+Ikke erstatt en modell som allerede er brukt til scanning uten å beholde den
+gamle mappen. Eksisterende ansiktsdata kan være laget med akkurat disse
+modellfilene.
+
 ### Gå til bildesamlingen
 
 Kjør resten av kommandoene fra bildesamlingen:

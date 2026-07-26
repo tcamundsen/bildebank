@@ -299,13 +299,10 @@ model_name = "buffalo_l"
             encoding="utf-8",
         )
 
-        def fake_load_face_app(config):
-            model_dir = config.model_root / "models" / config.model_name
-            model_dir.mkdir(parents=True)
-            (model_dir / "det_10g.onnx").write_bytes(b"model")
-            return object()
-
-        with patch("bildebank.face.load_face_app", side_effect=fake_load_face_app) as load_app:
+        with (
+            patch("bildebank.face.insightface_model_files_exist", side_effect=[False, True]),
+            patch("bildebank.face.load_face_app", return_value=object()) as load_app,
+        ):
             code, stdout, stderr = capture_cli(["download-face-model"])
 
         self.assertEqual(code, 0, stderr)

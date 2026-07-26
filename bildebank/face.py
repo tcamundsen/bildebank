@@ -21,6 +21,10 @@ from .config import DEFAULT_FACE_MODEL_NAME, FaceRecognitionConfig
 from .db_core import connect_database_read_only
 from .html_paths import path_to_url, relative_to_target
 from .html_export import render_html
+from .insightface_models import (
+    ensure_insightface_model,
+    insightface_model_files_exist,
+)
 from .media import IMAGE_EXTENSIONS
 from .static_browser import static_browser_item
 from .target_lock import TargetLock, TargetLockError
@@ -2003,6 +2007,7 @@ def load_face_app(config: FaceRecognitionConfig):
         raise ValueError(insightface_import_error_message(exc)) from exc
     providers = ["CPUExecutionProvider"] if config.provider == "cpu" else None
     normalize_insightface_model_layout(config)
+    ensure_insightface_model(config)
     try:
         app = FaceAnalysis(name=config.model_name, root=str(config.model_root), providers=providers)
     except AssertionError as exc:
@@ -2039,11 +2044,6 @@ def insightface_import_error_message(exc: ImportError) -> str:
     if exc.name == "insightface" or message.startswith("No module named 'insightface"):
         return "InsightFace er ikke installert. Kjør install-insightface.ps1 fra programmappen."
     return f"InsightFace er installert, men kan ikke lastes: {message}"
-
-
-def insightface_model_files_exist(config: FaceRecognitionConfig) -> bool:
-    model_dir = config.model_root / "models" / config.model_name
-    return model_dir.is_dir() and any(model_dir.rglob("*.onnx"))
 
 
 def remove_insightface_model_zip(config: FaceRecognitionConfig) -> bool:

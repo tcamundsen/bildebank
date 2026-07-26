@@ -78,6 +78,16 @@ være konservative:
 - hvis `FaceAnalysis` feiler fordi detection-modellen mangler, kan Bildebank
   prøve normalisering én gang og deretter laste modellen på nytt
 
+Automatisk nedlasting er begrenset til modellpakker der Bildebank har fast URL,
+arkivstørrelse, SHA-256 og en liste over forventede ONNX-filer. Nedlasting og
+utpakking skjer utenfor den aktive modellmappen. Den ferdige modellen
+publiseres med rename først etter full kontroll.
+
+En eksisterende, ikke-tom modellmappe som ikke har forventede filer og
+størrelser, skal bevares uendret og gi en tydelig feil. Den kan tilhøre en
+annen modellutgave som eksisterende embeddings er avhengige av. Automatisk
+reparasjon skal derfor ikke erstatte den.
+
 ## Konsekvens
 
 `face-scan`, `face-suggest`, personer og bekreftede ansikter bruker bare aktiv

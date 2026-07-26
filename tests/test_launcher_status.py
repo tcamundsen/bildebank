@@ -462,11 +462,11 @@ model_name = "buffalo_l"
 """,
         encoding="utf-8",
     )
-    model_dir = tmp_path / ".bildebank-insightface" / "models" / "buffalo_l"
-    model_dir.mkdir(parents=True)
-    (model_dir / "det_10g.onnx").write_bytes(b"model")
-
-    status = insightface_model_status(tmp_path)
+    with patch(
+        "bildebank.face.insightface_model_files_exist",
+        return_value=True,
+    ):
+        status = insightface_model_status(tmp_path)
 
     assert status.model_name == "buffalo_l"
     assert status.status == "Lastet ned"
