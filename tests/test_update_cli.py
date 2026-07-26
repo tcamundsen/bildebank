@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import codecs
 import subprocess
 import sys
 import tempfile
@@ -369,9 +370,10 @@ class UpdateCliTests(unittest.TestCase):
             self.assertTrue(state_path.exists())
 
     def test_windows_update_script_contains_recovery_contract(self) -> None:
-        script = (Path(__file__).resolve().parents[1] / "update.ps1").read_text(
-            encoding="utf-8"
-        )
+        script_path = Path(__file__).resolve().parents[1] / "update.ps1"
+        script_bytes = script_path.read_bytes()
+        self.assertTrue(script_bytes.startswith(codecs.BOM_UTF8))
+        script = script_bytes.decode("utf-8-sig")
 
         self.assertIn("Assert-CleanRepo", script)
         self.assertIn('"--untracked-files=no"', script)
