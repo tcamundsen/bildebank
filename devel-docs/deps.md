@@ -130,10 +130,22 @@ sjekker også eksplisitt etter `torch`.
 - `ViT-B-32` med `laion2b_s34b_b79k`
 - `ViT-L-14` med `laion2b_s32b_b82k`
 
-OpenCLIP kan bruke nett ved første modellnedlasting. Skanning og søk skal
-deretter kjøre lokalt.
+Begge modellene er safetensors-filer med fast Hugging Face-repository,
+repository-revisjon, filnavn, størrelse og SHA-256 i
+`bildebank/openclip_models.py`. Nedlasting skjer til en unik stagingmappe med
+størrelsesgrense og eksklusiv filoppretting. Modellen publiseres først etter
+størrelse- og hashkontroll.
 
-Status vises i dag av `bildebank image-status` og på `/app` i `run-server`.
+En eksisterende cache fra OpenCLIP/Hugging Face brukes direkte når den ligger
+under modellroten og svarer til eksakt fastlåst revisjon, filnavn, størrelse og
+SHA-256. Den kopieres ikke, slik at store modellfiler ikke dupliseres.
+
+`image-scan`, `image-search` og serverens modellasting får alltid en kontrollert
+lokal filsti som `pretrained`. De sender aldri modelltaggen til OpenCLIPs
+nedlastingskode. Andre modeller kan bare brukes når `pretrained` er en
+eksisterende lokal filsti; Bildebank laster dem ikke ned.
+
+Status vises i launcheren, av `bildebank doctor` og på `/app` i `run-server`.
 
 ## Eksterne programmer
 

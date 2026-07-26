@@ -18,7 +18,7 @@ cd "$repo_dir"
 echo "Installerer valgfri OpenCLIP-støtte i Bildebanks lokale Python-miljø"
 "$venv_python" -m pip install -e '.[openclip]'
 
-mkdir -p -- "$model_root"
+"$venv_python" -m bildebank download-openclip-model --all-supported
 smoke_test="$(mktemp "${TMPDIR:-/tmp}/bildebank-openclip.XXXXXX.py")"
 trap 'rm -f -- "$smoke_test"' EXIT
 
@@ -27,17 +27,24 @@ import sys
 from pathlib import Path
 
 import open_clip
+from bildebank.config import OpenClipConfig
+from bildebank.openclip_models import require_openclip_model_file
 
 model_root = Path(sys.argv[1])
 model_name = sys.argv[2]
 pretrained = sys.argv[3]
 
 model_root.mkdir(parents=True, exist_ok=True)
+config = OpenClipConfig(
+    model_root=model_root,
+    model_name=model_name,
+    pretrained=pretrained,
+)
+model_file = require_openclip_model_file(config)
 open_clip.create_model_and_transforms(
     model_name,
-    pretrained=pretrained,
+    pretrained=str(model_file),
     device="cpu",
-    cache_dir=str(model_root),
 )
 open_clip.get_tokenizer(model_name)
 print(f"OpenCLIP klar: {model_name} ({pretrained})")

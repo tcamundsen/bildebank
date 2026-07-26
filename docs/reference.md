@@ -110,6 +110,7 @@ Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 
 ## Tekstbasert bildesøk
 
+- [`download-openclip-model`](download-openclip-model.md) **`cli`**
 - [`image-scan`](image-scan.md) **`vindu`**
 - [`cleanup-image-search`](cleanup-image-search.md) **`cli`**
 - [`repair-image-search-paths`](repair-image-search-paths.md) **`cli`**

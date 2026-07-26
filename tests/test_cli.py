@@ -9,6 +9,7 @@ import uuid
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from bildebank.cli import (
@@ -139,6 +140,34 @@ pretrained = "laion2b_s34b_b79k"
         self.assertNotIn("face-group", stdout)
         self.assertNotIn("face-person-add-group", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
+
+    def test_download_openclip_model_can_install_all_pinned_models(self) -> None:
+        calls = []
+
+        def install(config):
+            calls.append(config)
+            return SimpleNamespace(
+                path=config.model_root / f"{config.model_name}.safetensors",
+                spec=SimpleNamespace(
+                    model_name=config.model_name,
+                    pretrained=config.pretrained,
+                ),
+                installed=True,
+                legacy_cache=False,
+            )
+
+        with patch(
+            "bildebank.cli.install_openclip_model",
+            side_effect=install,
+        ):
+            code, stdout, stderr = capture_cli(
+                ["download-openclip-model", "--all-supported"]
+            )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(len(calls), 2)
+        self.assertIn("ViT-B-32 (laion2b_s34b_b79k)", stdout)
+        self.assertIn("ViT-L-14 (laion2b_s32b_b82k)", stdout)
 
     def test_debug_shows_traceback_for_unhandled_errors(self) -> None:
         with patch("bildebank.cli.run", side_effect=RuntimeError("boom")):

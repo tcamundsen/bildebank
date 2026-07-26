@@ -435,15 +435,16 @@ pretrained = "laion2b_s34b_b79k"
 """,
         encoding="utf-8",
     )
-    model_dir = tmp_path / ".bildebank-openclip" / "models--laion"
-    model_dir.mkdir(parents=True)
-    (model_dir / "open_clip_pytorch_model.bin").write_bytes(b"model")
-
-    status = openclip_model_status(tmp_path)
+    with patch(
+        "bildebank.launcher_status.openclip_model_file_available",
+        return_value=True,
+    ) as available:
+        status = openclip_model_status(tmp_path)
 
     assert status.model_name == "ViT-B-32"
     assert status.pretrained == "laion2b_s34b_b79k"
     assert status.status == "Tilgjengelig"
+    assert available.call_args.args[0].model_root == tmp_path / ".bildebank-openclip"
 
 
 def test_openclip_model_status_reports_missing_when_model_file_is_missing(tmp_path: Path) -> None:

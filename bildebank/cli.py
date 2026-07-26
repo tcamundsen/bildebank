@@ -50,6 +50,7 @@ from .media import explain_date, inspect_metadata
 from .media_cache import MediaMetadataCache, cached_image_dimensions
 from .missing_file_repair import repair_missing_file
 from .openclip import openclip_db_path
+from .openclip_models import install_openclip_model, supported_openclip_configs
 from .platform_guard import validate_collection_platform
 from .pending_deletes import cleanup_pending_deletes, list_pending_deletes
 from .progress import ProgressMeter
@@ -804,6 +805,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Last ned valgt InsightFace-modell",
         description="Last ned ansiktsmodellen som er valgt i bildebank-config.toml.",
     )
+    download_openclip_model = add_command(
+        subparsers,
+        "download-openclip-model",
+        usage="bildebank download-openclip-model [valg]",
+        help="Last ned fastlåste OpenCLIP-modeller",
+        description=(
+            "Last ned OpenCLIP-modellen som er valgt i bildebank-config.toml."
+        ),
+    )
+    download_openclip_model.add_argument(
+        "--all-supported",
+        action="store_true",
+        help="Last ned begge OpenCLIP-modellene som støttes av Bildebank.",
+    )
     image_scan = add_command(
         subparsers,
         "image-scan",
@@ -1241,6 +1256,7 @@ NO_TARGET_COMMANDS = {
     "doctor",
     "config",
     "download-face-model",
+    "download-openclip-model",
 }
 
 TARGET_COMMANDS = {
@@ -1419,6 +1435,12 @@ def run_no_target_command(args: argparse.Namespace) -> int:
 
     if args.command == "download-face-model":
         return run_download_face_model(program_repo_root())
+
+    if args.command == "download-openclip-model":
+        return run_download_openclip_model(
+            program_repo_root(),
+            all_supported=args.all_supported,
+        )
 
     raise ValueError(f"Ukjent kommando uten bildesamling: {args.command}")
 
@@ -2285,6 +2307,29 @@ def run_ffmpeg_install(*, force: bool = False) -> int:
         print(f"Installerte {result.tools.version}: {result.tools.ffmpeg.parent}")
     else:
         print(f"FFmpeg er allerede installert ({result.tools.version}): {result.tools.ffmpeg.parent}")
+    return 0
+
+
+def run_download_openclip_model(
+    repo_root: Path,
+    *,
+    all_supported: bool,
+) -> int:
+    config = load_config(repo_root).openclip
+    configs = (
+        supported_openclip_configs(config)
+        if all_supported
+        else (config,)
+    )
+    for model_config in configs:
+        result = install_openclip_model(model_config)
+        label = f"{result.spec.model_name} ({result.spec.pretrained})"
+        if result.installed:
+            print(f"Lastet ned OpenCLIP-modell {label}: {result.path}")
+        elif result.legacy_cache:
+            print(f"Bruker kontrollert OpenCLIP-modell fra tidligere cache {label}: {result.path}")
+        else:
+            print(f"OpenCLIP-modellen er allerede lastet ned {label}: {result.path}")
     return 0
 
 

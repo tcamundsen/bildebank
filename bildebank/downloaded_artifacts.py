@@ -145,6 +145,46 @@ def reject_directory_link(path: Path, *, label: str) -> None:
     _require_regular_directory(path, path_stat, label=label)
 
 
+def validate_regular_file_without_links(
+    path: Path,
+    *,
+    label: str,
+    expected_size: int | None = None,
+) -> os.stat_result:
+    absolute = path.expanduser().absolute()
+    components = [absolute, *absolute.parents]
+    file_stat: os.stat_result | None = None
+    for index, component in enumerate(components):
+        try:
+            component_stat = component.stat(follow_symlinks=False)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Fant ikke {label}: {path}") from None
+        except OSError as exc:
+            raise RuntimeError(f"Kunne ikke kontrollere {label}: {component}: {exc}") from exc
+        if index == 0:
+            if (
+                stat.S_ISLNK(component_stat.st_mode)
+                or is_reparse_stat(component_stat)
+                or not stat.S_ISREG(component_stat.st_mode)
+                or getattr(component_stat, "st_nlink", 1) != 1
+            ):
+                raise RuntimeError(
+                    f"{label} må være en vanlig fil uten lenker: {path}"
+                )
+            file_stat = component_stat
+        else:
+            _require_regular_directory(component, component_stat, label=label)
+
+    if file_stat is None:
+        raise RuntimeError(f"Kunne ikke kontrollere {label}: {path}")
+    if expected_size is not None and file_stat.st_size != expected_size:
+        raise RuntimeError(
+            f"{label} har feil størrelse: forventet {expected_size}, "
+            f"fikk {file_stat.st_size}: {path}"
+        )
+    return file_stat
+
+
 def safe_extract_zip(
     archive_path: Path,
     destination: Path,

@@ -11,6 +11,7 @@ from . import db
 from .config import load_config, load_launcher_collection_path, set_launcher_collection_path
 from .ffmpeg_tools import resolve_ffmpeg_tools
 from .insightface_models import insightface_model_files_exist
+from .openclip_models import openclip_model_file_available
 
 
 INSIGHTFACE_RUNTIME_PROBE = (
@@ -209,16 +210,9 @@ def openclip_dependency_status() -> str:
 
 def openclip_model_status(repo_root: Path | None = None) -> OpenClipModelStatus:
     config = load_config(repo_root or program_repo_root()).openclip
-    if _openclip_model_files_exist(config.model_root):
+    if openclip_model_file_available(config):
         return OpenClipModelStatus(config.model_name, config.pretrained, "Tilgjengelig", str(config.model_root))
     return OpenClipModelStatus(config.model_name, config.pretrained, "Mangler", str(config.model_root))
-
-
-def _openclip_model_files_exist(model_root: Path) -> bool:
-    if not model_root.is_dir():
-        return False
-    model_extensions = {".bin", ".pt", ".pth", ".safetensors"}
-    return any(path.is_file() and path.suffix.lower() in model_extensions for path in model_root.rglob("*"))
 
 
 def insightface_dependency_status() -> InsightFaceDependencyStatus:

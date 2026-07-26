@@ -1302,12 +1302,14 @@ def create_search_run(
 
 def load_image_model(config: OpenClipConfig) -> tuple[Any, Any]:
     open_clip = import_open_clip()
+    from .openclip_models import require_openclip_model_file
+
     device = resolve_torch_device(config.device)
+    model_file = require_openclip_model_file(config)
     model, _, preprocess = open_clip.create_model_and_transforms(
         config.model_name,
-        pretrained=config.pretrained,
+        pretrained=str(model_file),
         device=device,
-        cache_dir=str(config.model_root),
     )
     model.eval()
     return model, preprocess
@@ -1315,12 +1317,14 @@ def load_image_model(config: OpenClipConfig) -> tuple[Any, Any]:
 
 def load_text_model(config: OpenClipConfig) -> tuple[Any, Any]:
     open_clip = import_open_clip()
+    from .openclip_models import require_openclip_model_file
+
     device = resolve_torch_device(config.device)
+    model_file = require_openclip_model_file(config)
     model, _, _ = open_clip.create_model_and_transforms(
         config.model_name,
-        pretrained=config.pretrained,
+        pretrained=str(model_file),
         device=device,
-        cache_dir=str(config.model_root),
     )
     model.eval()
     return model, open_clip.get_tokenizer(config.model_name)

@@ -176,7 +176,7 @@ Kandidaten skal først kopieres til en midlertidig fil og verifiseres før
 publisering. En eksisterende målsti skal aldri overskrives. Hoveddatabasen
 skal ikke endres, og en slettet filrad skal fortsatt peke under `deleted/`.
 
-## Eksterne InsightFace-modeller
+## Eksterne AI-modeller
 
 Modellfiler er regenererbare, men de tolkes av eksterne biblioteker og må
 behandles som nedlastet programinnhold. Automatiske modellnedlastinger skal
@@ -187,6 +187,17 @@ En eksisterende, ikke-tom modellmappe som er ufullstendig eller avviker fra den
 fastlåste modellen, skal ikke erstattes automatisk. Face-databasen kan inneholde
 embeddings laget med akkurat denne modellen. Mappen skal bevares og kreve
 manuell avklaring før en annen modell installeres under samme navn.
+
+De to OpenCLIP-modellene som Bildebank tilbyr automatisk, skal på samme måte ha
+fast repository, eksakt repository-revisjon, filnavn, størrelse og SHA-256.
+Nedlastingen skal publiseres fra staging etter kontroll. En tidligere
+OpenCLIP/Hugging Face-cache kan brukes uten kopiering når den svarer til den
+samme fastlåste filen og ligger inne i den konfigurerte modellroten.
+
+Skanning, søk og serverlasting skal alltid gi OpenCLIP en kontrollert lokal
+modellfil. Disse operasjonene skal aldri sende en modelltagg som kan starte en
+skjult nedlasting. Ukjente modeller skal ikke lastes ned automatisk; en
+egendefinert modell må angis som en eksisterende lokal fil.
 
 Launcheren skal kontrollere native InsightFace- og OpenCV-avhengigheter i en
 kortlivet underprosess. Den varige launcherprosessen skal ikke selv laste

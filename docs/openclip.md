@@ -38,8 +38,8 @@ Kjør dette fra programmappen:
 .\install-openclip.ps1
 ```
 
-Scriptet installerer OpenCLIP i Bildebanks lokale Python-miljø og tester
-modellene:
+Scriptet installerer OpenCLIP i Bildebanks lokale Python-miljø. Deretter laster
+Bildebank ned, kontrollerer og tester modellene:
 
 ```text
 ViT-B-32 (laion2b_s34b_b79k)
@@ -63,14 +63,15 @@ Modellfiler lagres lokalt i programmappen:
 .bildebank-openclip
 ```
 
-OpenCLIP kan bruke nettet når modellen lastes ned første gang. Etter at
-modellfilene er lastet ned, skal selve skanning og søk kjøre lokalt på maskinen.
-Bildene sendes ikke til en nettjeneste for å søkes i.
+Bildebank bruker faste repository-revisjoner, filstørrelser og SHA-256 for de
+to modellfilene. En tidligere OpenCLIP-cache gjenbrukes bare hvis modellfilen
+stemmer med den fastlåste modellen. Ukjente eller endrede filer overskrives
+ikke.
 
-Hvis du ser en melding om `HF Hub` eller `HF_TOKEN`, betyr det vanligvis at
-OpenCLIP henter modellfiler fra Hugging Face uten innlogging. Det er ikke
-nødvendig med `HF_TOKEN` for vanlig bruk, men Hugging Face kan gi høyere
-nedlastingsgrenser hvis man bruker en token.
+Nett brukes bare av den eksplisitte installasjonen eller kommandoen
+[`download-openclip-model`](download-openclip-model.md). `image-scan`,
+`image-search` og nettleserserveren bruker en kontrollert lokal modellfil og
+starter aldri en modellnedlasting. Bildene sendes ikke til en nettjeneste.
 
 ## Velg modell
 
@@ -98,6 +99,21 @@ pretrained = "laion2b_s32b_b82k"
 
 Modellen omtales ofte som `ViT-L/14`, men i OpenCLIP-config bruker vi navnet
 `ViT-L-14`.
+
+Andre OpenCLIP-modeller lastes ikke ned automatisk. En erfaren bruker kan angi
+en eksisterende lokal modellfil som `pretrained`, for eksempel:
+
+```toml
+[image_search]
+enabled = true
+model_root = ".bildebank-openclip"
+device = "cpu"
+model_name = "ViT-B-32"
+pretrained = "C:\\Users\\Tom\\Modeller\\egen-modell.safetensors"
+```
+
+Bildebank følger ikke lenker til en slik fil. Brukeren er selv ansvarlig for
+opprinnelse og kompatibilitet for egendefinerte modellfiler.
 
 Eldre configfiler kan ha seksjonen `[openclip]`. Bildebank gir den automatisk
 nytt navn til `[image_search]` når configfilen leses.
