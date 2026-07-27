@@ -23,6 +23,7 @@ from .cli_image import run_image_command
 from .cli_server import run_server_command
 from .cli_update import run_update
 from .config import FaceRecognitionConfig, load_config, set_config_enabled
+from .derived_files import existing_derived_paths_for_file_ids
 from .exiftool import install_managed_exiftool
 from .exiftool_probe import exiftool_metadata_gaps
 from .export_person import PersonExportInterrupted
@@ -2238,6 +2239,21 @@ def print_unimport_plan(target: Path, plan: db.UnimportPlan) -> None:
             print(f"  {db.target_relative_path(target, path).as_posix()}")
     else:
         print("  ingen")
+    conn = db.connect(target)
+    try:
+        derived_paths = existing_derived_paths_for_file_ids(
+            conn,
+            target,
+            plan.file_ids_to_delete,
+        )
+    finally:
+        conn.close()
+    print("Avledede filer som legges i pending_file_deletes:")
+    if derived_paths:
+        for path in derived_paths:
+            print(f"  {path.as_posix()}")
+    else:
+        print("  ingen")
     print("Filer som beholdes fordi de fortsatt har referanser:")
     if plan.target_paths_to_keep:
         for path in plan.target_paths_to_keep:
@@ -3157,6 +3173,16 @@ def run_migrate(target: Path, *, check: bool) -> int:
             "  fjerne OpenCLIP- og InsightFace-data for slettede "
             "eller ikke lenger registrerte bilder"
         )
+    if plan.cleans_orphaned_derived_files:
+        print(
+            "  rydde foreldreløse thumbnails og videoavspillingskopier: "
+            f"{plan.orphaned_derived_files} fil(er)"
+        )
+        if plan.unsafe_derived_paths:
+            print(
+                "  hoppe over utrygge avledede stier: "
+                f"{len(plan.unsafe_derived_paths)}"
+            )
     if plan.terminal_file_moves:
         print(
             "  fjerne ferdigbehandlede filflyttinger fra arbeidsjournalen: "
@@ -3191,15 +3217,18 @@ def run_migrate(target: Path, *, check: bool) -> int:
                 "Databasen ble ikke migrert. Ingen endringer er skrevet.\n"
                 "Backup er beholdt for sikkerhet."
             ) from exc
-        duplicate_cleanup_error: str | None = None
+        pending_cleanup_error: str | None = None
         try:
-            duplicate_cleanup_results = cleanup_pending_deletes_locked(
+            pending_cleanup_results = cleanup_pending_deletes_locked(
                 target,
-                pending_ids=result.duplicate_pending_delete_ids,
+                pending_ids=(
+                    *result.duplicate_pending_delete_ids,
+                    *result.derived_pending_delete_ids,
+                ),
             )
         except Exception as exc:
-            duplicate_cleanup_results = []
-            duplicate_cleanup_error = str(exc)
+            pending_cleanup_results = []
+            pending_cleanup_error = str(exc)
 
     if result.creates_file_sources:
         print("Oppretter file_sources.")
@@ -3242,6 +3271,34 @@ def run_migrate(target: Path, *, check: bool) -> int:
             "Rydder OpenCLIP- og InsightFace-data for slettede "
             "eller ikke lenger registrerte bilder."
         )
+    if result.cleans_orphaned_derived_files:
+        derived_ids = set(result.derived_pending_delete_ids)
+        derived_cleanup_results = [
+            cleanup_result
+            for cleanup_result in pending_cleanup_results
+            if cleanup_result.pending_id in derived_ids
+        ]
+        derived_cleanup_failures = [
+            cleanup_result
+            for cleanup_result in derived_cleanup_results
+            if cleanup_result.outcome == "failed"
+        ]
+        print(
+            "Rydder foreldreløse thumbnails og videoavspillingskopier: "
+            f"{result.orphaned_derived_files} fil(er)."
+        )
+        if derived_cleanup_failures:
+            print(
+                "ADVARSEL: "
+                f"{len(derived_cleanup_failures)} avledet(e) fil(er) kunne "
+                "ikke slettes og er beholdt i pending-delete-køen."
+            )
+        if result.unsafe_derived_paths:
+            print(
+                "ADVARSEL: "
+                f"{len(result.unsafe_derived_paths)} utrygg(e) eller "
+                "ustabil(e) avledet(e) sti(er) ble ikke slettet."
+            )
     if result.terminal_file_moves:
         print(
             "Fjerner ferdigbehandlede filflyttinger fra arbeidsjournalen: "
@@ -3262,10 +3319,12 @@ def run_migrate(target: Path, *, check: bool) -> int:
             "Kontroller bildene med systemtaggen "
             f"{db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW!r}."
         )
+        duplicate_ids = set(result.duplicate_pending_delete_ids)
         duplicate_cleanup_failures = [
             cleanup_result
-            for cleanup_result in duplicate_cleanup_results
-            if cleanup_result.outcome == "failed"
+            for cleanup_result in pending_cleanup_results
+            if cleanup_result.pending_id in duplicate_ids
+            and cleanup_result.outcome == "failed"
         ]
         if duplicate_cleanup_failures:
             print(
@@ -3273,14 +3332,22 @@ def run_migrate(target: Path, *, check: bool) -> int:
                 f"{len(duplicate_cleanup_failures)} overflødig(e) bildefil(er) "
                 "kunne ikke slettes og er beholdt i pending-delete-køen."
             )
-        if duplicate_cleanup_error is not None:
+        if pending_cleanup_error is not None:
             print(
-                "ADVARSEL: Automatisk opprydding av overflødige bildefiler "
-                f"kunne ikke fullføres: {duplicate_cleanup_error}"
+                "ADVARSEL: Automatisk opprydding etter migreringen "
+                f"kunne ikke fullføres: {pending_cleanup_error}"
             )
             print(
                 "Filene er beholdt i pending-delete-køen og kan ryddes senere."
             )
+    elif pending_cleanup_error is not None:
+        print(
+            "ADVARSEL: Automatisk opprydding etter migreringen kunne ikke "
+            f"fullføres: {pending_cleanup_error}"
+        )
+        print(
+            "Filene er beholdt i pending-delete-køen og kan ryddes senere."
+        )
     print(f"Setter schema_version={result.target_version}.")
     print("Ferdig. Databasen er migrert.")
     if result.cleans_gps_errors:

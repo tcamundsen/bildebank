@@ -38,6 +38,11 @@ ikke lenger finnes i importdatabasen. Programmet kontrollerer også at størrels
 og SHA-256 er de samme som da filen ble lagt i køen. Hvis filen er byttet ut
 eller endret, blir den stående og køposten får en feilmelding.
 
+Køen kan også inneholde programgenererte thumbnails og
+videoavspillingskopier etter `unimport` eller en databasemigrering. Før en slik
+fil slettes, kontrollerer Bildebank at ingen nåværende databaseoppføring har
+tatt cachebanen i bruk igjen.
+
 Gamle køposter fra en tidligere databaseversjon kan mangle størrelse og
 SHA-256. Slike filer slettes ikke automatisk. Undersøk filen og feilmeldingen
 før du gjør noe manuelt. Feil på én fil stopper ikke kontrollen av de neste

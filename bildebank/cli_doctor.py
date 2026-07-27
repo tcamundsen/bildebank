@@ -26,6 +26,10 @@ from .collection_paths import (
 )
 from .config import CONFIG_FILENAME, FaceRecognitionConfig, load_config
 from .db_core import connect_database_read_only
+from .derived_files import (
+    expected_derived_paths,
+    is_managed_derived_file_path,
+)
 from .exiftool import resolve_exiftool
 from .face import (
     face_database_model,
@@ -1161,6 +1165,7 @@ def doctor_check_pending_file_deletes(target: Path) -> None:
     try:
         rows = pending_delete_integrity_rows(conn)
         referenced_path_keys = db.file_target_path_keys(conn)
+        referenced_derived_paths = expected_derived_paths(conn)
     finally:
         conn.close()
 
@@ -1213,13 +1218,14 @@ def doctor_check_pending_file_deletes(target: Path) -> None:
         if not (
             is_active_collection_file_path(relative_path)
             or is_deleted_collection_file_path(relative_path)
+            or is_managed_derived_file_path(relative_path)
         ):
             errors.append(
                 (
                     pending_id,
                     raw_path,
-                    "køstien har ikke en gyldig års-/måneds-, "
-                    "udatert/- eller deleted/-layout",
+                    "køstien er verken en gyldig mediefilsti eller en "
+                    "gjenkjennelig avledet filsti",
                 )
             )
             progress.update(current, len(rows), action="kontrollert")
@@ -1243,8 +1249,12 @@ def doctor_check_pending_file_deletes(target: Path) -> None:
             progress.update(current, len(rows), action="kontrollert")
             continue
 
-        path_key = db.relative_path_key(relative_path)
-        if path_key in referenced_path_keys:
+        still_referenced = (
+            relative_path in referenced_derived_paths
+            if is_managed_derived_file_path(relative_path)
+            else db.relative_path_key(relative_path) in referenced_path_keys
+        )
+        if still_referenced:
             errors.append(
                 (
                     pending_id,

@@ -82,6 +82,10 @@ Filer som mister den siste importkoblingen legges først i Bildebanks
 `pending_file_deletes`-kø i samme databasetransaksjon som importkoblingene
 fjernes. Databasen lagres før Bildebank prøver fysisk sletting.
 
+Hvis Bildebank har laget en thumbnail eller videoavspillingskopi for filen,
+legges også disse i køen. De beholdes når bildet fortsatt har en kobling til en
+annen import.
+
 Køposten lagrer forventet størrelse og SHA-256 for akkurat den samlingskopien
 som skal fjernes. Hvis noe annet senere ligger på samme sti, nekter oppryddingen
 å slette filen.
@@ -94,8 +98,9 @@ igjen senere:
 bildebank cleanup-pending-deletes --apply
 ```
 
-`--dry-run` viser hvilke filer som ville blitt lagt i køen, og hvilke som
-beholdes fordi andre importer fortsatt refererer til dem.
+`--dry-run` viser hvilke originaler, thumbnails og videoavspillingskopier som
+ville blitt lagt i køen, og hvilke bilder som beholdes fordi andre importer
+fortsatt refererer til dem.
 
 Hvis noen av filene som ville blitt fjernet er endret siden import, viser
 `--dry-run` også advarselen om dette. Dry-run spør fortsatt ikke om bekreftelse

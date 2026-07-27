@@ -2,10 +2,11 @@
 
 Dette dokumentet beskriver design og konsekvenser ved å innføre permanent sletting (tømming av `deleted/`), samt hvordan konseptet **tombstone** (slettingsmarkør) forhindrer utilsiktet re-import.
 
-Planen bygger på database v19, der `files.sha256` allerede er globalt unik og
-eventuelle eldre duplikatrader repareres under migrering. Tombstone- og
-papirkurvlogikken trenger derfor ikke håndtere flere `files`-rader med samme
-SHA-256.
+Planen bygger på database v20. Global unikhet for `files.sha256` ble innført i
+v19, og v20 rydder historiske foreldreløse thumbnails og
+videoavspillingskopier. Tombstone- og papirkurvlogikken trenger derfor ikke
+håndtere flere `files`-rader med samme SHA-256 eller den historiske
+cacheoppryddingen.
 
 ---
 
@@ -84,12 +85,14 @@ Permanent sletting skal være logisk atomisk: Etter fullført operasjon skal fil
 1. I én databasetransaksjon legges slettingen i `pending_file_purges` med `file_id`, forventet samlingssti, SHA-256, størrelse og alle opplysninger som trengs for å opprette tombstonen. Den opprinnelige `files`-raden og tilhørende rader beholdes, og det opprettes ingen tombstone ennå.
 2. Databasetransaksjonen committes før Bildebank forsøker fysisk sletting.
 3. Oppryddingen kontrollerer at filen på stien fortsatt er den forventede filen før den slettes fra `deleted/`.
-4. Etter vellykket fysisk sletting opprettes tombstonen, den opprinnelige `files`-raden med tilhørende `file_sources` og andre relaterte rader fjernes, og purge-posten slettes i én databasetransaksjon.
-5. Dersom filen er endret, erstattet, låst eller ikke kan slettes, beholdes `files`-raden, og det opprettes ingen tombstone. Purge-posten blir stående med feilinformasjon og kan prøves igjen senere.
-6. Hvis programmet stopper etter at filen er slettet, men før den avsluttende databasetransaksjonen er committed, skal purge-posten inneholde nok informasjon til at recovery kan fullføre opprettelsen av tombstonen og oppryddingen av `files` på en entydig måte.
-7. Recovery og nye oppryddingsforsøk skal aldri slette en fil som ikke har forventet størrelse og SHA-256.
+4. Før originalen slettes, fjernes alle programgenererte avledede filer som entydig kan knyttes til bildet. Det omfatter gjeldende thumbnail under `thumbs/v2`, videoforhåndsvisning under `video-previews/v1` og eldre thumbnails når stien kan avledes entydig. Oppryddingen skal bare behandle de forventede enkeltfilene, aldri mapper rekursivt. En manglende avledet fil er i orden. En eksisterende avledet fil skal være en vanlig fil uten symbolsk lenke, junction eller annet Windows reparse point. Hvis en slik fil ikke kan valideres eller slettes, beholdes originalen og `files`-raden, og det opprettes ingen tombstone.
+5. Når de avledede filene er fjernet, slettes den validerte originalen fra `deleted/`.
+6. Etter vellykket fysisk sletting opprettes tombstonen, den opprinnelige `files`-raden med tilhørende `file_sources` og andre relaterte rader fjernes, og purge-posten slettes i én databasetransaksjon.
+7. Dersom originalen er endret, erstattet, låst eller ikke kan slettes, beholdes `files`-raden, og det opprettes ingen tombstone. Purge-posten blir stående med feilinformasjon og kan prøves igjen senere. Avledede filer som allerede er fjernet, er regenererbare og trenger ikke gjenopprettes.
+8. Hvis programmet stopper etter at originalen er slettet, men før den avsluttende databasetransaksjonen er committed, skal purge-posten inneholde nok informasjon til at recovery kan fullføre sletting av eventuelle gjenstående avledede filer, opprettelsen av tombstonen og oppryddingen av `files` på en entydig måte.
+9. Recovery og nye oppryddingsforsøk skal aldri slette en original som ikke har forventet størrelse og SHA-256.
 
-En permanent sletting er ikke fullført før den fysiske filen er borte, tombstonen er opprettet og purge-posten er fjernet. Hvis slettingen feiler, blir den opprinnelige slettede `files`-raden og purge-posten stående, og filen vises som ventende på permanent sletting.
+En permanent sletting er ikke fullført før originalen og alle entydig identifiserte avledede filer er borte, tombstonen er opprettet og purge-posten er fjernet. Hvis slettingen feiler, blir den opprinnelige slettede `files`-raden og purge-posten stående, og filen vises som ventende på permanent sletting.
 
 `pending_file_purges` skal minst inneholde:
 
@@ -99,14 +102,20 @@ En permanent sletting er ikke fullført før den fysiske filen er borte, tombsto
 * tidspunkt for opprettelse og siste oppdatering
 * antall slettingsforsøk og siste feil
 
-`pending_file_deletes` beholder sin eksisterende kontrakt som fysisk etterarbeid for `unimport`, der `files`-raden allerede er fjernet. De to tabellene skal ikke dele livsløpslogikk. De kan gjenbruke en felles lavnivåfunksjon som validerer sti, vanlig fil, lenker/reparse points, størrelse og SHA-256 og deretter utfører den fysiske slettingen.
+`pending_file_deletes` beholder sin eksisterende kontrakt som fysisk
+etterarbeid for `unimport`, der `files`-raden allerede er fjernet. Køen kan
+inneholde både originalen og entydig identifiserte, programgenererte
+thumbnails og videoavspillingskopier. De to journaltabellene skal ikke dele
+livsløpslogikk. De kan gjenbruke en felles lavnivåfunksjon som validerer sti,
+vanlig fil, lenker/reparse points, størrelse og SHA-256 og deretter utfører den
+fysiske slettingen.
 
 Target-låsen skal holdes fra før den første valideringen og opprettelsen av purge-posten til den avsluttende databasetransaksjonen er committed, eller et mislykket slettingsforsøk er registrert. Dermed kan ikke snapshot, import, serverhandlinger eller andre samlingsendringer observere eller bygge videre på mellomtilstanden mens prosessen kjører.
 
 Et avbrudd eller strømbrudd kan likevel etterlate en journalført mellomtilstand. Før samlingen brukes normalt igjen, skal recovery behandle den slik:
 
-* Hvis filen fortsatt finnes og matcher forventet størrelse og SHA-256, kan det autoriserte slettingsforsøket prøves igjen.
-* Hvis filen er borte, fullfører recovery opprettelsen av tombstonen og fjerningen av `files`-raden og purge-posten.
+* Hvis originalen fortsatt finnes og matcher forventet størrelse og SHA-256, kan det autoriserte slettingsforsøket prøves igjen. Avledede filer fjernes før originalen også ved et nytt forsøk.
+* Hvis originalen er borte, fullfører recovery først sletting av eventuelle gjenstående, entydig identifiserte avledede filer og deretter opprettelsen av tombstonen og fjerningen av `files`-raden og purge-posten.
 * Hvis noe annet finnes på stien, skal recovery ikke slette filen eller opprette tombstone, men stoppe for manuell avklaring.
 * Hvis samlingen åpnes skrivebeskyttet og recovery derfor ikke kan fullføres, skal mellomtilstanden rapporteres tydelig. Den skal ikke behandles som en ordinær manglende fil eller en ferdig tombstone.
 
@@ -151,6 +160,7 @@ Dersom permanent sletting / tømming av papirkurv implementeres, må følgende s
    * Web-UI skal vise antall filer og samlet størrelse før brukeren bekrefter permanent sletting.
    * En eventuell CLI-kommando skal være dry-run som standard og kreve et eksplisitt bekreftelsesflagg for å utføre sletting.
 2. **Avgrenset utvalg:** Bare validerte, databaseførte filer under `deleted/` kan behandles. Funksjonen skal ikke implementeres som rekursiv sletting av innholdet i mappen.
+   * Programgenererte thumbnails og videoforhåndsvisninger kan bare slettes når den forventede enkeltstien kan avledes entydig fra purge-posten. Andre filer i de avledede mappene skal ikke berøres.
 3. **Eksplisitt fjerning av tombstone:**
    * Dersom brukeren vil at Bildebank også skal glemme sperren, skal en bestemt tombstone kunne fjernes ved ID.
    * Handlingen skal vise tombstonens filnavn, tidligere plassering, størrelse og slettetidspunkt før bekreftelse, og advare om at re-import da kan skje ved fremtidig skanning.

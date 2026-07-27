@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from . import db
 from .config import AppConfig
+from .derived_files import enqueue_unimport_derived_files_in_transaction
 from .item_sidecars import (
     attach_existing_item_databases,
     delete_attached_item_data,
@@ -318,14 +319,28 @@ def apply_unimport_transaction(
             int(row["id"]): row
             for row in conn.execute(
                 f"""
-                SELECT id, target_path, sha256, size_bytes
+                SELECT
+                    id,
+                    target_path,
+                    stored_filename,
+                    sha256,
+                    size_bytes,
+                    deleted_at,
+                    deleted_original_target_path
                 FROM files
                 WHERE id IN ({placeholders})
                 """,
                 plan.file_ids_to_delete,
             )
         }
-    pending_ids: list[int] = []
+    pending_ids = list(
+        enqueue_unimport_derived_files_in_transaction(
+            conn,
+            target,
+            tuple(rows[file_id] for file_id in plan.file_ids_to_delete),
+            source_id=plan.source.id,
+        )
+    )
     for file_id in plan.file_ids_to_delete:
         row = rows[file_id]
         change = changed_by_id.get(file_id)

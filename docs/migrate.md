@@ -61,6 +61,23 @@ v19-reparasjon av duplikate bilder, fordi tilhørende ansiktsdata da ryddes.
 
 Hvis migreringen feiler, skal databasen ikke oppgraderes, og backupen beholdes.
 
+## Migrering til v20
+
+V20 rydder foreldreløse thumbnails og videoavspillingskopier som eldre
+`unimport`-kjøringer kunne etterlate. Bildebank kontrollerer bare de reserverte
+mappene `thumbs\v2` og `video-previews\v1`, samt det utgåtte
+thumbnail-formatet under `thumbs`.
+
+Filer som fortsatt tilhører et bilde i databasen beholdes. Ukjente filer,
+symlinker og Windows reparse points slettes ikke. En gjenkjennelig cachefil
+som er låst eller endres under kontrollen blir liggende i den sikre
+pending-delete-køen, og `migrate` skriver en advarsel.
+
+Oppryddingen berører ikke originalbilder, generert HTML, eksporter eller
+snapshots. Etter v20 fjerner `unimport` de eksakte avledede filene samtidig som
+den siste importkoblingen til et bilde fjernes, så hele cacheområdet trenger
+ikke skannes på nytt ved senere kjøringer.
+
 ## Migrering til v19
 
 V19 gjør SHA-256 unik i hele `files`, også for bilder i papirkurven. Hvis

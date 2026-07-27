@@ -106,7 +106,7 @@ def test_migration_creates_global_sha_unique_index_without_duplicates(
     result = db.migrate_database(target)
 
     assert result.current_version == 18
-    assert result.target_version == 19
+    assert result.target_version == 20
     assert result.duplicate_sha256_groups == 0
     conn = db.connect(target)
     try:
@@ -170,8 +170,8 @@ def test_current_migration_repairs_duplicates_when_unique_index_is_damaged(
 
     result = db.migrate_database(target)
 
-    assert result.current_version == 19
-    assert result.target_version == 19
+    assert result.current_version == 20
+    assert result.target_version == 20
     assert result.duplicate_sha256_groups == 1
     conn = db.connect(target)
     try:
@@ -405,7 +405,7 @@ def test_migration_completes_when_no_duplicate_copy_matches_database_hash(
 
     result = db.migrate_database(target)
 
-    assert result.target_version == 19
+    assert result.target_version == 20
     conn = db.connect(target)
     try:
         assert conn.execute(

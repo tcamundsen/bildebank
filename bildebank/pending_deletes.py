@@ -5,7 +5,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import db
-from .media import sha256_file
+from .collection_paths import (
+    COLLECTION_FILE_MISSING,
+    COLLECTION_FILE_OK,
+    hash_stable_collection_file,
+    inspect_collection_file,
+    inspect_existing_collection_path_components,
+    is_active_collection_file_path,
+    is_deleted_collection_file_path,
+    parse_collection_relative_path,
+    same_collection_file_version,
+)
 from .target_lock import TargetLock
 
 
@@ -168,6 +178,9 @@ def cleanup_pending_deletes_locked(
         return []
     conn = db.connect(target)
     try:
+        from .derived_files import expected_derived_paths
+
+        owned_derived_paths = expected_derived_paths(conn)
         sql = "SELECT id FROM pending_file_deletes"
         params: tuple[int, ...] = ()
         if pending_ids is not None:
@@ -180,17 +193,37 @@ def cleanup_pending_deletes_locked(
             params = (*params, limit)
         selected_ids = [int(row["id"]) for row in conn.execute(sql, params)]
         results: list[PendingDeleteResult] = []
+        deleted_derived_paths: list[Path] = []
         for pending_id in selected_ids:
-            result = _try_pending_delete(conn, target, pending_id)
+            result = _try_pending_delete(
+                conn,
+                target,
+                pending_id,
+                owned_derived_paths=owned_derived_paths,
+            )
             if result is not None:
                 results.append(result)
+                if result.outcome == "deleted":
+                    from .derived_files import is_managed_derived_file_path
+
+                    if is_managed_derived_file_path(result.path):
+                        deleted_derived_paths.append(result.path)
             conn.commit()
+        if deleted_derived_paths:
+            from .derived_files import cleanup_empty_derived_parents
+
+            cleanup_empty_derived_parents(
+                target,
+                tuple(deleted_derived_paths),
+            )
         return results
     finally:
         conn.close()
 
 
 def managed_pending_delete_path(target: Path, path: Path) -> tuple[Path, Path]:
+    from .derived_files import is_managed_derived_file_path
+
     target_root = target.resolve()
     candidate = Path(path)
     if not candidate.is_absolute():
@@ -206,22 +239,28 @@ def managed_pending_delete_path(target: Path, path: Path) -> tuple[Path, Path]:
         or ".." in lexical_relative.parts
     ):
         raise ValueError(f"Ugyldig pending-delete-sti: {path}")
-    first = lexical_relative.parts[0]
     if not (
-        (len(first) == 4 and first.isdigit())
-        or first in {"udatert", "deleted"}
+        is_active_collection_file_path(lexical_relative)
+        or is_deleted_collection_file_path(lexical_relative)
+        or is_managed_derived_file_path(lexical_relative)
     ):
         raise ValueError(
-            "Pending-delete kan bare brukes for ordinære mediefiler under "
-            "årsmappene, udatert/ eller deleted/."
+            "Pending-delete kan bare brukes for ordinære mediefiler eller "
+            "gjenkjennelige, programgenererte thumbnails og "
+            "videoavspillingskopier."
         )
-    for parent in [unresolved, *unresolved.parents]:
-        if parent == target_root.parent:
-            break
-        if parent.is_symlink():
-            raise ValueError(f"Pending-delete-stien kan ikke inneholde symlinker: {path}")
-        if parent == target_root:
-            break
+    normalized_relative = parse_collection_relative_path(
+        lexical_relative.as_posix()
+    )
+    issue = inspect_existing_collection_path_components(
+        target_root,
+        normalized_relative,
+    )
+    if issue is not None:
+        raise ValueError(
+            "Pending-delete-stien kan ikke inneholde symlinker eller Windows "
+            f"reparse points: {issue.path}"
+        )
     resolved = unresolved.resolve(strict=False)
     try:
         relative_path = resolved.relative_to(target_root)
@@ -234,7 +273,11 @@ def _try_pending_delete(
     conn: sqlite3.Connection,
     target: Path,
     pending_id: int,
+    *,
+    owned_derived_paths: frozenset[Path],
 ) -> PendingDeleteResult | None:
+    from .derived_files import is_managed_derived_file_path
+
     row = conn.execute(
         "SELECT * FROM pending_file_deletes WHERE id = ?",
         (pending_id,),
@@ -246,36 +289,69 @@ def _try_pending_delete(
         normalized_path, absolute_path = managed_pending_delete_path(target, relative_path)
         if normalized_path.as_posix() != relative_path.as_posix():
             raise ValueError("Pending-delete-stien er ikke normalisert.")
-        reference = conn.execute(
-            "SELECT id FROM files WHERE target_path_key = ? LIMIT 1",
-            (db.relative_path_key(normalized_path),),
-        ).fetchone()
-        if reference is not None:
-            raise ValueError(
-                f"Filen har fortsatt database-referanse i files #{int(reference['id'])}."
-            )
-        if not absolute_path.exists():
+        if is_managed_derived_file_path(normalized_path):
+            if normalized_path in owned_derived_paths:
+                raise ValueError(
+                    "Den avledede filen tilhører fortsatt en files-rad."
+                )
+        else:
+            reference = conn.execute(
+                "SELECT id FROM files WHERE target_path_key = ? LIMIT 1",
+                (db.relative_path_key(normalized_path),),
+            ).fetchone()
+            if reference is not None:
+                raise ValueError(
+                    f"Filen har fortsatt database-referanse i files #{int(reference['id'])}."
+                )
+        inspection = inspect_collection_file(target, normalized_path)
+        if inspection.status == COLLECTION_FILE_MISSING:
             conn.execute("DELETE FROM pending_file_deletes WHERE id = ?", (pending_id,))
             return PendingDeleteResult(pending_id, normalized_path, "missing")
-        if not absolute_path.is_file():
-            raise ValueError("Pending-delete-stien er ikke en vanlig fil.")
+        if (
+            inspection.status != COLLECTION_FILE_OK
+            or inspection.path_stat is None
+            or inspection.size_bytes is None
+        ):
+            raise ValueError(
+                inspection.message
+                or "Pending-delete-stien er ikke en vanlig fil uten lenker."
+            )
         if row["expected_sha256"] is None or row["expected_size_bytes"] is None:
             raise ValueError(
                 "Pending-delete-raden mangler forventet SHA-256/størrelse og kan "
                 "ikke slettes automatisk."
             )
         expected_size = int(row["expected_size_bytes"])
-        actual_size = absolute_path.stat().st_size
+        actual_size = inspection.size_bytes
         if actual_size != expected_size:
             raise ValueError(
                 "Filen på pending-delete-stien har endret størrelse "
                 f"(nå {actual_size}, forventet {expected_size})."
             )
         expected_sha256 = str(row["expected_sha256"])
-        actual_sha256 = sha256_file(absolute_path)
+        actual_sha256, hashed_size = hash_stable_collection_file(
+            target,
+            normalized_path,
+        )
+        if hashed_size != expected_size:
+            raise ValueError(
+                "Filen på pending-delete-stien endret størrelse under kontroll."
+            )
         if actual_sha256 != expected_sha256:
             raise ValueError(
                 "Filen på pending-delete-stien har endret innhold og slettes ikke."
+            )
+        final_inspection = inspect_collection_file(target, normalized_path)
+        if (
+            final_inspection.status != COLLECTION_FILE_OK
+            or final_inspection.path_stat is None
+            or not same_collection_file_version(
+                inspection.path_stat,
+                final_inspection.path_stat,
+            )
+        ):
+            raise ValueError(
+                "Filen på pending-delete-stien ble byttet eller endret før sletting."
             )
         absolute_path.unlink()
         conn.execute("DELETE FROM pending_file_deletes WHERE id = ?", (pending_id,))

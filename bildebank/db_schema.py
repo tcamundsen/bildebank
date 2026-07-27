@@ -42,7 +42,7 @@ from .db_tags import (
     tag_name_key,
 )
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 ITEM_SIDECAR_CLEANUP_SCHEMA_VERSION = 17
 DUPLICATE_SHA256_REPAIR_REASON = "schema-v19-duplicate-sha256"
 GPS_ERROR_EXIFTOOL = "exiftool_error"
@@ -124,6 +124,10 @@ class MigrationPlan:
     duplicate_sha256_files: int = 0
     duplicate_review_files: int = 0
     duplicate_pending_delete_ids: tuple[int, ...] = ()
+    cleans_orphaned_derived_files: bool = False
+    orphaned_derived_files: int = 0
+    unsafe_derived_paths: tuple[Path, ...] = ()
+    derived_pending_delete_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -818,6 +822,16 @@ def repair_duplicate_sha256_groups(
     return tuple(pending_ids)
 
 
+def orphaned_derived_file_summary(
+    conn: sqlite3.Connection,
+    target: Path,
+) -> tuple[int, tuple[Path, ...]]:
+    from .derived_files import plan_orphaned_derived_files
+
+    plan = plan_orphaned_derived_files(conn, target)
+    return len(plan.candidates), plan.unsafe_paths
+
+
 def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
     conn = connect(target, require_current=False)
     try:
@@ -850,7 +864,23 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 duplicate_sha256_groups=duplicate_sha256_groups,
                 duplicate_sha256_files=duplicate_sha256_files,
             )
-        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}:
+        if version in {
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+        }:
             if validate:
                 validate_current_schema(
                     conn,
@@ -866,6 +896,11 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                     require_no_superseded_sources=False,
                 )
             source_columns = table_columns(conn, "sources") if table_exists(conn, "sources") else set()
+            orphaned_derived_files, unsafe_derived_paths = (
+                orphaned_derived_file_summary(conn, target)
+                if version >= 19
+                else (0, ())
+            )
             return MigrationPlan(
                 current_version=version,
                 target_version=SCHEMA_VERSION,
@@ -891,6 +926,9 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 terminal_file_moves=count_terminal_file_moves(conn),
                 duplicate_sha256_groups=duplicate_sha256_groups,
                 duplicate_sha256_files=duplicate_sha256_files,
+                cleans_orphaned_derived_files=True,
+                orphaned_derived_files=orphaned_derived_files,
+                unsafe_derived_paths=unsafe_derived_paths,
             )
         if validate:
             validate_pre_migration(conn, version)
@@ -928,6 +966,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
             terminal_file_moves=count_terminal_file_moves(conn),
             duplicate_sha256_groups=duplicate_sha256_groups,
             duplicate_sha256_files=duplicate_sha256_files,
+            cleans_orphaned_derived_files=True,
         )
     finally:
         conn.close()
@@ -1030,7 +1069,23 @@ def migrate_database(
                 duplicate_review_files=len(duplicate_sha256_groups),
                 duplicate_pending_delete_ids=duplicate_pending_delete_ids,
             )
-        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}:
+        if version in {
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+        }:
             imported_files = count_rows(conn, "files")
             duplicate_findings = count_rows(conn, "duplicate_findings")
             duplicate_sha256_groups = build_duplicate_sha256_groups(
@@ -1066,6 +1121,8 @@ def migrate_database(
                 else ()
             )
             duplicate_pending_delete_ids: tuple[int, ...] = ()
+            derived_cleanup_plan = None
+            derived_pending_delete_ids: tuple[int, ...] = ()
             try:
                 conn.execute("PRAGMA foreign_keys = OFF")
                 conn.execute("BEGIN IMMEDIATE")
@@ -1085,6 +1142,17 @@ def migrate_database(
                 if cleans_item_sidecars:
                     cleanup_obsolete_item_sidecars(conn)
                 cleanup_terminal_file_moves(conn)
+                from .derived_files import (
+                    enqueue_orphaned_derived_files_in_transaction,
+                )
+
+                (
+                    derived_cleanup_plan,
+                    derived_pending_delete_ids,
+                ) = enqueue_orphaned_derived_files_in_transaction(
+                    conn,
+                    target,
+                )
                 set_meta(conn, "schema_version", str(SCHEMA_VERSION))
                 log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
                 validate_current_schema(conn)
@@ -1119,6 +1187,18 @@ def migrate_database(
                 duplicate_sha256_files=duplicate_sha256_files,
                 duplicate_review_files=len(duplicate_sha256_groups),
                 duplicate_pending_delete_ids=duplicate_pending_delete_ids,
+                cleans_orphaned_derived_files=True,
+                orphaned_derived_files=(
+                    len(derived_cleanup_plan.candidates)
+                    if derived_cleanup_plan is not None
+                    else 0
+                ),
+                unsafe_derived_paths=(
+                    derived_cleanup_plan.unsafe_paths
+                    if derived_cleanup_plan is not None
+                    else ()
+                ),
+                derived_pending_delete_ids=derived_pending_delete_ids,
             )
         validate_pre_migration(conn, version)
         imported_files = count_rows(conn, "files")
@@ -1156,6 +1236,8 @@ def migrate_database(
             target_schema_version=ITEM_SIDECAR_CLEANUP_SCHEMA_VERSION,
         )
         duplicate_pending_delete_ids: tuple[int, ...] = ()
+        derived_cleanup_plan = None
+        derived_pending_delete_ids: tuple[int, ...] = ()
         try:
             conn.execute("PRAGMA foreign_keys = OFF")
             conn.execute("BEGIN IMMEDIATE")
@@ -1187,6 +1269,17 @@ def migrate_database(
             backfill_h3_10_11(conn)
             cleanup_obsolete_item_sidecars(conn)
             cleanup_terminal_file_moves(conn)
+            from .derived_files import (
+                enqueue_orphaned_derived_files_in_transaction,
+            )
+
+            (
+                derived_cleanup_plan,
+                derived_pending_delete_ids,
+            ) = enqueue_orphaned_derived_files_in_transaction(
+                conn,
+                target,
+            )
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
             validate_current_schema(conn)
@@ -1226,6 +1319,18 @@ def migrate_database(
             duplicate_sha256_files=duplicate_sha256_files,
             duplicate_review_files=len(duplicate_sha256_groups),
             duplicate_pending_delete_ids=duplicate_pending_delete_ids,
+            cleans_orphaned_derived_files=True,
+            orphaned_derived_files=(
+                len(derived_cleanup_plan.candidates)
+                if derived_cleanup_plan is not None
+                else 0
+            ),
+            unsafe_derived_paths=(
+                derived_cleanup_plan.unsafe_paths
+                if derived_cleanup_plan is not None
+                else ()
+            ),
+            derived_pending_delete_ids=derived_pending_delete_ids,
         )
     finally:
         conn.close()

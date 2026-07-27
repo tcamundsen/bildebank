@@ -282,7 +282,7 @@ lagring uten å kreve en separat databaseserver.
 
 ## Databaseversjoner
 
-- gjeldende schema er v19
+- gjeldende schema er v20
 - eldste hoveddatabaseformat som støttes av gjeldende migrator er v5
 - v1–v4 er historiske, utfasete formater; eldre hjelpegrener i koden er ikke
   et løfte om at disse formatene kan oppgraderes direkte
@@ -300,8 +300,9 @@ lagring uten å kreve en separat databaseserver.
   devel-docs/database-v16-migration.md,
   devel-docs/database-v17-migration.md,
   devel-docs/database-v18-migration.md og
-  devel-docs/database-v19-migration.md
-- ny runtime-kode skal anta v19, med mindre oppgaven eksplisitt gjelder
+  devel-docs/database-v19-migration.md og
+  devel-docs/database-v20-migration.md
+- ny runtime-kode skal anta v20, med mindre oppgaven eksplisitt gjelder
   migrering
 - den separate OpenCLIP-databasen har schema v1 og er beskrevet i
   devel-docs/openclip-database.md
@@ -439,6 +440,15 @@ For et aktivt bilde skal sidecar-dataene beholdes så lenge minst én
 den aktuelle unimporten fjerner den siste kildereferansen og dermed selve
 `files`-raden. Sidecar-opprydding og hoveddatabaseendring skal skje i samme
 transaksjon.
+
+Når `unimport` fjerner selve `files`-raden, skal den også kølegge sletting av
+bildets eksisterende thumbnail under `thumbs/v2` og eventuell
+videoavspillingskopi under `video-previews/v1`. De avledede filene skal
+identifiseres med forventet størrelse og SHA-256 og behandles av den samme
+trygge pending-delete-mekanismen som originalen. Hvis en senere import har
+gjort en avledet cachebane aktuell igjen, skal den ventende slettingen nekte å
+fjerne cachefilen. Når bildet beholdes fordi en annen `file_sources`-rad
+fortsatt finnes, skal også de avledede filene beholdes.
 
 Dette endrer ikke kontrakten for selve mediefilen: `remove` beholder den under
 `deleted/`. En eventuell fremtidig funksjon for permanent tømming av
