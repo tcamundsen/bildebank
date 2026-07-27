@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Callable, TextIO
 
 from . import db
+from .item_sidecars import (
+    attach_existing_face_databases,
+    sync_attached_face_paths,
+    validate_attached_face_path_sync,
+)
 from .media import (
     MediaDate,
     camera_info,
@@ -614,6 +619,8 @@ def _refresh_non_metadata_files_unlocked(
     conn = db.connect(target)
     try:
         rows = list(db.metadata_refresh_files(conn, rescan=rescan))
+        if rows and not dry_run:
+            attach_existing_face_databases(conn, target)
         total = len(rows)
         if progress is not None:
             progress("start", 0, total, stats, None)
@@ -695,6 +702,14 @@ def refresh_non_metadata_file(
     destination_path, name_conflict, already_present = find_existing_or_available_destination(
         destination_dir, current_path.name, file_hash
     )
+    file_id = int(row["id"])
+    if not dry_run:
+        attach_existing_face_databases(conn, target)
+        validate_attached_face_path_sync(
+            conn,
+            file_id=file_id,
+            sha256=file_hash,
+        )
 
     move_id: int | None = None
     if already_present:
@@ -719,7 +734,7 @@ def refresh_non_metadata_file(
             destination_path.parent.mkdir(parents=True, exist_ok=True)
             move_id = db.create_pending_file_move(
                 conn,
-                file_id=int(row["id"]),
+                file_id=file_id,
                 target_root=target,
                 from_path=current_path,
                 to_path=destination_path,
@@ -740,7 +755,7 @@ def refresh_non_metadata_file(
     if not dry_run:
         db.update_file_placement(
             conn,
-            file_id=int(row["id"]),
+            file_id=file_id,
             target_root=target,
             target_path=destination_path,
             stored_filename=destination_path.name,
@@ -750,6 +765,13 @@ def refresh_non_metadata_file(
             camera_make=camera.make if camera is not None else None,
             camera_model=camera.model if camera is not None else None,
             metadata_datetime=_datetime_string(metadata_dt),
+        )
+        sync_attached_face_paths(
+            conn,
+            file_id=file_id,
+            sha256=file_hash,
+            target_root=target,
+            target_path=destination_path,
         )
         if move_id is not None:
             db.complete_pending_file_move(conn, move_id=move_id)

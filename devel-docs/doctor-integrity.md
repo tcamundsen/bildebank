@@ -220,6 +220,28 @@ Kommandoen endrer ikke embedding, søkeresultater, hoveddatabase eller
 mediefiler. Apply kjører under target-lås, beregner planen på nytt og oppdaterer
 alle kvalifiserte rader i én transaksjon. SHA-avvik blir stående urørt.
 
+`repair-face-paths` følger samme beviskrav for alle eksisterende
+InsightFace-modelldatabaser. Den kan bare endre
+`scanned_files.target_path`, `scanned_files.target_path_key` og
+`faces.target_path_key` når:
+
+- hoveddatabasen og samtlige berørte face-databaser har gjeldende schema og
+  består full databasehelsekontroll
+- ingen `pending_file_moves` er uavklart
+- `files`-raden er aktiv, og `file_id` og SHA-256 stemmer med
+  `scanned_files`
+- mediefilen kan hashes stabilt og stemmer med databaseført størrelse og
+  SHA-256
+- modellnavn, ansiktstelling, filreferanser og interne face-referanser ellers
+  er konsistente
+
+Dry-run er standard. Apply holder target-låsen, beregner planen på nytt og
+oppdaterer alle modelldatabasene i én tilkoblet SQLite-transaksjon. Kommandoen
+endrer ikke embeddings, ansiktsrader utover stinøkkelen, personer,
+bekreftelser, forslag, hoveddatabasen eller mediefiler. Finner den andre
+avvik, utføres ingen delvis reparasjon. Doctor anbefaler bare kommandoen når
+de observerte InsightFace-feilene er rene stiavvik.
+
 Den neste smale reparasjonen er `repair-missing-file`. Den gjelder én
 eksisterende `files`-rad og én brukeroppgitt ekstern kopi om gangen.
 

@@ -74,6 +74,7 @@ er merket har jeg ikke sett over ennå.
 - [`face-scan`](face-scan.md) **`vindu`**
 - [`face-suggest`](face-suggest.md) **`web`**
 - [`face-reset`](face-reset.md) **`cli`**
+- [`repair-face-paths`](repair-face-paths.md) **`cli`**
 
 Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 [`run-server`](run-server.md):

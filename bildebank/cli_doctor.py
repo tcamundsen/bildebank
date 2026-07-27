@@ -28,11 +28,9 @@ from .config import CONFIG_FILENAME, FaceRecognitionConfig, load_config
 from .db_core import connect_database_read_only
 from .exiftool import resolve_exiftool
 from .face import (
-    LEGACY_FACE_DB_FILENAME,
-    LEGACY_FACE_DB_MODEL_NAME,
+    face_database_model,
     face_db_path,
     face_db_summary,
-    face_model_db_filename,
     insightface_runtime_error,
     require_current_face_schema_read_only,
 )
@@ -453,11 +451,11 @@ def doctor_check_insightface_consistency(
 
     consistent = 0
     errors_found = False
+    repairable_path_issues = False
+    unsafe_issues = skipped > 0
     for path in health.healthy_face_paths:
         try:
-            model_name, allow_missing_model_name = doctor_face_database_model(
-                path
-            )
+            model_name, allow_missing_model_name = face_database_model(path)
             conn = connect_database_read_only(path)
             try:
                 require_current_face_schema_read_only(
@@ -488,6 +486,7 @@ def doctor_check_insightface_consistency(
                 conn.close()
         except (OSError, RuntimeError, sqlite3.Error, ValueError) as exc:
             errors_found = True
+            unsafe_issues = True
             doctor_error(
                 "InsightFace-databasen kunne ikke valideres read-only: "
                 f"{path} ({exc})"
@@ -522,6 +521,17 @@ def doctor_check_insightface_consistency(
         )
         if has_issues:
             errors_found = True
+            if doctor_insightface_issues_are_repairable_paths(
+                obsolete_rows=obsolete_rows,
+                scanned_mismatches=scanned_mismatches,
+                face_mismatches=face_mismatches,
+                face_reference_issues=face_reference_issues,
+                face_count_issues=face_count_issues,
+                model_name=model_name,
+            ):
+                repairable_path_issues = True
+            else:
+                unsafe_issues = True
         else:
             consistent += 1
 
@@ -531,21 +541,53 @@ def doctor_check_insightface_consistency(
             f"{consistent}/{health.face_database_count} databaser ok"
         )
     if errors_found:
-        doctor_advice(
-            "Undersøk InsightFace-databasene og sikkerhetskopien før "
-            "face-data endres eller regenereres."
-        )
+        if repairable_path_issues and not unsafe_issues:
+            doctor_advice(
+                "Kjør `bildebank repair-face-paths` for en dry-run uten "
+                "databaseendringer av reparerbare InsightFace-stier."
+            )
+        else:
+            doctor_advice(
+                "Undersøk InsightFace-databasene og sikkerhetskopien før "
+                "face-data endres eller regenereres."
+            )
 
 
-def doctor_face_database_model(path: Path) -> tuple[str, bool]:
-    if path.name == LEGACY_FACE_DB_FILENAME:
-        return LEGACY_FACE_DB_MODEL_NAME, True
-    model_name = path.stem
-    if face_model_db_filename(model_name) != path.name:
-        raise ValueError(
-            f"Ugyldig InsightFace-databasefilnavn: {path.name}"
-        )
-    return model_name, False
+def doctor_insightface_issues_are_repairable_paths(
+    *,
+    obsolete_rows: dict[str, list[sqlite3.Row]],
+    scanned_mismatches: list[sqlite3.Row],
+    face_mismatches: list[sqlite3.Row],
+    face_reference_issues: list[sqlite3.Row],
+    face_count_issues: list[sqlite3.Row],
+    model_name: str,
+) -> bool:
+    if (
+        any(obsolete_rows.values())
+        or face_reference_issues
+        or face_count_issues
+    ):
+        return False
+    if not scanned_mismatches and not face_mismatches:
+        return False
+    for row in scanned_mismatches:
+        if row["sidecar_sha256"] != row["main_sha256"]:
+            return False
+        if (
+            row["sidecar_target_path"] == row["main_target_path"]
+            and row["sidecar_target_path_key"]
+            == row["main_target_path_key"]
+        ):
+            return False
+    for row in face_mismatches:
+        if (
+            row["sidecar_embedding_model"] != model_name
+            or row["sidecar_target_path_key"]
+            == row["main_target_path_key"]
+            or row["scanned_sha256"] != row["main_sha256"]
+        ):
+            return False
+    return True
 
 
 def doctor_obsolete_insightface_file_rows(
@@ -609,10 +651,14 @@ def doctor_insightface_face_mismatches(
                 faces.file_id,
                 faces.target_path_key AS sidecar_target_path_key,
                 faces.embedding_model AS sidecar_embedding_model,
+                scanned_files.sha256 AS scanned_sha256,
                 main_db.files.target_path_key AS main_target_path_key,
+                main_db.files.sha256 AS main_sha256,
                 COUNT(*) AS row_count
             FROM faces
             JOIN main_db.files ON main_db.files.id = faces.file_id
+            LEFT JOIN scanned_files
+              ON scanned_files.file_id = faces.file_id
             WHERE main_db.files.deleted_at IS NULL
               AND (
                     faces.target_path_key <> main_db.files.target_path_key
@@ -622,7 +668,9 @@ def doctor_insightface_face_mismatches(
                 faces.file_id,
                 faces.target_path_key,
                 faces.embedding_model,
-                main_db.files.target_path_key
+                scanned_files.sha256,
+                main_db.files.target_path_key,
+                main_db.files.sha256
             ORDER BY
                 faces.file_id,
                 faces.target_path_key,

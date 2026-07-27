@@ -258,6 +258,22 @@ def face_model_db_filename(model_name: str) -> str:
     return f"{model_name}.sqlite3"
 
 
+def face_database_model(path: Path) -> tuple[str, bool]:
+    """Return the model implied by a face database path.
+
+    The boolean is true only for the legacy database, where a missing
+    meta.model_name is still accepted for compatibility.
+    """
+    if path.name == LEGACY_FACE_DB_FILENAME:
+        return LEGACY_FACE_DB_MODEL_NAME, True
+    model_name = path.stem
+    if face_model_db_filename(model_name) != path.name:
+        raise ValueError(
+            f"Ugyldig InsightFace-databasefilnavn: {path.name}"
+        )
+    return model_name, False
+
+
 def face_db_path(target: Path, config: FaceRecognitionConfig | None = None) -> Path:
     model_name = config.model_name if config is not None else DEFAULT_FACE_MODEL_NAME
     return face_database_dir(target, config) / face_model_db_filename(model_name)

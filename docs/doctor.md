@@ -49,6 +49,12 @@ antall registrerte ansikter per scannet fil stemmer med de lagrede
 ansiktsradene. Avvik rapporteres, men doctor migrerer, flytter, rydder eller
 regenererer ikke face-data.
 
+Hvis InsightFace-avvikene bare består av utdaterte kopier av filsti og
+stinøkkel, mens `file_id`, SHA-256, databasemodell og intern konsistens
+fortsatt stemmer, anbefaler doctor en dry-run med
+`bildebank repair-face-paths`. Kommandoen kontrollerer også selve mediefilen
+før en eventuell reparasjon. Doctor utfører aldri reparasjonen selv.
+
 Hvis bare filsti og stinøkkel i en OpenCLIP embedding er utdaterte, mens
 `file_id` og SHA-256 fortsatt stemmer, anbefaler doctor en dry-run med
 `bildebank repair-image-search-paths`. Doctor utfører aldri reparasjonen selv.

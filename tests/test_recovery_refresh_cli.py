@@ -11,12 +11,107 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bildebank import db
+from bildebank.config import FaceRecognitionConfig
 from bildebank.db import DB_FILENAME
+from bildebank.face import connect_face_db
 from bildebank.media import sha256_file
 from bildebank.safe_file_move import move_file_no_replace
 from bildebank.target_lock import LOCK_FILENAME
 from tests.cli_helpers import capture_cli, run_cli
 from tests.test_media import jpeg_with_exif_camera, minimal_avi_with_idit_outside_info
+
+
+REFRESH_FACE_CONFIGS = (
+    FaceRecognitionConfig(model_name="buffalo_l"),
+    FaceRecognitionConfig(model_name="antelopev2"),
+)
+
+
+def insert_refresh_face_rows(
+    target: Path,
+    *,
+    file_id: int,
+    target_path: str,
+    sha256: str,
+) -> None:
+    for config in REFRESH_FACE_CONFIGS:
+        conn = connect_face_db(target, config)
+        try:
+            conn.execute(
+                """
+                INSERT INTO scanned_files(
+                    file_id, target_path, target_path_key, sha256,
+                    status, face_count
+                ) VALUES(?, ?, ?, ?, 'ok', 1)
+                """,
+                (file_id, target_path, target_path.casefold(), sha256),
+            )
+            face_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO faces(
+                        file_id, target_path_key, bbox_x, bbox_y,
+                        bbox_width, bbox_height, detection_score,
+                        embedding_model, embedding
+                    ) VALUES(?, ?, 1, 2, 3, 4, 0.9, ?, X'0102')
+                    RETURNING id
+                    """,
+                    (file_id, target_path.casefold(), config.model_name),
+                ).fetchone()[0]
+            )
+            person_id = int(
+                conn.execute(
+                    "INSERT INTO persons(name) VALUES(?) RETURNING id",
+                    (config.model_name,),
+                ).fetchone()[0]
+            )
+            conn.execute(
+                "INSERT INTO person_faces(person_id, face_id) VALUES(?, ?)",
+                (person_id, face_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def assert_refresh_face_paths(
+    test_case: unittest.TestCase,
+    target: Path,
+    *,
+    file_id: int,
+    expected_path: str,
+) -> None:
+    for config in REFRESH_FACE_CONFIGS:
+        conn = connect_face_db(target, config)
+        try:
+            scanned = conn.execute(
+                """
+                SELECT target_path, target_path_key, face_count
+                FROM scanned_files WHERE file_id = ?
+                """,
+                (file_id,),
+            ).fetchone()
+            face = conn.execute(
+                """
+                SELECT target_path_key, embedding_model, embedding
+                FROM faces WHERE file_id = ?
+                """,
+                (file_id,),
+            ).fetchone()
+            person_faces = conn.execute(
+                "SELECT COUNT(*) FROM person_faces"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        test_case.assertEqual(
+            tuple(scanned),
+            (expected_path, expected_path.casefold(), 1),
+        )
+        test_case.assertEqual(
+            (face[0], face[1], bytes(face[2])),
+            (expected_path.casefold(), config.model_name, b"\x01\x02"),
+        )
+        test_case.assertEqual(person_faces, 1)
 
 
 class RecoveryRefreshCliTests(unittest.TestCase):
@@ -258,11 +353,19 @@ class RecoveryRefreshCliTests(unittest.TestCase):
 
             old_target.write_bytes(minimal_avi_with_idit_outside_info())
             with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
+                current_sha256 = sha256_file(old_target)
                 conn.execute(
                     "UPDATE files SET sha256 = ?, size_bytes = ?",
-                    (sha256_file(old_target), old_target.stat().st_size),
+                    (current_sha256, old_target.stat().st_size),
                 )
+                file_id = int(conn.execute("SELECT id FROM files").fetchone()[0])
                 conn.commit()
+            insert_refresh_face_rows(
+                target,
+                file_id=file_id,
+                target_path="2008/02/video.avi",
+                sha256=current_sha256,
+            )
 
             code, stdout, stderr = capture_cli(["--target", str(target), "refresh-metadata"])
 
@@ -283,6 +386,12 @@ class RecoveryRefreshCliTests(unittest.TestCase):
                 self.assertEqual(row[2], "metadata")
             finally:
                 conn.close()
+            assert_refresh_face_paths(
+                self,
+                target,
+                file_id=file_id,
+                expected_path="2007/03/video.avi",
+            )
 
     def test_refresh_metadata_rejects_changed_content_before_moving(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -353,8 +462,19 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             new_target = target / "2007" / "03" / "video.avi"
             old_target.write_bytes(minimal_avi_with_idit_outside_info())
             with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
-                conn.execute("UPDATE files SET sha256 = ?", (sha256_file(old_target),))
+                current_sha256 = sha256_file(old_target)
+                conn.execute(
+                    "UPDATE files SET sha256 = ?, size_bytes = ?",
+                    (current_sha256, old_target.stat().st_size),
+                )
+                file_id = int(conn.execute("SELECT id FROM files").fetchone()[0])
                 conn.commit()
+            insert_refresh_face_rows(
+                target,
+                file_id=file_id,
+                target_path="2008/02/video.avi",
+                sha256=current_sha256,
+            )
             real_move = move_file_no_replace
 
             def move_then_crash(source_path, destination_path, *, expected_sha256):  # noqa: ANN001
@@ -391,6 +511,12 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             self.assertEqual(row[1], "2007-03-12")
             self.assertEqual(row[2], "metadata")
             self.assertEqual(pending_count, 0)
+            assert_refresh_face_paths(
+                self,
+                target,
+                file_id=file_id,
+                expected_path="2007/03/video.avi",
+            )
 
     def test_refresh_metadata_refuses_to_run_while_target_is_locked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

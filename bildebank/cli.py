@@ -876,6 +876,25 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Oppdater reparerbare target_path- og target_path_key-felt.",
     )
+    repair_face_paths_parser = add_command(
+        subparsers,
+        "repair-face-paths",
+        usage="bildebank repair-face-paths [valg]",
+        help="Synkroniser trygt utdaterte InsightFace-stier",
+        description=(
+            "Vis eller synkroniser utdaterte stier i alle eksisterende "
+            "InsightFace-modelldatabaser når file_id, SHA-256 og mediefilen "
+            "fortsatt stemmer med hoveddatabasen."
+        ),
+    )
+    repair_face_paths_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help=(
+            "Oppdater reparerbare target_path- og target_path_key-felt. "
+            "Ansikter, embeddings og personkoblinger endres ikke."
+        ),
+    )
     repair_missing_file_parser = add_command(
         subparsers,
         "repair-missing-file",
@@ -1282,6 +1301,7 @@ IMAGE_COMMANDS = {
 }
 
 FACE_COMMANDS = {
+    "repair-face-paths",
     "face-scan",
     "face-report",
     "face-person-create",
@@ -1449,6 +1469,7 @@ def should_recover_pending_file_moves(args: argparse.Namespace) -> bool:
     if args.command in {
         "check-source",
         "migrate",
+        "repair-face-paths",
         "repair-image-search-paths",
         "repair-missing-file",
     }:

@@ -15,6 +15,14 @@ options:
 
 Hvis Bildebank senere klarer å lese metadata som manglet da filen ble
 importert, vil denne kommandoen flytte filen til riktig datomappe.
+Når en fil flyttes, synkroniseres de kopierte filstiene i alle eksisterende
+InsightFace-modelldatabaser. Bare stifeltene endres; ansikter, embeddings,
+personer og bekreftede koblinger beholdes.
+
+Eldre stiavvik fra flyttinger som skjedde før denne synkroniseringen ble
+innført, repareres ikke ved å kjøre vanlig `refresh-metadata` på nytt. Kjør
+først `bildebank repair-face-paths` som dry-run, og bruk `--apply` etter at du
+har tatt et oppdatert snapshot.
 
 Før en fil flyttes, kontrollerer Bildebank at innholdet fortsatt har samme
 SHA-256 som da filen ble importert. Hvis innholdet er endret, rapporteres en

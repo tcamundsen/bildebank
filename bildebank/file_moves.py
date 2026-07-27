@@ -6,8 +6,11 @@ from pathlib import Path
 from . import db
 from .config import FaceRecognitionConfig
 from .item_sidecars import (
+    attach_existing_face_databases,
     attach_existing_item_databases,
     delete_attached_item_data,
+    sync_attached_face_paths,
+    validate_attached_face_path_sync,
 )
 from .media import camera_info, media_date, metadata_datetime, sha256_file
 from .target_lock import TargetLock
@@ -157,6 +160,13 @@ def _complete_database_move(
         )
         return
     if operation == "refresh-metadata":
+        expected_sha256 = str(row["sha256"])
+        attach_existing_face_databases(conn, target, face_config)
+        validate_attached_face_path_sync(
+            conn,
+            file_id=file_id,
+            sha256=expected_sha256,
+        )
         date = media_date(to_path)
         if date.source != "metadata" or date.date is None:
             raise ValueError(
@@ -176,6 +186,13 @@ def _complete_database_move(
             camera_make=camera.make if camera is not None else None,
             camera_model=camera.model if camera is not None else None,
             metadata_datetime=metadata_dt.isoformat(sep=" ") if metadata_dt is not None else None,
+        )
+        sync_attached_face_paths(
+            conn,
+            file_id=file_id,
+            sha256=expected_sha256,
+            target_root=target,
+            target_path=to_path,
         )
         db.resolve_errors_for_path(conn, stage="refresh-metadata", source_path=from_path)
         return

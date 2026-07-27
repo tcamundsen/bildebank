@@ -107,6 +107,17 @@ Alle modellfilene oppdages i den faste `.bildebank-faces`-mappen ved
 `remove`, `unimport`, migrering og snapshots. Mappen og databasefilene skal
 være vanlige filer uten symlinker, hardlinker eller Windows reparse points.
 
+`refresh-metadata` og recovery etter en avbrutt metadataflytting oppdaterer
+kopierte stier i `scanned_files` og `faces` i alle eksisterende
+modelldatabaser. De scanner ikke inaktive modeller på nytt og endrer ikke
+embeddings, personer, bekreftelser eller forslag. Før flyttingen må
+`scanned_files.sha256` fortsatt stemme med hoveddatabasen; ellers stoppes en
+ny flytting før den starter. Hvis avviket oppdages under recovery, beholdes
+pending-flyttingen for kontroll.
+
+Historiske, rene stiavvik repareres med `repair-face-paths`. Kommandoen er
+modell-uavhengig og krever ikke at ansiktsgjenkjenning er slått på.
+
 ## Kompatibilitet
 
 Vi tar bare hensyn til én midlertidig kompatibilitetsregel fordi det trolig

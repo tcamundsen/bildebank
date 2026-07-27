@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from . import db
 from .config import FaceRecognitionConfig
 from .face import (
     LEGACY_FACE_DB_FILENAME,
@@ -27,6 +28,7 @@ def attach_existing_item_databases(
     face_config: FaceRecognitionConfig | None = None,
 ) -> None:
     """Validate and attach existing databases with data tied to file IDs."""
+    attach_existing_face_databases(conn, target, face_config)
     database_rows = list(conn.execute("PRAGMA database_list"))
     attached_names = {str(row["name"]) for row in database_rows}
     attached_paths = {
@@ -34,22 +36,6 @@ def attach_existing_item_databases(
         for row in database_rows
         if str(row["file"])
     }
-
-    face_index = 0
-    for path in existing_face_database_paths(target, face_config):
-        if path.resolve() in attached_paths:
-            continue
-        ensure_face_schema_path(path)
-        while f"face_db_{face_index}" in attached_names:
-            face_index += 1
-        alias = f"face_db_{face_index}"
-        conn.execute(
-            f"ATTACH DATABASE ? AS {alias}",
-            (str(path),),
-        )
-        attached_names.add(alias)
-        attached_paths.add(path.resolve())
-        face_index += 1
 
     openclip_path = openclip_db_path(target)
     if (
@@ -63,6 +49,142 @@ def attach_existing_item_databases(
                 "databasenavnet openclip_db er allerede i bruk."
             )
         conn.execute("ATTACH DATABASE ? AS openclip_db", (str(openclip_path),))
+
+
+def attach_existing_face_databases(
+    conn: sqlite3.Connection,
+    target: Path,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    prepare_schema: bool = True,
+) -> tuple[tuple[str, Path], ...]:
+    """Attach all existing per-model face databases and return alias/path."""
+    database_rows = list(conn.execute("PRAGMA database_list"))
+    attached_names = {str(row["name"]) for row in database_rows}
+    attached_by_path = {
+        Path(str(row["file"])).resolve(): str(row["name"])
+        for row in database_rows
+        if str(row["file"])
+    }
+
+    attached: list[tuple[str, Path]] = []
+    face_index = 0
+    for path in existing_face_database_paths(target, face_config):
+        resolved = path.resolve()
+        existing_alias = attached_by_path.get(resolved)
+        if existing_alias is not None:
+            if existing_alias.startswith("face_db_"):
+                attached.append((existing_alias, path))
+            continue
+        if prepare_schema:
+            ensure_face_schema_path(path)
+        while f"face_db_{face_index}" in attached_names:
+            face_index += 1
+        alias = f"face_db_{face_index}"
+        database_name = (
+            str(path)
+            if prepare_schema
+            else sqlite_read_write_uri(path)
+        )
+        conn.execute(
+            f"ATTACH DATABASE ? AS {alias}",
+            (database_name,),
+        )
+        attached_names.add(alias)
+        attached_by_path[resolved] = alias
+        attached.append((alias, path))
+        face_index += 1
+    return tuple(attached)
+
+
+def validate_attached_face_path_sync(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    sha256: str,
+) -> None:
+    """Reject path synchronization when a face database has lost identity."""
+    for database in attached_face_database_aliases(conn):
+        scanned_row = conn.execute(
+            f"SELECT sha256 FROM {database}.scanned_files WHERE file_id = ?",
+            (file_id,),
+        ).fetchone()
+        face_count = int(
+            conn.execute(
+                f"SELECT COUNT(*) FROM {database}.faces WHERE file_id = ?",
+                (file_id,),
+            ).fetchone()[0]
+        )
+        if scanned_row is None:
+            if face_count:
+                raise ValueError(
+                    f"{database} har faces-rader for file #{file_id}, men "
+                    "mangler scanned_files-rad"
+                )
+            continue
+        if str(scanned_row["sha256"]) != sha256:
+            raise ValueError(
+                f"{database} har SHA-256-avvik for file #{file_id}; "
+                "InsightFace-stier oppdateres ikke"
+            )
+
+
+def sync_attached_face_paths(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    sha256: str,
+    target_root: Path,
+    target_path: Path,
+) -> tuple[int, int]:
+    """Synchronize copied paths without changing face or person data."""
+    validate_attached_face_path_sync(
+        conn,
+        file_id=file_id,
+        sha256=sha256,
+    )
+    relative_path = db.target_relative_path(target_root, target_path).as_posix()
+    target_path_key = db.target_relative_path_key(target_root, target_path)
+    scanned_rows = 0
+    face_rows = 0
+    for database in attached_face_database_aliases(conn):
+        cursor = conn.execute(
+            f"""
+            UPDATE {database}.scanned_files
+            SET target_path = ?, target_path_key = ?
+            WHERE file_id = ? AND sha256 = ?
+              AND (target_path <> ? OR target_path_key <> ?)
+            """,
+            (
+                relative_path,
+                target_path_key,
+                file_id,
+                sha256,
+                relative_path,
+                target_path_key,
+            ),
+        )
+        scanned_rows += max(cursor.rowcount, 0)
+        cursor = conn.execute(
+            f"""
+            UPDATE {database}.faces
+            SET target_path_key = ?
+            WHERE file_id = ? AND target_path_key <> ?
+            """,
+            (target_path_key, file_id, target_path_key),
+        )
+        face_rows += max(cursor.rowcount, 0)
+    return scanned_rows, face_rows
+
+
+def attached_face_database_aliases(
+    conn: sqlite3.Connection,
+) -> tuple[str, ...]:
+    return tuple(
+        str(row["name"])
+        for row in conn.execute("PRAGMA database_list")
+        if str(row["name"]).startswith("face_db_")
+    )
 
 
 def existing_face_database_paths(

@@ -855,6 +855,7 @@ class DoctorCliTests(unittest.TestCase):
             "avvik=target_path_key,embedding_model",
             stdout,
         )
+        self.assertNotIn("repair-face-paths", stdout)
         self.assertEqual(after, before)
 
     def test_doctor_rejects_invalid_insightface_schemas_without_migration(

@@ -30,6 +30,7 @@ from .face import (
     scan_faces,
     suggest_faces,
 )
+from .face_path_repair import repair_face_paths
 from .progress import ProgressMeter
 from .target_lock import TargetLock
 
@@ -57,6 +58,9 @@ def run_download_face_model(repo_root: Path) -> int:
 
 
 def run_face_command(args: argparse.Namespace, target: Path, *, repo_root: Path) -> int:
+    if args.command == "repair-face-paths":
+        return run_repair_face_paths(target, apply=args.apply)
+
     require_face_enabled(load_config(repo_root).face_recognition.enabled)
 
     if args.command == "face-scan":
@@ -158,6 +162,50 @@ def run_face_command(args: argparse.Namespace, target: Path, *, repo_root: Path)
         )
 
     raise ValueError(f"Ukjent ansiktskommando: {args.command}")
+
+
+def run_repair_face_paths(target: Path, *, apply: bool) -> int:
+    with TargetLock(target, command="repair-face-paths"):
+        stats = repair_face_paths(target, apply=apply)
+    if stats.database_count == 0:
+        print("Ingen InsightFace-database å reparere.")
+        return 0
+    print(
+        "InsightFace-stireparasjon: "
+        f"databaser={stats.database_count}, "
+        f"reparerbare_filer={stats.repairable_files}, "
+        f"scanned_files-rader={stats.repairable_scanned_file_rows}, "
+        f"faces-rader={stats.repairable_face_rows}, "
+        f"andre_avvik_som_ikke_røres={stats.unsafe_issue_rows}"
+    )
+    for group in stats.groups[:20]:
+        print(
+            f"{group.database_path.name}\tfile #{group.file_id}\t"
+            f"{group.stored_target_path.as_posix()} -> "
+            f"{group.expected_target_path.as_posix()} "
+            f"(scanned_files={group.scanned_file_rows}, "
+            f"faces={group.face_rows})"
+        )
+    if len(stats.groups) > 20:
+        print(f"... og {len(stats.groups) - 20} database/file_id-grupper til")
+    if stats.unsafe_issue_rows:
+        print(
+            "Andre InsightFace-avvik ble ikke reparert. Undersøk "
+            "databasene, mediefilene og sikkerhetskopien."
+        )
+        return 2
+    if not apply:
+        print("Dry-run: ingen endringer er gjort.")
+        if stats.repairable_files:
+            print("Ta et oppdatert snapshot før du bruker --apply.")
+            print("Kjør: bildebank repair-face-paths --apply")
+        return 0
+    print(
+        "Oppdatert: "
+        f"scanned_files={stats.updated_scanned_file_rows}, "
+        f"faces={stats.updated_face_rows}"
+    )
+    return 0
 
 
 def run_face_scan(
