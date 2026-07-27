@@ -8,7 +8,11 @@ from .value_parsing import optional_int
 TAG_KIND_USER = "user"
 TAG_KIND_SYSTEM = "system"
 SYSTEM_TAG_OUT_OF_FOCUS = "Ute av fokus"
-SYSTEM_TAG_NAMES = (SYSTEM_TAG_OUT_OF_FOCUS,)
+SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW = "Bildebank: kontroller duplikatreparasjon"
+SYSTEM_TAG_NAMES = (
+    SYSTEM_TAG_OUT_OF_FOCUS,
+    SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW,
+)
 
 
 def normalize_tag_name(name: str) -> str:

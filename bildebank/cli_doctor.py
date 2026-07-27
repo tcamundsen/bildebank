@@ -194,7 +194,7 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
                 )
                 doctor_check_pending_file_moves(target)
                 doctor_check_pending_file_deletes(target)
-                doctor_check_duplicate_active_sha256(target)
+                doctor_check_duplicate_sha256(target)
                 doctor_check_files_have_sources(target)
                 doctor_check_file_source_identity(target)
                 doctor_check_insightface_consistency(target, sidecar_health)
@@ -1009,23 +1009,23 @@ def doctor_check_file_paths(target: Path) -> bool:
     return False
 
 
-def doctor_check_duplicate_active_sha256(target: Path) -> None:
+def doctor_check_duplicate_sha256(target: Path) -> None:
     conn = db.connect_read_only(target)
     try:
-        rows = db.duplicate_active_sha256_files(conn)
+        rows = db.duplicate_sha256_files(conn)
     finally:
         conn.close()
 
     if not rows:
-        doctor_ok("ingen duplikate aktive SHA-256-verdier i files")
+        doctor_ok("ingen duplikate SHA-256-verdier i files")
         return
 
     duplicate_hash_count = len({str(row["sha256"]) for row in rows})
     doctor_error(
-        f"{duplicate_hash_count} SHA-256-verdi(er) finnes på flere aktive filer."
+        f"{duplicate_hash_count} SHA-256-verdi(er) finnes på flere files-rader."
     )
     doctor_advice(
-        "Ikke legg på UNIQUE-index for aktive files.sha256 før dette er ryddet."
+        "Kjør bildebank migrate for å reparere radene og opprette global UNIQUE-index."
     )
 
     current_sha256 = None
@@ -1034,7 +1034,7 @@ def doctor_check_duplicate_active_sha256(target: Path) -> None:
         if sha256 != current_sha256:
             current_sha256 = sha256
             doctor_info(
-                f"sha256={sha256} ({int(row['duplicate_count'])} aktive filer)"
+                f"sha256={sha256} ({int(row['duplicate_count'])} files-rader)"
             )
         doctor_info(
             f"  file #{int(row['id'])}: "

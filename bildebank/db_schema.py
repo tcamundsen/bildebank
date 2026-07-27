@@ -29,7 +29,12 @@ from .db_core import (
     table_columns,
     table_exists,
 )
+from .collection_paths import (
+    CollectionFileHashError,
+    hash_stable_collection_file,
+)
 from .db_tags import (
+    SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW,
     SYSTEM_TAG_NAMES,
     TAG_KIND_SYSTEM,
     normalize_tag_name,
@@ -37,8 +42,9 @@ from .db_tags import (
     tag_name_key,
 )
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 ITEM_SIDECAR_CLEANUP_SCHEMA_VERSION = 17
+DUPLICATE_SHA256_REPAIR_REASON = "schema-v19-duplicate-sha256"
 GPS_ERROR_EXIFTOOL = "exiftool_error"
 GPS_ERROR_FILE_MISSING = "file_missing"
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
@@ -57,7 +63,7 @@ PERFORMANCE_INDEX_NAMES = (
     "idx_files_active_browser_order",
     "idx_files_active_date_source_order",
     "idx_files_active_target_path_key",
-    "idx_files_sha256_active_unique",
+    "idx_files_sha256_unique",
     *(f"idx_files_{column}" for column in H3_FILE_COLUMNS),
     *(f"idx_files_{column}_browser_order" for column in H3_FILE_COLUMNS),
     "idx_files_gps",
@@ -114,6 +120,17 @@ class MigrationPlan:
     terminal_file_moves: int = 0
     face_database_backups: tuple[Path, ...] = ()
     internal_repairs: tuple[str, ...] = ()
+    duplicate_sha256_groups: int = 0
+    duplicate_sha256_files: int = 0
+    duplicate_review_files: int = 0
+    duplicate_pending_delete_ids: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class DuplicateSha256Group:
+    sha256: str
+    canonical_file_id: int
+    duplicate_file_ids: tuple[int, ...]
 
 
 def connect(target: Path, *, require_current: bool = True) -> sqlite3.Connection:
@@ -230,7 +247,7 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
 
 def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
     if table_exists(conn, "files"):
-        validate_no_duplicate_active_sha256(conn)
+        validate_no_duplicate_sha256(conn)
         execute_sql_statements(
             conn,
             f"""
@@ -246,9 +263,8 @@ def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
         ON files(target_path_key)
         WHERE deleted_at IS NULL;
 
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_files_sha256_active_unique
-        ON files(sha256)
-        WHERE deleted_at IS NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_files_sha256_unique
+        ON files(sha256);
 
         {h3_file_index_sql()}
 
@@ -280,7 +296,11 @@ def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
 
 
 def drop_performance_indexes(conn: sqlite3.Connection) -> None:
-    for name in PERFORMANCE_INDEX_NAMES:
+    for name in (
+        *PERFORMANCE_INDEX_NAMES,
+        "idx_files_sha256",
+        "idx_files_sha256_active_unique",
+    ):
         conn.execute(f"DROP INDEX IF EXISTS {name}")
 
 
@@ -359,11 +379,8 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             gps_error TEXT
         );
 
-        CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256);
-
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_files_sha256_active_unique
-        ON files(sha256)
-        WHERE deleted_at IS NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_files_sha256_unique
+        ON files(sha256);
 
         CREATE INDEX IF NOT EXISTS idx_files_active_browser_order
         ON files ({BROWSER_DATE_ORDER_SQL}, target_path_key)
@@ -613,10 +630,201 @@ def create_pending_file_moves_schema(conn: sqlite3.Connection) -> None:
     )
 
 
+def duplicate_sha256_summary(conn: sqlite3.Connection) -> tuple[int, int]:
+    if not table_exists(conn, "files"):
+        return 0, 0
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS group_count,
+               COALESCE(SUM(file_count - 1), 0) AS duplicate_file_count
+        FROM (
+            SELECT COUNT(*) AS file_count
+            FROM files
+            GROUP BY sha256
+            HAVING COUNT(*) > 1
+        )
+        """
+    ).fetchone()
+    return int(row["group_count"]), int(row["duplicate_file_count"])
+
+
+def build_duplicate_sha256_groups(
+    conn: sqlite3.Connection,
+    target: Path,
+) -> tuple[DuplicateSha256Group, ...]:
+    duplicate_hashes = [
+        str(row["sha256"])
+        for row in conn.execute(
+            """
+            SELECT sha256
+            FROM files
+            GROUP BY sha256
+            HAVING COUNT(*) > 1
+            ORDER BY sha256
+            """
+        )
+    ]
+    groups: list[DuplicateSha256Group] = []
+    for sha256 in duplicate_hashes:
+        rows = list(
+            conn.execute(
+                """
+                SELECT id, target_path, size_bytes
+                FROM files
+                WHERE sha256 = ?
+                ORDER BY deleted_at IS NOT NULL, id
+                """,
+                (sha256,),
+            )
+        )
+        canonical_id = int(rows[0]["id"])
+        for row in rows:
+            relative_path = Path(str(row["target_path"]))
+            try:
+                actual_sha256, actual_size = hash_stable_collection_file(
+                    target,
+                    relative_path,
+                )
+            except (CollectionFileHashError, OSError, ValueError):
+                continue
+            if actual_sha256 == sha256 and actual_size == int(row["size_bytes"]):
+                canonical_id = int(row["id"])
+                break
+        groups.append(
+            DuplicateSha256Group(
+                sha256=sha256,
+                canonical_file_id=canonical_id,
+                duplicate_file_ids=tuple(
+                    int(row["id"])
+                    for row in rows
+                    if int(row["id"]) != canonical_id
+                ),
+            )
+        )
+    return tuple(groups)
+
+
+def repair_duplicate_sha256_groups(
+    conn: sqlite3.Connection,
+    target: Path,
+    groups: tuple[DuplicateSha256Group, ...],
+) -> tuple[int, ...]:
+    if not groups:
+        return ()
+
+    from .item_sidecars import (
+        delete_attached_item_data,
+        validate_attached_item_databases_health,
+    )
+    from .pending_deletes import enqueue_pending_delete_in_transaction
+
+    duplicate_ids = tuple(
+        file_id
+        for group in groups
+        for file_id in group.duplicate_file_ids
+    )
+    placeholders = ",".join("?" for _ in duplicate_ids)
+    pending_move = conn.execute(
+        f"""
+        SELECT id, file_id, state
+        FROM pending_file_moves
+        WHERE file_id IN ({placeholders})
+          AND state NOT IN ('completed', 'aborted')
+        ORDER BY id
+        LIMIT 1
+        """,
+        duplicate_ids,
+    ).fetchone()
+    if pending_move is not None:
+        raise ValueError(
+            "Kan ikke reparere duplikat-raden files #"
+            f"{int(pending_move['file_id'])} mens pending_file_moves "
+            f"#{int(pending_move['id'])} har state={pending_move['state']!r}."
+        )
+
+    review_tag = conn.execute(
+        "SELECT id FROM tags WHERE name_key = ?",
+        (tag_name_key(SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW),),
+    ).fetchone()
+    if review_tag is None:
+        raise ValueError(
+            f"Databasen mangler systemtaggen {SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW!r}."
+        )
+    review_tag_id = int(review_tag["id"])
+    pending_ids: list[int] = []
+
+    for group in groups:
+        group_placeholders = ",".join("?" for _ in group.duplicate_file_ids)
+        duplicate_rows = list(
+            conn.execute(
+                f"""
+                SELECT id, target_path, sha256, size_bytes
+                FROM files
+                WHERE id IN ({group_placeholders})
+                ORDER BY id
+                """,
+                group.duplicate_file_ids,
+            )
+        )
+        if len(duplicate_rows) != len(group.duplicate_file_ids):
+            raise ValueError(
+                f"Duplikatgruppen sha256={group.sha256} endret seg under migreringen."
+            )
+
+        conn.execute(
+            f"""
+            UPDATE file_sources
+            SET file_id = ?
+            WHERE file_id IN ({group_placeholders})
+            """,
+            (group.canonical_file_id, *group.duplicate_file_ids),
+        )
+        conn.execute(
+            f"""
+            INSERT OR IGNORE INTO file_tags(file_id, tag_id)
+            SELECT ?, tag_id
+            FROM file_tags
+            WHERE file_id IN ({group_placeholders})
+            """,
+            (group.canonical_file_id, *group.duplicate_file_ids),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO file_tags(file_id, tag_id) VALUES(?, ?)",
+            (group.canonical_file_id, review_tag_id),
+        )
+
+        for row in duplicate_rows:
+            pending = enqueue_pending_delete_in_transaction(
+                conn,
+                target,
+                Path(str(row["target_path"])),
+                reason=DUPLICATE_SHA256_REPAIR_REASON,
+                expected_sha256=str(row["sha256"]),
+                expected_size_bytes=int(row["size_bytes"]),
+            )
+            pending_ids.append(pending.id)
+
+        delete_attached_item_data(conn, group.duplicate_file_ids)
+        conn.execute(
+            f"DELETE FROM file_tags WHERE file_id IN ({group_placeholders})",
+            group.duplicate_file_ids,
+        )
+        conn.execute(
+            f"DELETE FROM files WHERE id IN ({group_placeholders})",
+            group.duplicate_file_ids,
+        )
+
+    validate_attached_item_databases_health(conn)
+    return tuple(pending_ids)
+
+
 def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
     conn = connect(target, require_current=False)
     try:
         version = schema_version(conn)
+        duplicate_sha256_groups, duplicate_sha256_files = (
+            duplicate_sha256_summary(conn)
+        )
         if version > SCHEMA_VERSION:
             raise ValueError(
                 f"Databasen bruker et nyere format (schema_version={version}) enn programmet støtter."
@@ -639,8 +847,10 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 creates_file_sources=False,
                 refreshes_performance_indexes=bool(missing_performance_indexes(conn)),
                 internal_repairs=internal_repairs,
+                duplicate_sha256_groups=duplicate_sha256_groups,
+                duplicate_sha256_files=duplicate_sha256_files,
             )
-        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}:
+        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}:
             if validate:
                 validate_current_schema(
                     conn,
@@ -679,6 +889,8 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                     version < ITEM_SIDECAR_CLEANUP_SCHEMA_VERSION
                 ),
                 terminal_file_moves=count_terminal_file_moves(conn),
+                duplicate_sha256_groups=duplicate_sha256_groups,
+                duplicate_sha256_files=duplicate_sha256_files,
             )
         if validate:
             validate_pre_migration(conn, version)
@@ -714,6 +926,8 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
             adds_pending_file_delete_identity=True,
             cleans_item_sidecars=True,
             terminal_file_moves=count_terminal_file_moves(conn),
+            duplicate_sha256_groups=duplicate_sha256_groups,
+            duplicate_sha256_files=duplicate_sha256_files,
         )
     finally:
         conn.close()
@@ -760,6 +974,25 @@ def migrate_database(
         if version == SCHEMA_VERSION:
             refreshes_performance_indexes = bool(missing_performance_indexes(conn))
             internal_repairs = current_schema_internal_repairs(conn)
+            duplicate_sha256_groups = build_duplicate_sha256_groups(
+                conn,
+                target,
+            )
+            duplicate_sha256_files = sum(
+                len(group.duplicate_file_ids)
+                for group in duplicate_sha256_groups
+            )
+            face_database_backups = (
+                prepare_item_sidecars_for_migration(
+                    conn,
+                    target,
+                    face_config,
+                    target_schema_version=SCHEMA_VERSION,
+                )
+                if duplicate_sha256_groups
+                else ()
+            )
+            duplicate_pending_delete_ids: tuple[int, ...] = ()
             try:
                 conn.execute("BEGIN IMMEDIATE")
                 validate_current_schema(
@@ -771,6 +1004,11 @@ def migrate_database(
                 )
                 repair_current_schema_internal_structure(conn)
                 drop_performance_indexes(conn)
+                duplicate_pending_delete_ids = repair_duplicate_sha256_groups(
+                    conn,
+                    target,
+                    duplicate_sha256_groups,
+                )
                 ensure_performance_indexes(conn)
                 validate_current_schema(conn)
                 validate_database_health(conn)
@@ -786,10 +1024,23 @@ def migrate_database(
                 creates_file_sources=False,
                 refreshes_performance_indexes=refreshes_performance_indexes,
                 internal_repairs=internal_repairs,
+                face_database_backups=face_database_backups,
+                duplicate_sha256_groups=len(duplicate_sha256_groups),
+                duplicate_sha256_files=duplicate_sha256_files,
+                duplicate_review_files=len(duplicate_sha256_groups),
+                duplicate_pending_delete_ids=duplicate_pending_delete_ids,
             )
-        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}:
+        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}:
             imported_files = count_rows(conn, "files")
             duplicate_findings = count_rows(conn, "duplicate_findings")
+            duplicate_sha256_groups = build_duplicate_sha256_groups(
+                conn,
+                target,
+            )
+            duplicate_sha256_files = sum(
+                len(group.duplicate_file_ids)
+                for group in duplicate_sha256_groups
+            )
             cleans_gps_errors = has_legacy_gps_errors(conn)
             backfills_h3_10_11 = needs_h3_10_11_backfill(conn)
             removes_superseded_sources = (
@@ -805,10 +1056,16 @@ def migrate_database(
                     conn,
                     target,
                     face_config,
+                    target_schema_version=(
+                        ITEM_SIDECAR_CLEANUP_SCHEMA_VERSION
+                        if cleans_item_sidecars
+                        else SCHEMA_VERSION
+                    ),
                 )
-                if cleans_item_sidecars
+                if cleans_item_sidecars or duplicate_sha256_groups
                 else ()
             )
+            duplicate_pending_delete_ids: tuple[int, ...] = ()
             try:
                 conn.execute("PRAGMA foreign_keys = OFF")
                 conn.execute("BEGIN IMMEDIATE")
@@ -817,6 +1074,11 @@ def migrate_database(
                 rebuild_sources_without_superseded(conn)
                 validate_current_schema(conn, require_performance_indexes=False)
                 drop_performance_indexes(conn)
+                duplicate_pending_delete_ids = repair_duplicate_sha256_groups(
+                    conn,
+                    target,
+                    duplicate_sha256_groups,
+                )
                 ensure_performance_indexes(conn)
                 cleanup_legacy_gps_errors(conn)
                 backfill_h3_10_11(conn)
@@ -853,10 +1115,22 @@ def migrate_database(
                 cleans_item_sidecars=cleans_item_sidecars,
                 terminal_file_moves=terminal_file_moves,
                 face_database_backups=face_database_backups,
+                duplicate_sha256_groups=len(duplicate_sha256_groups),
+                duplicate_sha256_files=duplicate_sha256_files,
+                duplicate_review_files=len(duplicate_sha256_groups),
+                duplicate_pending_delete_ids=duplicate_pending_delete_ids,
             )
         validate_pre_migration(conn, version)
         imported_files = count_rows(conn, "files")
         duplicate_findings = count_rows(conn, "duplicate_findings")
+        duplicate_sha256_groups = build_duplicate_sha256_groups(
+            conn,
+            target,
+        )
+        duplicate_sha256_files = sum(
+            len(group.duplicate_file_ids)
+            for group in duplicate_sha256_groups
+        )
         creates_file_sources = not table_exists(conn, "file_sources")
         file_columns = table_columns(conn, "files")
         source_columns = table_columns(conn, "sources")
@@ -879,7 +1153,9 @@ def migrate_database(
             conn,
             target,
             face_config,
+            target_schema_version=ITEM_SIDECAR_CLEANUP_SCHEMA_VERSION,
         )
+        duplicate_pending_delete_ids: tuple[int, ...] = ()
         try:
             conn.execute("PRAGMA foreign_keys = OFF")
             conn.execute("BEGIN IMMEDIATE")
@@ -901,6 +1177,11 @@ def migrate_database(
                 conn.execute("DROP TABLE duplicate_findings")
             ensure_compatible_columns(conn)
             drop_performance_indexes(conn)
+            duplicate_pending_delete_ids = repair_duplicate_sha256_groups(
+                conn,
+                target,
+                duplicate_sha256_groups,
+            )
             ensure_performance_indexes(conn)
             cleanup_legacy_gps_errors(conn)
             backfill_h3_10_11(conn)
@@ -941,6 +1222,10 @@ def migrate_database(
             cleans_item_sidecars=True,
             terminal_file_moves=terminal_file_moves,
             face_database_backups=face_database_backups,
+            duplicate_sha256_groups=len(duplicate_sha256_groups),
+            duplicate_sha256_files=duplicate_sha256_files,
+            duplicate_review_files=len(duplicate_sha256_groups),
+            duplicate_pending_delete_ids=duplicate_pending_delete_ids,
         )
     finally:
         conn.close()
@@ -950,6 +1235,8 @@ def prepare_item_sidecars_for_migration(
     conn: sqlite3.Connection,
     target: Path,
     face_config: FaceRecognitionConfig | None,
+    *,
+    target_schema_version: int = ITEM_SIDECAR_CLEANUP_SCHEMA_VERSION,
 ) -> tuple[Path, ...]:
     from .item_sidecars import (
         attach_existing_item_databases,
@@ -959,7 +1246,7 @@ def prepare_item_sidecars_for_migration(
     backup_paths = backup_existing_face_databases(
         target,
         face_config,
-        target_schema_version=ITEM_SIDECAR_CLEANUP_SCHEMA_VERSION,
+        target_schema_version=target_schema_version,
     )
     attach_existing_item_databases(
         conn,
@@ -1567,12 +1854,11 @@ def validate_performance_indexes(conn: sqlite3.Connection) -> None:
         raise ValueError(f"Databasen mangler ytelsesindeks: {missing[0]}. Kjør bildebank migrate.")
 
 
-def validate_no_duplicate_active_sha256(conn: sqlite3.Connection) -> None:
+def validate_no_duplicate_sha256(conn: sqlite3.Connection) -> None:
     row = conn.execute(
         """
         SELECT sha256, COUNT(*) AS file_count
         FROM files
-        WHERE deleted_at IS NULL
         GROUP BY sha256
         HAVING COUNT(*) > 1
         ORDER BY sha256
@@ -1582,18 +1868,54 @@ def validate_no_duplicate_active_sha256(conn: sqlite3.Connection) -> None:
     if row is None:
         return
     raise ValueError(
-        "Kan ikke opprette unik indeks for aktive filer: "
-        f"{int(row['file_count'])} aktive files-rader har samme sha256={row['sha256']}. "
-        "Kjør bildebank doctor og rett duplikatene før du prøver migrate på nytt."
+        "Kan ikke opprette global unik indeks: "
+        f"{int(row['file_count'])} files-rader har samme sha256={row['sha256']}."
     )
+
+
+def validate_no_duplicate_active_sha256(conn: sqlite3.Connection) -> None:
+    """Compatibility alias for callers from before schema v19."""
+    validate_no_duplicate_sha256(conn)
 
 
 def missing_performance_indexes(conn: sqlite3.Connection) -> list[str]:
     existing = {
         str(row["name"])
-        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'"
+        )
     }
-    return sorted(name for name in PERFORMANCE_INDEX_NAMES if name not in existing)
+    missing = {
+        name
+        for name in PERFORMANCE_INDEX_NAMES
+        if name not in existing
+    }
+    if (
+        "idx_files_sha256_unique" in existing
+        and not valid_global_sha256_index(conn)
+    ):
+        missing.add("idx_files_sha256_unique")
+    return sorted(missing)
+
+
+def valid_global_sha256_index(conn: sqlite3.Connection) -> bool:
+    index = next(
+        (
+            row
+            for row in conn.execute("PRAGMA index_list(files)")
+            if str(row["name"]) == "idx_files_sha256_unique"
+        ),
+        None,
+    )
+    if index is None or not bool(index["unique"]) or bool(index["partial"]):
+        return False
+    columns = [
+        str(row["name"])
+        for row in conn.execute(
+            "PRAGMA index_info(idx_files_sha256_unique)"
+        )
+    ]
+    return columns == ["sha256"]
 
 
 def validate_relative_target_paths(conn: sqlite3.Connection) -> None:

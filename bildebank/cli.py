@@ -52,7 +52,11 @@ from .missing_file_repair import repair_missing_file
 from .openclip import openclip_db_path
 from .openclip_models import install_openclip_model, supported_openclip_configs
 from .platform_guard import validate_collection_platform
-from .pending_deletes import cleanup_pending_deletes, list_pending_deletes
+from .pending_deletes import (
+    cleanup_pending_deletes,
+    cleanup_pending_deletes_locked,
+    list_pending_deletes,
+)
 from .progress import ProgressMeter
 from .program_state import (
     known_targets,
@@ -3114,6 +3118,12 @@ def run_migrate(target: Path, *, check: bool) -> int:
     print("Vil migrere:")
     print(f"  importerte filer: {plan.imported_files}")
     print(f"  duplikatfunn: {plan.duplicate_findings}")
+    if plan.duplicate_sha256_groups:
+        print(
+            "  reparere duplikate SHA-256-verdier: "
+            f"{plan.duplicate_sha256_groups} bilde(r), "
+            f"{plan.duplicate_sha256_files} overflødig(e) files-rad(er)"
+        )
     if plan.rebuilds_files_without_legacy_source_columns:
         print("  bygge om files uten gamle v1-kildekolonner")
     if plan.drops_duplicate_findings:
@@ -3181,6 +3191,15 @@ def run_migrate(target: Path, *, check: bool) -> int:
                 "Databasen ble ikke migrert. Ingen endringer er skrevet.\n"
                 "Backup er beholdt for sikkerhet."
             ) from exc
+        duplicate_cleanup_error: str | None = None
+        try:
+            duplicate_cleanup_results = cleanup_pending_deletes_locked(
+                target,
+                pending_ids=result.duplicate_pending_delete_ids,
+            )
+        except Exception as exc:
+            duplicate_cleanup_results = []
+            duplicate_cleanup_error = str(exc)
 
     if result.creates_file_sources:
         print("Oppretter file_sources.")
@@ -3234,6 +3253,34 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Oppdaterer manglende ytelsesindekser.")
     if result.internal_repairs:
         print(f"Reparerer intern v{result.target_version}-struktur.")
+    if result.duplicate_sha256_groups:
+        print(
+            "Reparerte duplikate SHA-256-verdier for "
+            f"{result.duplicate_review_files} bilde(r)."
+        )
+        print(
+            "Kontroller bildene med systemtaggen "
+            f"{db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW!r}."
+        )
+        duplicate_cleanup_failures = [
+            cleanup_result
+            for cleanup_result in duplicate_cleanup_results
+            if cleanup_result.outcome == "failed"
+        ]
+        if duplicate_cleanup_failures:
+            print(
+                "ADVARSEL: "
+                f"{len(duplicate_cleanup_failures)} overflødig(e) bildefil(er) "
+                "kunne ikke slettes og er beholdt i pending-delete-køen."
+            )
+        if duplicate_cleanup_error is not None:
+            print(
+                "ADVARSEL: Automatisk opprydding av overflødige bildefiler "
+                f"kunne ikke fullføres: {duplicate_cleanup_error}"
+            )
+            print(
+                "Filene er beholdt i pending-delete-køen og kan ryddes senere."
+            )
     print(f"Setter schema_version={result.target_version}.")
     print("Ferdig. Databasen er migrert.")
     if result.cleans_gps_errors:

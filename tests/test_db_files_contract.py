@@ -163,7 +163,9 @@ def test_file_source_conflict_is_rejected_for_same_source_path(
         conn.close()
 
 
-def test_files_by_hash_prefers_active_file_before_deleted_file(tmp_path: Path) -> None:
+def test_files_by_hash_returns_matching_file_regardless_of_deleted_state(
+    tmp_path: Path,
+) -> None:
     target = tmp_path / "target"
     conn = open_test_db(target)
     try:
@@ -173,19 +175,18 @@ def test_files_by_hash_prefers_active_file_before_deleted_file(tmp_path: Path) -
                 target_path, target_path_key, original_filename, stored_filename,
                 sha256, size_bytes, date_source, deleted_at
             )
-            VALUES
-                ('deleted/2024/01/old.jpg', 'deleted/2024/01/old.jpg',
-                 'old.jpg', 'old.jpg', 'same-hash', 10, 'filename', CURRENT_TIMESTAMP),
-                ('2024/01/active.jpg', '2024/01/active.jpg',
-                 'active.jpg', 'active.jpg', 'same-hash', 10, 'filename', NULL)
+            VALUES(
+                'deleted/2024/01/old.jpg', 'deleted/2024/01/old.jpg',
+                'old.jpg', 'old.jpg', 'same-hash', 10, 'filename',
+                CURRENT_TIMESTAMP
+            )
             """
         )
 
         rows = db.files_by_hash(conn, "same-hash")
 
         assert [row["target_path"] for row in rows] == [
-            "2024/01/active.jpg",
-            "deleted/2024/01/old.jpg",
+            "deleted/2024/01/old.jpg"
         ]
     finally:
         conn.close()

@@ -245,7 +245,7 @@ def test_migrate_v16_cleans_all_existing_item_sidecars_and_backs_up_faces(
 
     assert plan.terminal_file_moves == 2
     assert result.current_version == 16
-    assert result.target_version == 18
+    assert result.target_version == 19
     assert result.cleans_item_sidecars
     assert result.terminal_file_moves == 2
     assert len(result.face_database_backups) == len(face_paths)
@@ -302,7 +302,7 @@ def test_migrate_v16_cleans_all_existing_item_sidecars_and_backs_up_faces(
 
     conn = db.connect(target)
     try:
-        assert db.schema_version(conn) == 18
+        assert db.schema_version(conn) == 19
         assert conn.execute(
             "SELECT COUNT(*) FROM file_sources WHERE file_id = ?",
             (ids["active_id"],),
@@ -371,7 +371,7 @@ def test_migrate_v16_rolls_back_main_and_sidecars_after_late_failure(
 
     result = db.migrate_database(target, face_config=face_config)
     assert result.current_version == 16
-    assert result.target_version == 18
+    assert result.target_version == 19
     conn = db.connect(target)
     try:
         assert [
@@ -413,11 +413,11 @@ def test_migrate_v17_only_cleans_file_move_journal(
     result = db.migrate_database(target, face_config=face_config)
 
     assert plan.current_version == 17
-    assert plan.target_version == 18
+    assert plan.target_version == 19
     assert not plan.cleans_item_sidecars
     assert plan.terminal_file_moves == 2
     assert result.current_version == 17
-    assert result.target_version == 18
+    assert result.target_version == 19
     assert not result.cleans_item_sidecars
     assert result.terminal_file_moves == 2
     assert result.face_database_backups == ()
@@ -430,7 +430,7 @@ def test_migrate_v17_only_cleans_file_move_journal(
 
     conn = db.connect(target)
     try:
-        assert db.schema_version(conn) == 18
+        assert db.schema_version(conn) == 19
         assert [
             tuple(row)
             for row in conn.execute(
@@ -480,10 +480,108 @@ def test_migrate_v16_check_does_not_touch_or_back_up_sidecars(
     assert "Ingen endringer er gjort (--check)." in stdout
     assert {path: database_dump(path) for path in before} == before
     assert not list(
-        target.glob(".bilder.sqlite3.backup-before-schema-18-*")
+        target.glob(".bilder.sqlite3.backup-before-schema-19-*")
     )
     assert not list(
         face_path.parent.glob(
             f"{face_path.name}.backup-before-main-schema-17-*"
         )
     )
+
+
+def test_migrate_v18_duplicate_repair_cleans_only_duplicate_sidecars(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    db.init_database(target)
+    ids = insert_openclip_cleanup_fixture(target)
+    add_source_references(
+        target,
+        active_id=ids["active_id"],
+        deleted_id=ids["deleted_id"],
+    )
+    face_config = FaceRecognitionConfig()
+    face_path = target / ".bildebank-faces" / "antelopev2.sqlite3"
+    create_face_cleanup_fixture(
+        face_path,
+        active_id=ids["active_id"],
+        deleted_id=ids["deleted_id"],
+        missing_id=ids["missing_id"],
+    )
+    conn = db.connect(target)
+    try:
+        active = conn.execute(
+            "SELECT sha256, size_bytes FROM files WHERE id = ?",
+            (ids["active_id"],),
+        ).fetchone()
+        conn.execute("DROP INDEX idx_files_sha256_unique")
+        conn.execute("CREATE INDEX idx_files_sha256 ON files(sha256)")
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX idx_files_sha256_active_unique
+            ON files(sha256)
+            WHERE deleted_at IS NULL
+            """
+        )
+        conn.execute(
+            "UPDATE files SET sha256 = ?, size_bytes = ? WHERE id = ?",
+            (
+                str(active["sha256"]),
+                int(active["size_bytes"]),
+                ids["deleted_id"],
+            ),
+        )
+        conn.execute(
+            "UPDATE meta SET value = '18' WHERE key = 'schema_version'"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = db.migrate_database(target, face_config=face_config)
+
+    assert result.duplicate_sha256_groups == 1
+    assert result.duplicate_sha256_files == 1
+    assert len(result.face_database_backups) == 1
+    assert "main-schema-19" in result.face_database_backups[0].name
+
+    conn = sqlite3.connect(face_path)
+    try:
+        assert conn.execute(
+            "SELECT file_id FROM scanned_files ORDER BY file_id"
+        ).fetchall() == [
+            (ids["active_id"],),
+            (ids["missing_id"],),
+        ]
+        assert conn.execute(
+            "SELECT file_id FROM faces ORDER BY file_id"
+        ).fetchall() == [
+            (ids["active_id"],),
+            (ids["missing_id"],),
+        ]
+    finally:
+        conn.close()
+
+    openclip_conn = connect_openclip_db(target)
+    try:
+        assert [
+            int(row["file_id"])
+            for row in openclip_conn.execute(
+                "SELECT file_id FROM image_embeddings ORDER BY file_id"
+            )
+        ] == [ids["active_id"], ids["missing_id"]]
+    finally:
+        openclip_conn.close()
+
+    conn = db.connect(target)
+    try:
+        assert [
+            int(row["id"])
+            for row in conn.execute("SELECT id FROM files ORDER BY id")
+        ] == [ids["active_id"]]
+        assert conn.execute(
+            "SELECT COUNT(*) FROM file_sources WHERE file_id = ?",
+            (ids["active_id"],),
+        ).fetchone()[0] == 2
+    finally:
+        conn.close()

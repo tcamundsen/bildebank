@@ -270,14 +270,13 @@ def files_by_hash(conn: sqlite3.Connection, sha256: str) -> list[sqlite3.Row]:
     )
 
 
-def duplicate_active_sha256_files(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+def duplicate_sha256_files(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return list(
         conn.execute(
             """
             WITH duplicate_hashes AS (
                 SELECT sha256, COUNT(*) AS duplicate_count
                 FROM files
-                WHERE deleted_at IS NULL
                 GROUP BY sha256
                 HAVING COUNT(*) > 1
             )
@@ -290,11 +289,15 @@ def duplicate_active_sha256_files(conn: sqlite3.Connection) -> list[sqlite3.Row]
                 duplicate_hashes.duplicate_count
             FROM files
             JOIN duplicate_hashes ON duplicate_hashes.sha256 = files.sha256
-            WHERE files.deleted_at IS NULL
             ORDER BY files.sha256, files.id
             """
         )
     )
+
+
+def duplicate_active_sha256_files(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Compatibility alias; schema v19 requires SHA-256 to be globally unique."""
+    return duplicate_sha256_files(conn)
 
 
 def active_file_integrity_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:

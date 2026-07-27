@@ -39,14 +39,27 @@ class SnapshotBuilderTests(unittest.TestCase):
             repository = root / "repository"
             repository.mkdir()
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            content = b"samme bilde"
+            active_content = b"aktivt bilde"
+            deleted_content = b"slettet bilde"
             active_path = "2026/07/active.jpg"
             deleted_path = "deleted/2025/12/deleted.jpg"
-            write_file(target, active_path, content)
-            write_file(target, deleted_path, content)
-            sha256 = hashlib.sha256(content).hexdigest()
-            active_id = insert_database_file(target, active_path, sha256, len(content))
-            insert_database_file(target, deleted_path, sha256, len(content), deleted=True)
+            write_file(target, active_path, active_content)
+            write_file(target, deleted_path, deleted_content)
+            active_sha256 = hashlib.sha256(active_content).hexdigest()
+            deleted_sha256 = hashlib.sha256(deleted_content).hexdigest()
+            active_id = insert_database_file(
+                target,
+                active_path,
+                active_sha256,
+                len(active_content),
+            )
+            insert_database_file(
+                target,
+                deleted_path,
+                deleted_sha256,
+                len(deleted_content),
+                deleted=True,
+            )
             insert_file_source(target, active_id)
             write_file(target, "notes/family.txt", b"bevar notatet")
             write_file(target, "thumbs/2026/07/active.jpg", b"thumbnail")
@@ -65,7 +78,7 @@ class SnapshotBuilderTests(unittest.TestCase):
                 for record in result.files
                 if record.original_path_display in {active_path, deleted_path} and record.object is not None
             }
-            self.assertEqual(media_objects, {sha256})
+            self.assertEqual(media_objects, {active_sha256, deleted_sha256})
             self.assertTrue(any("Ukjent fil" in warning for warning in result.warnings))
             self.assertTrue(any("thumbnails" in exclusion for exclusion in result.exclusions))
             self.assertTrue(any("video_previews" in exclusion for exclusion in result.exclusions))
@@ -236,7 +249,7 @@ class SnapshotBuilderTests(unittest.TestCase):
                     "auxiliary:metadata/extra.sqlite3",
                 },
             )
-            self.assertEqual(result.schema_versions["main"], 18)
+            self.assertEqual(result.schema_versions["main"], 19)
             self.assertEqual(result.schema_versions["openclip"], 3)
             self.assertEqual(result.schema_versions["face:antelopev2"], 5)
             self.assertTrue(any("Ukjent SQLite-database" in warning for warning in result.warnings))

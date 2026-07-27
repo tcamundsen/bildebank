@@ -56,9 +56,26 @@ bildebank migrate --check
 
 Når `bildebank migrate` faktisk endrer databasen, lager programmet en backup av
 hoveddatabasen først. Ved migrering til v17 lager programmet også en backup av
-hver InsightFace-database som finnes i bildesamlingen.
+hver InsightFace-database som finnes i bildesamlingen. Det samme gjelder ved
+v19-reparasjon av duplikate bilder, fordi tilhørende ansiktsdata da ryddes.
 
 Hvis migreringen feiler, skal databasen ikke oppgraderes, og backupen beholdes.
+
+## Migrering til v19
+
+V19 gjør SHA-256 unik i hele `files`, også for bilder i papirkurven. Hvis
+databasen allerede inneholder flere rader for samme bilde, beholder Bildebank
+én rad, samler kilder og tagger på denne og rydder de overflødige kopiene
+kontrollert.
+
+Bildet som beholdes får systemtaggen
+`Bildebank: kontroller duplikatreparasjon`. Etter migreringen skriver
+kommandoen en kort melding dersom slike bilder finnes, slik at du kan finne og
+kontrollere dem i Bildebank.
+
+En overflødig bildefil slettes bare når sti, størrelse og SHA-256 stemmer.
+Hvis kontrollen eller slettingen feiler, beholdes filen i den sikre
+slettekøen, og `migrate` skriver en advarsel.
 
 ## Migrering til v18
 

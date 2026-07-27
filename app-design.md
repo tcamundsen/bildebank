@@ -282,7 +282,7 @@ lagring uten å kreve en separat databaseserver.
 
 ## Databaseversjoner
 
-- gjeldende schema er v18
+- gjeldende schema er v19
 - eldste hoveddatabaseformat som støttes av gjeldende migrator er v5
 - v1–v4 er historiske, utfasete formater; eldre hjelpegrener i koden er ikke
   et løfte om at disse formatene kan oppgraderes direkte
@@ -298,9 +298,10 @@ lagring uten å kreve en separat databaseserver.
   devel-docs/database-v14-migration.md,
   devel-docs/database-v15-migration.md og
   devel-docs/database-v16-migration.md,
-  devel-docs/database-v17-migration.md og
-  devel-docs/database-v18-migration.md
-- ny runtime-kode skal anta v18, med mindre oppgaven eksplisitt gjelder
+  devel-docs/database-v17-migration.md,
+  devel-docs/database-v18-migration.md og
+  devel-docs/database-v19-migration.md
+- ny runtime-kode skal anta v19, med mindre oppgaven eksplisitt gjelder
   migrering
 - den separate OpenCLIP-databasen har schema v1 og er beskrevet i
   devel-docs/openclip-database.md

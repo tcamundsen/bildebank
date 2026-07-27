@@ -148,30 +148,46 @@ def cleanup_pending_deletes(
     if limit is not None and limit <= 0:
         raise ValueError("limit må være større enn 0.")
     with TargetLock(target, command="cleanup-pending-deletes"):
-        conn = db.connect(target)
-        try:
-            sql = "SELECT id FROM pending_file_deletes"
-            params: tuple[int, ...] = ()
-            if pending_ids is not None:
-                if not pending_ids:
-                    return []
-                placeholders = ",".join("?" for _ in pending_ids)
-                sql += f" WHERE id IN ({placeholders})"
-                params = pending_ids
-            sql += " ORDER BY id"
-            if limit is not None:
-                sql += " LIMIT ?"
-                params = (*params, limit)
-            selected_ids = [int(row["id"]) for row in conn.execute(sql, params)]
-            results: list[PendingDeleteResult] = []
-            for pending_id in selected_ids:
-                result = _try_pending_delete(conn, target, pending_id)
-                if result is not None:
-                    results.append(result)
-                conn.commit()
-            return results
-        finally:
-            conn.close()
+        return cleanup_pending_deletes_locked(
+            target,
+            limit=limit,
+            pending_ids=pending_ids,
+        )
+
+
+def cleanup_pending_deletes_locked(
+    target: Path,
+    *,
+    limit: int | None = None,
+    pending_ids: tuple[int, ...] | None = None,
+) -> list[PendingDeleteResult]:
+    """Clean queued files while the caller already holds TargetLock."""
+    if limit is not None and limit <= 0:
+        raise ValueError("limit må være større enn 0.")
+    if pending_ids is not None and not pending_ids:
+        return []
+    conn = db.connect(target)
+    try:
+        sql = "SELECT id FROM pending_file_deletes"
+        params: tuple[int, ...] = ()
+        if pending_ids is not None:
+            placeholders = ",".join("?" for _ in pending_ids)
+            sql += f" WHERE id IN ({placeholders})"
+            params = pending_ids
+        sql += " ORDER BY id"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params = (*params, limit)
+        selected_ids = [int(row["id"]) for row in conn.execute(sql, params)]
+        results: list[PendingDeleteResult] = []
+        for pending_id in selected_ids:
+            result = _try_pending_delete(conn, target, pending_id)
+            if result is not None:
+                results.append(result)
+            conn.commit()
+        return results
+    finally:
+        conn.close()
 
 
 def managed_pending_delete_path(target: Path, path: Path) -> tuple[Path, Path]:
