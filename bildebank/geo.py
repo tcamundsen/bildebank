@@ -221,6 +221,7 @@ def read_gps_metadata_batch(exiftool_path: Path | str, paths: list[Path]) -> dic
                 *[f"-{tag}" for tag in GPS_TAGS],
                 *[str(path) for path in paths],
             ],
+            stdin=subprocess.DEVNULL,
             check=False,
             capture_output=True,
             text=True,

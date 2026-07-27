@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 from bildebank import exiftool
 from bildebank.cli import main
-from bildebank.exiftool import managed_exiftool_path, resolve_exiftool_path
+from bildebank.exiftool import managed_exiftool_path, resolve_exiftool, resolve_exiftool_path
 from bildebank.exiftool_probe import (
     EXIFTOOL_TIMEOUT_SECONDS,
     exiftool_dates_batch,
@@ -54,6 +54,21 @@ class ExiftoolCliTests(unittest.TestCase):
         ):
             exiftool_dates_batch("exiftool", [Path("image.jpg")])
 
+    def test_exiftool_metadata_does_not_inherit_launcher_stdin(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=["exiftool", "image.jpg"],
+            returncode=0,
+            stdout='[{"SourceFile": "image.jpg"}]',
+            stderr="",
+        )
+        with patch(
+            "bildebank.exiftool_probe.subprocess.run",
+            return_value=completed,
+        ) as run:
+            exiftool_dates_batch("exiftool", [Path("image.jpg")])
+
+        self.assertEqual(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
+
     def test_exiftool_archive_is_version_and_hash_pinned(self) -> None:
         self.assertEqual(exiftool.EXIFTOOL_VERSION, "13.58")
         self.assertTrue(
@@ -88,9 +103,12 @@ class ExiftoolCliTests(unittest.TestCase):
             write_fake_exiftool(managed)
             (managed.parent / "exiftool_files").mkdir()
 
-            with patch("bildebank.exiftool.exiftool_version", return_value="13.58"):
+            with patch("bildebank.exiftool.exiftool_version", return_value="13.58") as version:
                 self.assertEqual(resolve_exiftool_path(repo, explicit), explicit)
                 self.assertEqual(resolve_exiftool_path(repo), managed)
+                self.assertEqual(resolve_exiftool(repo), (managed, "13.58"))
+
+            self.assertEqual(version.call_count, 3)
 
     def test_exiftool_resolver_falls_back_to_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -140,6 +158,18 @@ class ExiftoolCliTests(unittest.TestCase):
             self.assertRaisesRegex(RuntimeError, "brukte mer enn"),
         ):
             exiftool.exiftool_version("exiftool.exe")
+
+    def test_exiftool_validation_does_not_inherit_launcher_stdin(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=["exiftool.exe", "-ver"],
+            returncode=0,
+            stdout="13.58\n",
+            stderr="",
+        )
+        with patch.object(exiftool.subprocess, "run", return_value=completed) as run:
+            self.assertEqual(exiftool.exiftool_version("exiftool.exe"), "13.58")
+
+        self.assertEqual(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
 
     def test_exiftool_install_downloads_zip_to_managed_tools_folder(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

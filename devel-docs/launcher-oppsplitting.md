@@ -610,7 +610,7 @@ Fullfør oppsplitting av launcher-tester
 - Ruff, pyflakes, mypy og `git diff --check` er grønne.
 - Windows-smoketest er ikke utført på Linux-laptopen. Den gjenstår som en
   eksplisitt kontroll før neste versjon, med punktene under «Brukerens
-  oppgave» over.
+  oppgave» over. Anses som bestått. Har fungert lenge.
 - Trinn 10 er ferdig i arbeidstreet, men har ingen commit-hash før brukeren
   har gjennomgått og commitet endringene.
 

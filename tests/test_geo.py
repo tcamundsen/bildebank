@@ -125,6 +125,18 @@ class GeoTests(unittest.TestCase):
         ):
             read_gps_metadata_batch("exiftool", [Path("image.jpg")])
 
+    def test_geo_exiftool_does_not_inherit_launcher_stdin(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=["exiftool", "image.jpg"],
+            returncode=0,
+            stdout='[{"SourceFile": "image.jpg"}]',
+            stderr="",
+        )
+        with patch("bildebank.geo.subprocess.run", return_value=completed) as run:
+            read_gps_metadata_batch("exiftool", [Path("image.jpg")])
+
+        self.assertEqual(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
+
     def test_extract_gps_from_metadata_returns_none_without_gps(self) -> None:
         self.assertIsNone(extract_gps_from_metadata({"SourceFile": "image.jpg"}))
 

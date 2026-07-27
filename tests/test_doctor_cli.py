@@ -39,8 +39,10 @@ class DoctorCliTests(unittest.TestCase):
     def test_doctor_is_disabled_by_default(self) -> None:
         exiftool = self.program_root / "bildebank-tools" / "exiftool" / "exiftool.exe"
         with (
-            patch("bildebank.cli_doctor.resolve_exiftool_path", return_value=exiftool),
-            patch("bildebank.cli_doctor.validate_exiftool_install", return_value="13.58"),
+            patch(
+                "bildebank.cli_doctor.resolve_exiftool",
+                return_value=(exiftool, "13.58"),
+            ),
             patch("bildebank.cli_doctor.python_module_available", side_effect=lambda name: name == "h3"),
         ):
             code, stdout, stderr = capture_cli(["doctor"])
@@ -151,7 +153,7 @@ class DoctorCliTests(unittest.TestCase):
 
                 with (
                     patch(
-                        "bildebank.cli_doctor.resolve_exiftool_path",
+                        "bildebank.cli_doctor.resolve_exiftool",
                         side_effect=FileNotFoundError("mangler"),
                     ),
                     patch(
@@ -186,7 +188,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -227,7 +229,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -284,7 +286,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -337,7 +339,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -385,7 +387,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -411,14 +413,15 @@ class DoctorCliTests(unittest.TestCase):
 
     def test_doctor_shows_exiftool_status(self) -> None:
         exiftool = self.program_root / "bildebank-tools" / "exiftool" / "exiftool.exe"
-        with (
-            patch("bildebank.cli_doctor.resolve_exiftool_path", return_value=exiftool),
-            patch("bildebank.cli_doctor.validate_exiftool_install", return_value="13.58"),
-        ):
+        with patch(
+            "bildebank.cli_doctor.resolve_exiftool",
+            return_value=(exiftool, "13.58"),
+        ) as resolve:
             code, stdout, stderr = capture_cli(["doctor"])
 
         self.assertEqual(code, 0, stderr)
         self.assertIn(f"  OK: ExifTool funnet: {exiftool} (13.58)", stdout)
+        resolve.assert_called_once_with(self.program_root)
 
     def test_doctor_reports_healthy_main_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -427,7 +430,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch("bildebank.cli_doctor.python_module_available", return_value=False),
@@ -463,7 +466,7 @@ class DoctorCliTests(unittest.TestCase):
                     args.append("--deep")
                 with (
                     patch(
-                        "bildebank.cli_doctor.resolve_exiftool_path",
+                        "bildebank.cli_doctor.resolve_exiftool",
                         side_effect=FileNotFoundError("mangler"),
                     ),
                     patch(
@@ -548,7 +551,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -665,7 +668,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -804,7 +807,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -888,7 +891,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -933,7 +936,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -973,7 +976,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -1029,7 +1032,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -1078,7 +1081,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -1130,7 +1133,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -1191,7 +1194,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -1246,7 +1249,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch("bildebank.cli_doctor.python_module_available", return_value=False),
@@ -1269,7 +1272,7 @@ class DoctorCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch("bildebank.cli_doctor.python_module_available", return_value=False),
@@ -1287,7 +1290,7 @@ class DoctorCliTests(unittest.TestCase):
         self.assertNotIn("ingen uavklarte filflyttinger", stdout)
 
     def test_doctor_reports_missing_exiftool_without_failing(self) -> None:
-        with patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")):
+        with patch("bildebank.cli_doctor.resolve_exiftool", side_effect=FileNotFoundError("mangler")):
             code, stdout, stderr = capture_cli(["doctor"])
 
         self.assertEqual(code, 0, stderr)
@@ -1320,7 +1323,7 @@ enabled = true
         )
 
         with (
-            patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+            patch("bildebank.cli_doctor.resolve_exiftool", side_effect=FileNotFoundError("mangler")),
             patch("bildebank.cli_doctor.python_module_available", side_effect=lambda name: name == "h3"),
             patch(
                 "bildebank.cli_doctor.insightface_runtime_error",
@@ -1346,7 +1349,7 @@ enabled = true
         )
 
         with (
-            patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+            patch("bildebank.cli_doctor.resolve_exiftool", side_effect=FileNotFoundError("mangler")),
             patch("bildebank.cli_doctor.python_module_available", side_effect=lambda name: name in {"h3", "onnxruntime"}),
             patch(
                 "bildebank.cli_doctor.insightface_runtime_error",
@@ -1374,7 +1377,7 @@ enabled = true
         )
 
         with (
-            patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+            patch("bildebank.cli_doctor.resolve_exiftool", side_effect=FileNotFoundError("mangler")),
             patch("bildebank.cli_doctor.python_module_available", side_effect=lambda name: name == "h3"),
             patch("bildebank.cli_doctor.torch_gpu_status", return_value={"torch": "nei", "cuda": "nei", "device": "-"}),
         ):
@@ -1389,7 +1392,7 @@ enabled = true
 
     def test_doctor_reports_missing_h3_without_failing(self) -> None:
         with (
-            patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+            patch("bildebank.cli_doctor.resolve_exiftool", side_effect=FileNotFoundError("mangler")),
             patch("bildebank.cli_doctor.python_module_available", return_value=False),
         ):
             code, stdout, stderr = capture_cli(["doctor"])
@@ -1427,7 +1430,7 @@ enabled = true
                 conn.close()
 
             with (
-                patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+                patch("bildebank.cli_doctor.resolve_exiftool", side_effect=FileNotFoundError("mangler")),
                 patch("bildebank.cli_doctor.python_module_available", return_value=False),
             ):
                 code, stdout, stderr = capture_cli(
@@ -1501,7 +1504,7 @@ enabled = true
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch("bildebank.cli_doctor.python_module_available", return_value=False),
@@ -1590,7 +1593,7 @@ enabled = true
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch("bildebank.cli_doctor.python_module_available", return_value=False),
@@ -1669,7 +1672,7 @@ enabled = true
                 conn.close()
 
             with (
-                patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+                patch("bildebank.cli_doctor.resolve_exiftool", side_effect=FileNotFoundError("mangler")),
                 patch("bildebank.cli_doctor.python_module_available", return_value=False),
                 patch(
                     "bildebank.cli_doctor.hash_stable_collection_file"
@@ -1716,7 +1719,7 @@ enabled = true
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -1772,7 +1775,7 @@ enabled = true
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -1829,7 +1832,7 @@ enabled = true
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -1875,7 +1878,7 @@ enabled = true
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -1954,7 +1957,7 @@ enabled = true
                 )
 
             with (
-                patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+                patch("bildebank.cli_doctor.resolve_exiftool", side_effect=FileNotFoundError("mangler")),
                 patch("bildebank.cli_doctor.python_module_available", return_value=False),
                 patch(
                     "bildebank.cli_doctor.hash_stable_collection_file",
@@ -2033,7 +2036,7 @@ enabled = true
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -2079,7 +2082,7 @@ enabled = true
             )
 
             with (
-                patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+                patch("bildebank.cli_doctor.resolve_exiftool", side_effect=FileNotFoundError("mangler")),
                 patch("bildebank.cli_doctor.python_module_available", return_value=False),
             ):
                 code, stdout, stderr = capture_cli(
@@ -2122,7 +2125,7 @@ enabled = true
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -2212,7 +2215,7 @@ enabled = true
                 conn.close()
 
             with (
-                patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+                patch("bildebank.cli_doctor.resolve_exiftool", side_effect=FileNotFoundError("mangler")),
                 patch("bildebank.cli_doctor.python_module_available", return_value=False),
             ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "doctor"])
@@ -2284,7 +2287,7 @@ enabled = true
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -2355,7 +2358,7 @@ enabled = true
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -2427,7 +2430,7 @@ enabled = true
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(
@@ -2467,7 +2470,7 @@ enabled = true
 
             with (
                 patch(
-                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    "bildebank.cli_doctor.resolve_exiftool",
                     side_effect=FileNotFoundError("mangler"),
                 ),
                 patch(

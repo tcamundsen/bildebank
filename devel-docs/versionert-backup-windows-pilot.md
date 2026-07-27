@@ -163,11 +163,11 @@ Hele dette avsnittet er testet og godkjent.
 
 Piloten er godkjent når:
 
-- alle forventede snapshots kan listes og fullkontrolleres
-- eldre snapshots er uendret etter senere kjøringer
-- hel restore består `doctor --deep` og uavhengig SHA-256-sammenligning
-- enkeltfiler kan hentes uten overskriving
-- avbrudd aldri skader et publisert snapshot eller sletter testbilder
+- alle forventede snapshots kan listes og fullkontrolleres. BESTÅTT. 27.7.26
+- eldre snapshots er uendret etter senere kjøringer. BESTÅTT 27.7.26
+- hel restore består `doctor --deep` og uavhengig SHA-256-sammenligning. BESTÅTT 27.7.26
+- enkeltfiler kan hentes uten overskriving. BESTÅTT 27.7.26
+- avbrudd aldri skader et publisert snapshot eller sletter testbilder. BESTÅTT 27.7.26
 - alle avvik, rester og låser gir forståelige meldinger
 - utfallet er dokumentert med kommando, exitkode og relevant utskrift
 

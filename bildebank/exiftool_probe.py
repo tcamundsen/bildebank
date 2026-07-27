@@ -116,6 +116,7 @@ def exiftool_dates_batch(exiftool_path: Path | str, paths: list[Path]) -> dict[P
                 *[f"-{tag}" for tag in EXIFTOOL_DATE_TAGS],
                 *[str(path) for path in paths],
             ],
+            stdin=subprocess.DEVNULL,
             check=False,
             capture_output=True,
             text=True,

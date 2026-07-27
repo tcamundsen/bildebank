@@ -546,7 +546,7 @@ Fullfør oppsplitting av server
   filflytting er endret. `remove` flytter fortsatt bare til `deleted/`.
 - 766 tester og 163 subtester består. Ruff, pyflakes, mypy og
   `git diff --check` er grønne.
-- Windows-smoketest mot testsamling er gjenstående før neste versjon.
+- Windows-smoketest mot testsamling er gjenstående før neste versjon. BESTÅTT.
 
 ## Arbeidsflyt mellom hvert trinn
 

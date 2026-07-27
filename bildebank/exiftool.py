@@ -70,6 +70,7 @@ def exiftool_version(path: Path | str) -> str:
     try:
         result = subprocess.run(
             [str(path), "-ver"],
+            stdin=subprocess.DEVNULL,
             check=False,
             capture_output=True,
             text=True,
@@ -89,26 +90,31 @@ def exiftool_version(path: Path | str) -> str:
     return result.stdout.strip()
 
 
-def resolve_exiftool_path(repo_root: Path, explicit_path: Path | str | None = None) -> Path | str:
+def resolve_exiftool(
+    repo_root: Path,
+    explicit_path: Path | str | None = None,
+) -> tuple[Path | str, str]:
     if explicit_path is not None:
         path = Path(explicit_path).expanduser()
-        validate_exiftool_install(path)
-        return path
+        return path, validate_exiftool_install(path)
 
     managed = managed_exiftool_path(repo_root)
     if managed.exists():
-        validate_exiftool_install(managed)
-        return managed
+        return managed, validate_exiftool_install(managed)
 
     path_tool = shutil.which("exiftool")
     if path_tool:
-        validate_exiftool_install(path_tool)
-        return path_tool
+        return path_tool, validate_exiftool_install(path_tool)
 
     raise FileNotFoundError(
         "Fant ikke ExifTool. Kjør bildebank exiftool-install fra programmappen, "
         "eller kjør setup-windows.ps1 på nytt."
     )
+
+
+def resolve_exiftool_path(repo_root: Path, explicit_path: Path | str | None = None) -> Path | str:
+    path, _version = resolve_exiftool(repo_root, explicit_path)
+    return path
 
 
 def install_managed_exiftool(repo_root: Path, *, force: bool = False) -> ExifToolInstallResult:

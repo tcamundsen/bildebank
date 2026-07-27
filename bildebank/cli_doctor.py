@@ -26,7 +26,7 @@ from .collection_paths import (
 )
 from .config import CONFIG_FILENAME, FaceRecognitionConfig, load_config
 from .db_core import connect_database_read_only
-from .exiftool import resolve_exiftool_path, validate_exiftool_install
+from .exiftool import resolve_exiftool
 from .face import (
     LEGACY_FACE_DB_FILENAME,
     LEGACY_FACE_DB_MODEL_NAME,
@@ -82,8 +82,7 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
         doctor_advice("Kjør setup-windows.ps1 på nytt, eller installer Bildebank på nytt.")
 
     try:
-        exiftool_path = resolve_exiftool_path(repo_root)
-        exiftool_version = validate_exiftool_install(exiftool_path)
+        exiftool_path, exiftool_version = resolve_exiftool(repo_root)
     except (FileNotFoundError, OSError, RuntimeError) as exc:
         doctor_error(f"ExifTool mangler eller virker ikke: {exc}")
         if sys.platform == "win32":
