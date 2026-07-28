@@ -132,13 +132,16 @@ class FacePathRepairCliTests(unittest.TestCase):
         ):
             main(["repair-face-paths", "-h"])
 
+        help_text = stdout_buffer.getvalue()
+        normalized_help = " ".join(help_text.split())
+
         self.assertEqual(raised.exception.code, 0)
         self.assertIn(
             "usage: bildebank repair-face-paths [valg]",
-            stdout_buffer.getvalue(),
+            help_text,
         )
-        self.assertIn("--apply", stdout_buffer.getvalue())
-        self.assertIn("personkoblinger endres ikke", stdout_buffer.getvalue())
+        self.assertIn("--apply", help_text)
+        self.assertIn("personkoblinger endres ikke", normalized_help)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_reports_missing_database_without_creating_one(self) -> None:
