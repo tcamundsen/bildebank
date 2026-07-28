@@ -24,3 +24,7 @@ Filer i listen kan flyttes tilbake med `undelete`:
 ```powershell
 bildebank undelete "deleted\2024\01\IMG_0001.jpg"
 ```
+
+På siden **Slettede bilder** kan du også slette én fil permanent, tømme
+papirkurven og administrere slettingsmarkører. Les
+[Permanent sletting](permanent-sletting.md) før du bruker disse handlingene.

@@ -26,6 +26,11 @@ from .config import (
     set_image_search_enabled,
 )
 from .formatting import format_bytes
+from .file_purge import (
+    PendingPurgePreview,
+    preview_deleted_file_purges,
+    preview_file_tombstones,
+)
 from .target_lock import TargetLock
 
 
@@ -267,16 +272,42 @@ def removed_files_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
 ) -> str:
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         rows = list(db.deleted_files(conn))
     finally:
         conn.close()
-    items = "\n".join(removed_file_row_html(target, row) for row in rows)
+    purge_preview = preview_deleted_file_purges(target)
+    pending_by_file_id = {
+        item.identity.file_id: item
+        for item in purge_preview.pending_candidates
+    }
+    items = "\n".join(
+        removed_file_row_html(
+            target,
+            row,
+            pending=pending_by_file_id.get(int(row["id"])),
+        )
+        for row in rows
+    )
     content = (
         f'<div class="removed-list">{items}</div>'
         if items
         else '<p class="meta">Ingen bilder er flyttet til deleted/.</p>'
+    )
+    new_count = len(purge_preview.new_candidates)
+    new_size = sum(
+        identity.size_bytes for identity in purge_preview.new_candidates
+    )
+    empty_disabled = " disabled" if new_count == 0 else ""
+    tombstones = preview_file_tombstones(target)
+    tombstone_items = "\n".join(
+        tombstone_row_html(tombstone) for tombstone in tombstones
+    )
+    tombstone_content = (
+        f'<div class="tombstone-list">{tombstone_items}</div>'
+        if tombstone_items
+        else '<p class="meta">Ingen slettingsmarkører.</p>'
     )
     return shell_page_html(
         "Slettede bilder",
@@ -284,7 +315,21 @@ def removed_files_page_html(
         <nav class="subnav"><a href="/settings">Innstillinger</a></nav>
         <h1>Slettede bilder</h1>
         <p class="meta">{len(rows)} bilder flyttet til deleted/.</p>
+        <div class="removed-page-actions">
+          <button class="nav-button danger-button" type="button" data-purge-all{empty_disabled}>Tøm papirkurven</button>
+          <span class="meta">{new_count} filer, {html.escape(format_bytes(new_size))}</span>
+          <a href="/help/permanent-sletting.md">Hva betyr permanent sletting?</a>
+        </div>
         {content}
+        <section class="tombstone-section" aria-labelledby="tombstone-heading">
+          <h2 id="tombstone-heading">Slettingsmarkører</h2>
+          <p class="meta">
+            Disse hindrer at permanent slettede filer importeres på nytt.
+            Å fjerne en markør gjenoppretter ingen fil.
+          </p>
+          {tombstone_content}
+        </section>
+        {purge_dialog_html()}
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
@@ -363,7 +408,12 @@ def update_face_model_config(config: AppConfig, repo_root: Path, model_name: str
     )
 
 
-def removed_file_row_html(target: Path, row: Any) -> str:
+def removed_file_row_html(
+    target: Path,
+    row: Any,
+    *,
+    pending: PendingPurgePreview | None = None,
+) -> str:
     deleted_path = Path(str(row["target_path"]))
     original_path = row["deleted_original_target_path"] or row["target_path"]
     link = f"/file/{int(row['id'])}"
@@ -371,14 +421,65 @@ def removed_file_row_html(target: Path, row: Any) -> str:
     taken_date = str(row["taken_date"] or "ukjent dato")
     size = format_bytes(int(row["size_bytes"])) if row["size_bytes"] is not None else "ukjent størrelse"
     deleted_at = str(row["deleted_at"] or "")
+    if pending is None:
+        status = exists
+        actions = f"""
+          <button class="nav-button" type="button" data-undelete-item="{int(row["id"])}" data-undelete-path="{html.escape(str(original_path))}">Undelete</button>
+          <button class="nav-button danger-button" type="button" data-purge-preview-item="{int(row["id"])}">Slett permanent</button>
+        """
+    else:
+        status = {
+            "matching": "Permanent sletting venter etter en feil",
+            "missing": "Venter på å fullføre permanent sletting",
+            "unexpected": "Permanent sletting krever kontroll",
+        }[pending.original_state]
+        abort_button = (
+            f'<button class="nav-button" type="button" '
+            f'data-purge-abort="{pending.purge_id}">'
+            "Avbryt permanent sletting</button>"
+            if pending.original_state == "matching"
+            else ""
+        )
+        actions = f"""
+          <button class="nav-button danger-button" type="button" data-purge-retry="{pending.purge_id}">Prøv igjen</button>
+          {abort_button}
+        """
     return f"""
-    <div class="removed-row">
+    <div class="removed-row" data-removed-file-id="{int(row["id"])}">
       <a href="{html.escape(link)}" target="_blank">{html.escape(str(original_path))}</a>
       <span>{html.escape(deleted_at)}</span>
       <span>{html.escape(taken_date)}</span>
       <span>{html.escape(size)}</span>
-      <span>{exists}</span>
-      <button class="nav-button" type="button" data-undelete-item="{int(row["id"])}" data-undelete-path="{html.escape(str(original_path))}">Undelete</button>
+      <span class="removed-state">{html.escape(status)}</span>
+      <div class="removed-row-actions">{actions}</div>
+    </div>
+    """
+
+
+def tombstone_row_html(tombstone: Any) -> str:
+    return f"""
+    <div class="tombstone-row" data-tombstone-id="{tombstone.identity.tombstone_id}">
+      <strong>#{tombstone.identity.tombstone_id} {html.escape(tombstone.original_filename)}</strong>
+      <span>{html.escape(tombstone.former_target_path.as_posix())}</span>
+      <span>{html.escape(format_bytes(tombstone.identity.size_bytes))}</span>
+      <span>{html.escape(tombstone.identity.purged_at)}</span>
+      <button class="nav-button danger-button" type="button" data-tombstone-preview-remove="{tombstone.identity.tombstone_id}">Fjern slettingsmarkør</button>
+    </div>
+    """
+
+
+def purge_dialog_html() -> str:
+    return """
+    <div id="purgeDialog" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="purgeDialogTitle" hidden>
+      <div class="modal-panel purge-dialog-panel">
+        <h2 id="purgeDialogTitle" data-purge-dialog-title>Bekreft handling</h2>
+        <div data-purge-dialog-body></div>
+        <p class="error" data-purge-dialog-error hidden></p>
+        <div class="modal-actions">
+          <button class="nav-button" type="button" data-purge-dialog-cancel>Avbryt</button>
+          <button class="nav-button danger-button" type="button" data-purge-dialog-confirm>Bekreft</button>
+        </div>
+      </div>
     </div>
     """
 

@@ -477,6 +477,22 @@ annen størrelse behandles som integritetsfeil, mens en vanlig slettet
 `files`-rad uten purge fortsatt følger den eksisterende
 duplikatoppførselen.
 
+Den brukerrettede purge-flyten finnes bare på `/settings/removed` i en
+skrivbar server. Forhåndsvisning og bekreftelse skal bruke CSRF-beskyttet
+`POST`, og bekreftelsen skal være bundet til `file_id`, SHA-256, størrelse,
+relativ sti under `deleted/` og `deleted_at`. Tømming av papirkurven skal
+bekrefte en eksakt liste og aldri ta med filer som kom til etter
+forhåndsvisningen. Delvis resultat skal vise slettede, ventende og hoppede
+filer uten tekniske eller lokale detaljer.
+
+Ventende purger skal vises med retry. Avbryting er bare tilgjengelig når den
+uendrede originalen fortsatt finnes; når originalen er borte, kan brukeren
+bare prøve å fullføre. Tombstones skal vises med stabil ID og
+visningsinformasjon. Fjerning krever egen forhåndsvisning og en bekreftelse
+bundet til tombstone-ID, SHA-256, størrelse og `purged_at`. Handlingen
+gjenoppretter ingen fil og starter ingen import, men tillater at samme
+filinnhold kan importeres igjen senere.
+
 Før importen hopper over kopiering på grunn av et database-treff på SHA-256, må
 den verifisere at den registrerte filen fortsatt finnes på disk og har
 forventet SHA-256. Hvis filen mangler eller innholdet ikke matcher databasen, er

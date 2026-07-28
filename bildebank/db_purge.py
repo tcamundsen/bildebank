@@ -82,6 +82,19 @@ def file_tombstone_by_sha256(
     ).fetchone()
 
 
+def remove_file_tombstone(
+    conn: sqlite3.Connection,
+    *,
+    tombstone_id: int,
+) -> None:
+    cursor = conn.execute(
+        "DELETE FROM file_tombstones WHERE id = ?",
+        (tombstone_id,),
+    )
+    if cursor.rowcount != 1:
+        raise ValueError("Tombstonen finnes ikke.")
+
+
 def pending_file_purges(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return list(
         conn.execute(

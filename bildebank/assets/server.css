@@ -298,6 +298,13 @@
     }
     .people-table { display: grid; gap: 8px; margin-top: 18px; }
     .removed-list { display: grid; gap: 6px; margin-top: 18px; }
+    .removed-page-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 14px 0 18px;
+    }
     .removed-row {
       display: grid;
       grid-template-columns: minmax(220px, 1fr) auto auto auto auto auto;
@@ -310,6 +317,31 @@
       font-size: 14px;
     }
     .removed-row span { color: var(--muted); }
+    .removed-row .removed-state { max-width: 260px; }
+    .removed-row-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .tombstone-section {
+      margin-top: 34px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+    }
+    .tombstone-list { display: grid; gap: 6px; margin-top: 14px; }
+    .tombstone-row {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) minmax(220px, 2fr) auto auto auto;
+      gap: 10px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      font-size: 14px;
+    }
+    .tombstone-row span { color: var(--muted); overflow-wrap: anywhere; }
     .people-row {
       display: grid;
       grid-template-columns: minmax(160px, 1fr) auto auto auto auto;
@@ -876,6 +908,12 @@
       color: var(--text);
     }
     .modal-panel h2 { margin: 0; font-size: 20px; }
+    .purge-dialog-panel { width: min(560px, 100%); }
+    .purge-dialog-panel [data-purge-dialog-body] {
+      display: grid;
+      gap: 8px;
+      line-height: 1.45;
+    }
     .modal-panel label { color: var(--muted); font-size: 13px; }
     .modal-panel input[type="text"],
     .modal-panel input[type="date"],
@@ -1295,7 +1333,9 @@
       .nav-button-pair .nav-button { flex: 1 1 0; }
       .top-actions { margin-left: 0; width: 100%; justify-content: stretch; }
       .people-row { grid-template-columns: 1fr; align-items: stretch; }
-      .removed-row { grid-template-columns: 1fr; align-items: stretch; }
+      .removed-row, .tombstone-row { grid-template-columns: 1fr; align-items: stretch; }
+      .removed-row-actions { justify-content: stretch; }
+      .removed-row-actions .nav-button { flex: 1 1 auto; }
       .geo-row { grid-template-columns: 1fr; }
       .hotkey-form { grid-template-columns: 1fr; align-items: stretch; }
       .manual-h3-option { grid-template-columns: 1fr; }

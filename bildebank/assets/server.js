@@ -1062,6 +1062,247 @@
       }
     });
   });
+  const purgeDialog = document.getElementById("purgeDialog");
+  const purgeDialogTitle = purgeDialog?.querySelector("[data-purge-dialog-title]");
+  const purgeDialogBody = purgeDialog?.querySelector("[data-purge-dialog-body]");
+  const purgeDialogError = purgeDialog?.querySelector("[data-purge-dialog-error]");
+  const purgeDialogCancel = purgeDialog?.querySelector("[data-purge-dialog-cancel]");
+  const purgeDialogConfirm = purgeDialog?.querySelector("[data-purge-dialog-confirm]");
+  let purgeDialogAction = null;
+  let purgeDialogCloseAction = null;
+  function formatPurgeBytes(value) {
+    const bytes = Math.max(0, Number(value) || 0);
+    if (bytes < 1024) return `${bytes} B`;
+    const units = ["KiB", "MiB", "GiB", "TiB"];
+    let amount = bytes;
+    let unit = "B";
+    for (const candidate of units) {
+      amount /= 1024;
+      unit = candidate;
+      if (amount < 1024) break;
+    }
+    return `${amount.toLocaleString("nb-NO", {maximumFractionDigits: 1})} ${unit}`;
+  }
+  async function purgeJson(url, body) {
+    const response = await csrfFetch(url, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.error || "Handlingen kunne ikke fullføres.");
+    }
+    return payload;
+  }
+  function closePurgeDialog() {
+    if (!purgeDialog) return;
+    purgeDialog.hidden = true;
+    purgeDialogAction = null;
+    const closeAction = purgeDialogCloseAction;
+    purgeDialogCloseAction = null;
+    closeAction?.();
+  }
+  function showPurgeDialog({
+    title,
+    paragraphs,
+    confirmLabel = "Bekreft",
+    cancelLabel = "Avbryt",
+    action = null,
+    closeAction = null,
+  }) {
+    if (!purgeDialog || !purgeDialogTitle || !purgeDialogBody || !purgeDialogCancel || !purgeDialogConfirm) {
+      return;
+    }
+    purgeDialogTitle.textContent = title;
+    purgeDialogBody.replaceChildren(
+      ...paragraphs.map(text => Object.assign(document.createElement("p"), {textContent: text}))
+    );
+    if (purgeDialogError) {
+      purgeDialogError.textContent = "";
+      purgeDialogError.hidden = true;
+    }
+    purgeDialogCancel.textContent = cancelLabel;
+    purgeDialogConfirm.textContent = confirmLabel;
+    purgeDialogConfirm.hidden = !action;
+    purgeDialogConfirm.disabled = false;
+    purgeDialogCancel.disabled = false;
+    purgeDialogAction = action;
+    purgeDialogCloseAction = closeAction;
+    purgeDialog.hidden = false;
+    (action ? purgeDialogConfirm : purgeDialogCancel).focus();
+  }
+  purgeDialogCancel?.addEventListener("click", closePurgeDialog);
+  purgeDialogConfirm?.addEventListener("click", async () => {
+    if (!purgeDialogAction || !purgeDialogConfirm || !purgeDialogCancel) return;
+    purgeDialogConfirm.disabled = true;
+    purgeDialogCancel.disabled = true;
+    if (purgeDialogError) {
+      purgeDialogError.textContent = "";
+      purgeDialogError.hidden = true;
+    }
+    try {
+      await purgeDialogAction();
+    } catch (error) {
+      if (purgeDialogError) {
+        purgeDialogError.textContent = error.message || "Handlingen kunne ikke fullføres.";
+        purgeDialogError.hidden = false;
+      }
+      purgeDialogConfirm.disabled = false;
+      purgeDialogCancel.disabled = false;
+    }
+  });
+  function showPurgeRetryDialog(purgeId, title = "Filen kunne ikke slettes.") {
+    showPurgeDialog({
+      title,
+      paragraphs: [
+        "Originalen er ikke registrert som permanent slettet.",
+        "Vil du prøve den allerede bekreftede slettingen på nytt?",
+      ],
+      confirmLabel: "Ja, prøv igjen",
+      cancelLabel: "Nei",
+      action: async () => {
+        const payload = await purgeJson("/api/purge/retry", {purge_id: purgeId});
+        if (payload.result?.status === "deleted") {
+          window.location.reload();
+          return;
+        }
+        showPurgeRetryDialog(purgeId);
+      },
+    });
+  }
+  document.querySelectorAll("[data-purge-preview-item]").forEach(button => {
+    button.addEventListener("click", async () => {
+      if (button.disabled) return;
+      button.disabled = true;
+      try {
+        const payload = await purgeJson("/api/purge/preview-file", {
+          file_id: Number(button.dataset.purgePreviewItem),
+        });
+        if (!payload.preview) {
+          window.location.reload();
+          return;
+        }
+        const identity = payload.preview;
+        showPurgeDialog({
+          title: "Slette filen permanent?",
+          paragraphs: [
+            `${identity.expected_path} (${formatPurgeBytes(identity.size_bytes)})`,
+            "Filen fjernes permanent fra den aktive bildesamlingen.",
+            "Eldre snapshots og andre sikkerhetskopier kan fortsatt inneholde filen.",
+          ],
+          confirmLabel: "Slett permanent",
+          action: async () => {
+            const resultPayload = await purgeJson("/api/purge/file", {identity});
+            if (resultPayload.result?.status === "deleted") {
+              window.location.reload();
+              return;
+            }
+            showPurgeRetryDialog(resultPayload.result?.purge_id);
+          },
+        });
+      } catch (error) {
+        alert(error.message || "Kunne ikke forhåndsvise permanent sletting.");
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+  document.querySelector("[data-purge-all]")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return;
+    button.disabled = true;
+    try {
+      const payload = await purgeJson("/api/purge/preview-deleted", {});
+      if (!payload.count) {
+        window.location.reload();
+        return;
+      }
+      showPurgeDialog({
+        title: "Tømme papirkurven?",
+        paragraphs: [
+          `${payload.count} filer (${formatPurgeBytes(payload.total_size_bytes)}) skal slettes permanent.`,
+          "Filene fjernes permanent fra den aktive bildesamlingen.",
+          "Eldre snapshots og andre sikkerhetskopier kan fortsatt inneholde filene.",
+        ],
+        confirmLabel: "Tøm papirkurven",
+        action: async () => {
+          const resultPayload = await purgeJson("/api/purge/deleted", {
+            identities: payload.preview,
+          });
+          if (!resultPayload.partial) {
+            window.location.reload();
+            return;
+          }
+          showPurgeDialog({
+            title: "Enkelte filer kunne ikke slettes.",
+            paragraphs: [
+              `Slettet: ${resultPayload.deleted}.`,
+              `Ventende: ${resultPayload.pending}. Hoppet over: ${resultPayload.skipped + resultPayload.integrity_errors}.`,
+            ],
+            cancelLabel: "Lukk",
+            closeAction: () => window.location.reload(),
+          });
+        },
+      });
+    } catch (error) {
+      alert(error.message || "Kunne ikke forhåndsvise papirkurven.");
+    } finally {
+      button.disabled = false;
+    }
+  });
+  document.querySelectorAll("[data-purge-retry]").forEach(button => {
+    button.addEventListener("click", () => {
+      if (button.disabled) return;
+      showPurgeRetryDialog(Number(button.dataset.purgeRetry), "Prøve permanent sletting på nytt?");
+    });
+  });
+  document.querySelectorAll("[data-purge-abort]").forEach(button => {
+    button.addEventListener("click", () => {
+      if (button.disabled) return;
+      const purgeId = Number(button.dataset.purgeAbort);
+      showPurgeDialog({
+        title: "Avbryte permanent sletting?",
+        paragraphs: [
+          "Filen blir liggende i papirkurven.",
+          "Du kan bruke Undelete etter at slettingen er avbrutt.",
+        ],
+        confirmLabel: "Avbryt permanent sletting",
+        action: async () => {
+          await purgeJson("/api/purge/abort", {purge_id: purgeId});
+          window.location.reload();
+        },
+      });
+    });
+  });
+  document.querySelectorAll("[data-tombstone-preview-remove]").forEach(button => {
+    button.addEventListener("click", async () => {
+      if (button.disabled) return;
+      button.disabled = true;
+      try {
+        const payload = await purgeJson("/api/tombstone/preview-remove", {
+          tombstone_id: Number(button.dataset.tombstonePreviewRemove),
+        });
+        showPurgeDialog({
+          title: "Fjerne slettingsmarkøren?",
+          paragraphs: [
+            `${payload.tombstone.original_filename} (${formatPurgeBytes(payload.tombstone.size_bytes)})`,
+            "Ingen fil blir gjenopprettet.",
+            "Det samme filinnholdet kan importeres igjen fra enhver kilde etterpå.",
+          ],
+          confirmLabel: "Fjern slettingsmarkør",
+          action: async () => {
+            await purgeJson("/api/tombstone/remove", {identity: payload.identity});
+            window.location.reload();
+          },
+        });
+      } catch (error) {
+        alert(error.message || "Kunne ikke forhåndsvise slettingsmarkøren.");
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
   document.querySelectorAll("[data-unconfirm-face]").forEach(button => {
     button.addEventListener("click", async () => {
       const faceId = Number(button.dataset.unconfirmFace);

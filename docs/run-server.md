@@ -91,9 +91,10 @@ bildebank run-server --host 0.0.0.0 --allow-remote --allow-remote-write
 ```
 
 Den skrivbare serveren har ingen innlogging. Alle som kan nå adressen, kan
-derfor gjøre endringer. Bruk den bare på et privat LAN der du stoler på alle
-klientene. For vanlig visning bør du bruke read-only-kommandoen over eller
-`--lan-share`.
+derfor gjøre endringer, inkludert permanent sletting fra papirkurven. Bruk den
+bare på et privat LAN der du stoler på alle klientene. For vanlig visning bør
+du bruke read-only-kommandoen over eller `--lan-share`. Se
+[Permanent sletting](permanent-sletting.md) for hva denne handlingen gjør.
 
 Read-only-modus lar andre bla, søke, se personer og åpne bildeinfo. Den
 blokkerer innstillinger, administrasjon og endringer i database og bildefiler.

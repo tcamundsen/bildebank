@@ -16,6 +16,7 @@ from . import server_endpoints_admin
 from . import server_endpoints_browser
 from . import server_endpoints_faces
 from . import server_endpoints_items
+from . import server_endpoints_purge
 from .server_pages import (
     app_status_page_html,
     custom_geo_places_page_html,
@@ -167,6 +168,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 "/tags/",
                 "/search",
                 "/api/search-preload",
+                "/api/tombstones",
             }
             or path.startswith("/settings/")
             or path.startswith("/people/missing-suggestions")
@@ -437,6 +439,24 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/maintenance/statuses":
                 self.respond_maintenance_statuses()
+                return
+            if parsed.path == "/api/tombstones":
+                server_endpoints_purge.respond_file_tombstones(self)
+                return
+            if parsed.path in {
+                "/api/purge/preview-file",
+                "/api/purge/preview-deleted",
+                "/api/purge/file",
+                "/api/purge/deleted",
+                "/api/purge/retry",
+                "/api/purge/abort",
+                "/api/tombstone/preview-remove",
+                "/api/tombstone/remove",
+            }:
+                self.respond_json(
+                    {"ok": False, "error": "Endepunktet krever POST."},
+                    status=HTTPStatus.METHOD_NOT_ALLOWED,
+                )
                 return
             if parsed.path.startswith("/display/"):
                 self.respond_display(parsed.path.removeprefix("/display/"))
@@ -730,6 +750,30 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/item-undelete":
                 server_endpoints_items.respond_undelete_item(self)
+                return
+            if parsed.path == "/api/purge/preview-file":
+                server_endpoints_purge.respond_preview_file_purge(self)
+                return
+            if parsed.path == "/api/purge/preview-deleted":
+                server_endpoints_purge.respond_preview_deleted_purges(self)
+                return
+            if parsed.path == "/api/purge/file":
+                server_endpoints_purge.respond_purge_file(self)
+                return
+            if parsed.path == "/api/purge/deleted":
+                server_endpoints_purge.respond_purge_deleted(self)
+                return
+            if parsed.path == "/api/purge/retry":
+                server_endpoints_purge.respond_retry_file_purge(self)
+                return
+            if parsed.path == "/api/purge/abort":
+                server_endpoints_purge.respond_abort_file_purge(self)
+                return
+            if parsed.path == "/api/tombstone/preview-remove":
+                server_endpoints_purge.respond_preview_tombstone_removal(self)
+                return
+            if parsed.path == "/api/tombstone/remove":
+                server_endpoints_purge.respond_remove_tombstone(self)
                 return
             self.respond_json(
                 {"ok": False, "error": "Ukjent endepunkt."}, status=HTTPStatus.NOT_FOUND

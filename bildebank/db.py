@@ -198,6 +198,7 @@ from .db_purge import (
     pending_file_purge_identity,
     pending_file_purges,
     require_no_pending_file_purge,
+    remove_file_tombstone,
     remove_pending_file_purge,
     update_pending_file_purge_error,
 )
@@ -386,6 +387,7 @@ __all__ = (
     "pending_file_purge_identity",
     "pending_file_purges",
     "require_no_pending_file_purge",
+    "remove_file_tombstone",
     "remove_pending_file_purge",
     "update_pending_file_purge_error",
     "custom_geo_place",

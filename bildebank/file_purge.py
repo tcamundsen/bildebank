@@ -28,6 +28,7 @@ from .thumbnails import THUMB_ROOT_NAME
 
 
 PurgeStatus = Literal["deleted", "pending", "skipped", "integrity-error"]
+OriginalPurgeState = Literal["matching", "missing", "unexpected"]
 
 
 class PurgeIntegrityError(ValueError):
@@ -49,6 +50,7 @@ class PendingPurgePreview:
     identity: PurgeConfirmationIdentity
     attempts: int
     last_error: str | None
+    original_state: OriginalPurgeState
 
 
 @dataclass(frozen=True)
@@ -102,6 +104,21 @@ class PurgeResult:
         )
 
 
+@dataclass(frozen=True)
+class TombstoneConfirmationIdentity:
+    tombstone_id: int
+    sha256: str
+    size_bytes: int
+    purged_at: str
+
+
+@dataclass(frozen=True)
+class TombstonePreview:
+    identity: TombstoneConfirmationIdentity
+    original_filename: str
+    former_target_path: Path
+
+
 def preview_file_purge(target: Path, *, file_id: int) -> PurgePreview:
     return _preview_file_purges(target, file_id=file_id)
 
@@ -145,6 +162,7 @@ def _preview_file_purges(
                         if pending["last_error"] is not None
                         else None
                     ),
+                    original_state=_original_state(target, identity)[0],
                 )
             )
         return PurgePreview(
@@ -454,6 +472,62 @@ def recover_pending_file_purges_in_connection(
     return PurgeResult(tuple(results))
 
 
+def preview_file_tombstones(target: Path) -> tuple[TombstonePreview, ...]:
+    conn = db.connect_read_only(target)
+    try:
+        return tuple(_tombstone_preview(row) for row in db.file_tombstones(conn))
+    finally:
+        conn.close()
+
+
+def preview_file_tombstone(
+    target: Path,
+    *,
+    tombstone_id: int,
+) -> TombstonePreview:
+    conn = db.connect_read_only(target)
+    try:
+        row = db.file_tombstone(conn, tombstone_id=tombstone_id)
+        if row is None:
+            raise ValueError("Tombstonen finnes ikke.")
+        return _tombstone_preview(row)
+    finally:
+        conn.close()
+
+
+def remove_tombstone(
+    target: Path,
+    confirmation: TombstoneConfirmationIdentity,
+) -> None:
+    with TargetLock(target, command="remove-file-tombstone"):
+        conn = db.connect(target)
+        try:
+            row = db.file_tombstone(
+                conn,
+                tombstone_id=confirmation.tombstone_id,
+            )
+            if row is None or _tombstone_identity(row) != confirmation:
+                raise PurgeIntegrityError(
+                    "Tombstonen er endret. Oppdater forhåndsvisningen."
+                )
+            conn.execute("BEGIN IMMEDIATE")
+            db.remove_file_tombstone(
+                conn,
+                tombstone_id=confirmation.tombstone_id,
+            )
+            db.log_command(
+                conn,
+                "remove-file-tombstone",
+                {"requested": 1, "removed": 1},
+            )
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
 def _perform_pending_purge(
     conn: sqlite3.Connection,
     target: Path,
@@ -605,7 +679,7 @@ def _require_deleted_path(relative_path: Path) -> None:
 def _original_state(
     target: Path,
     identity: PurgeConfirmationIdentity,
-) -> tuple[Literal["matching", "missing", "unexpected"], str | None]:
+) -> tuple[OriginalPurgeState, str | None]:
     inspection = inspect_collection_file(target, identity.expected_path)
     if inspection.status == COLLECTION_FILE_MISSING:
         return "missing", None
@@ -844,3 +918,32 @@ def _require_distinct_file_ids(
     file_ids = [confirmation.file_id for confirmation in confirmations]
     if len(file_ids) != len(set(file_ids)):
         raise ValueError("Bekreftelsen inneholder samme file_id flere ganger.")
+
+
+def _tombstone_preview(row: Any) -> TombstonePreview:
+    return TombstonePreview(
+        identity=_tombstone_identity(row),
+        original_filename=str(row["original_filename"]),
+        former_target_path=parse_collection_relative_path(
+            str(row["former_target_path"])
+        ),
+    )
+
+
+def _tombstone_identity(row: Any) -> TombstoneConfirmationIdentity:
+    size_bytes = row["size_bytes"]
+    if type(size_bytes) is not int or size_bytes < 0:
+        raise PurgeIntegrityError(
+            "Tombstonen har ugyldig databaseført størrelse."
+        )
+    purged_at = row["purged_at"]
+    if not isinstance(purged_at, str) or not purged_at:
+        raise PurgeIntegrityError(
+            "Tombstonen mangler gyldig slettetidspunkt."
+        )
+    return TombstoneConfirmationIdentity(
+        tombstone_id=int(row["id"]),
+        sha256=str(row["sha256"]),
+        size_bytes=size_bytes,
+        purged_at=purged_at,
+    )

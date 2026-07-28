@@ -9,6 +9,23 @@ from .config import BrowserHotkeyConfig, FaceRecognitionConfig
 from .face import AddPersonToFileResult, add_person_to_file
 from .file_lifecycle import remove_file, undelete_file
 from .file_moves import recover_pending_file_moves_in_connection
+from .file_purge import (
+    PurgeConfirmationIdentity,
+    PurgeFileResult,
+    PurgePreview,
+    PurgeResult,
+    TombstoneConfirmationIdentity,
+    TombstonePreview,
+    abort_file_purge,
+    preview_deleted_file_purges,
+    preview_file_purge,
+    preview_file_tombstone,
+    preview_file_tombstones,
+    purge_deleted_files,
+    purge_file,
+    remove_tombstone,
+    retry_file_purge,
+)
 from .file_tags import set_file_tag
 from .geo import h3_cells_for_manual_cell
 from .manual_dates import date_range_from_uncertainty
@@ -253,6 +270,73 @@ def undelete_file_from_browser(
         expect_deleted=False,
         face_config=face_config,
     )
+
+
+def preview_file_purge_from_browser(
+    target: Path,
+    *,
+    file_id: int,
+) -> PurgePreview:
+    return preview_file_purge(target, file_id=file_id)
+
+
+def preview_deleted_file_purges_from_browser(target: Path) -> PurgePreview:
+    return preview_deleted_file_purges(target)
+
+
+def purge_file_from_browser(
+    target: Path,
+    confirmation: PurgeConfirmationIdentity,
+) -> PurgeFileResult:
+    return purge_file(target, confirmation)
+
+
+def purge_deleted_files_from_browser(
+    target: Path,
+    confirmations: tuple[PurgeConfirmationIdentity, ...],
+) -> PurgeResult:
+    return purge_deleted_files(
+        target,
+        PurgePreview(
+            new_candidates=confirmations,
+            pending_candidates=(),
+        ),
+    )
+
+
+def retry_file_purge_from_browser(
+    target: Path,
+    *,
+    purge_id: int,
+) -> PurgeFileResult:
+    return retry_file_purge(target, purge_id=purge_id)
+
+
+def abort_file_purge_from_browser(
+    target: Path,
+    *,
+    purge_id: int,
+) -> PurgeConfirmationIdentity:
+    return abort_file_purge(target, purge_id=purge_id)
+
+
+def file_tombstones_for_browser(target: Path) -> tuple[TombstonePreview, ...]:
+    return preview_file_tombstones(target)
+
+
+def preview_tombstone_removal_from_browser(
+    target: Path,
+    *,
+    tombstone_id: int,
+) -> TombstonePreview:
+    return preview_file_tombstone(target, tombstone_id=tombstone_id)
+
+
+def remove_tombstone_from_browser(
+    target: Path,
+    confirmation: TombstoneConfirmationIdentity,
+) -> None:
+    remove_tombstone(target, confirmation)
 
 
 def _run_browser_file_move(

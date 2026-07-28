@@ -1,6 +1,7 @@
 # Database v21: tombstones og purge-journal
 
-Status: Implementert som kontrollpunkt A i
+Status: Implementert. Skjemaet ble innført i kontrollpunkt A og brukes av den
+ferdige purge-flyten fra kontrollpunkt B og C i
 `devel-docs/tombstone-implementasjonsplan.md`.
 
 ## Formål
@@ -15,7 +16,9 @@ sletteflyten:
 - fire SQLite-triggere håndhever at samme SHA-256 ikke kan finnes i både
   `files` og `file_tombstones`
 
-Kontrollpunkt A aktiverer ingen brukerrettet eller fysisk permanent sletting.
+Selve migreringen aktiverer eller starter ingen fysisk permanent sletting.
+Den ferdige brukerflyten krever fortsatt en separat, eksplisitt bekreftelse på
+`/settings/removed`.
 
 ## Migrering fra v20
 
