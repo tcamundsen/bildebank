@@ -297,6 +297,7 @@
       margin-bottom: 18px;
     }
     .people-table { display: grid; gap: 8px; margin-top: 18px; }
+    .sources-table { display: grid; gap: 8px; margin-top: 18px; }
     .removed-list { display: grid; gap: 6px; margin-top: 18px; }
     .removed-page-actions {
       display: flex;
@@ -344,7 +345,17 @@
     .tombstone-row span { color: var(--muted); overflow-wrap: anywhere; }
     .people-row {
       display: grid;
-      grid-template-columns: minmax(160px, 1fr) auto auto auto auto;
+      grid-template-columns: 5fr 2fr 3fr; /*minmax(160px, 1fr) auto auto auto auto;*/
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+    }
+    .tag-row {
+      display: grid;
+      grid-template-columns: 3fr 1fr 1fr 2fr auto;
       gap: 8px;
       align-items: center;
       padding: 8px;
@@ -1303,6 +1314,21 @@
       min-height: 34px;
       padding: 6px 10px;
     }
+    .source-row > :nth-child(2) {
+      grid-column: span 2;
+    }
+    .source-row {
+      display: grid;
+      grid-template-columns:  1fr 2fr 2fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: #fff;
+      min-height: 34px;
+      padding: 6px 10px;
+    }
     .assign-person-button:hover { background: rgb(255 255 255 / 18%); }
     .assign-person-button:disabled { opacity: 0.55; cursor: default; }
     .assign-status { color: var(--muted); font-size: 13px; min-height: 1.3em; }
@@ -1332,7 +1358,8 @@
       .nav-button-pair { flex: 1 1 auto; }
       .nav-button-pair .nav-button { flex: 1 1 0; }
       .top-actions { margin-left: 0; width: 100%; justify-content: stretch; }
-      .people-row { grid-template-columns: 1fr; align-items: stretch; }
+      .people-row, .source-row, .tag-row { grid-template-columns: 1fr; align-items: stretch; }
+      .source-row > :nth-child(2) { grid-column: auto; }
       .removed-row, .tombstone-row { grid-template-columns: 1fr; align-items: stretch; }
       .removed-row-actions { justify-content: stretch; }
       .removed-row-actions .nav-button { flex: 1 1 auto; }

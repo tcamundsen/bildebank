@@ -24,7 +24,7 @@ def sources_page_html(
     sources = source_summary_rows(target)
     rows = "\n".join(source_row_html(source) for source in sources)
     content = (
-        f'<div class="people-table">{rows}</div>'
+        f'<div class="sources-table">{rows}</div>'
         if rows
         else '<p class="meta">Ingen importerte kilder registrert.</p>'
     )
@@ -78,7 +78,7 @@ def tag_row_html(row: sqlite3.Row) -> str:
     url = "/tag/" + urllib.parse.quote(name, safe="")
     actions = tag_row_actions_html(tag_id, name, kind)
     return f"""
-    <div class="people-row">
+    <div class="tag-row">
       <div class="people-name">{html.escape(name)}</div>
       <a class="person-link" href="{html.escape(url)}">Vis bilder ({int(row["file_count"])})</a>
       <span class="status">{html.escape(kind_label)}</span>
@@ -116,13 +116,13 @@ def source_row_html(source: sqlite3.Row) -> str:
     imported_at = str(source["imported_at"] or "-")
     source_browser = imported_source_browser_source(source)
     return f"""
-    <div class="people-row">
-      <div class="people-name">{html.escape(name)}</div>
+    <div class="source-row">
+      <div class="detail">{html.escape(name)}</div>
+      <div class="detail">{html.escape(str(source["path"]))}</div>
       <a class="person-link" href="{html.escape(source_browser.root_url)}">Vis bilder ({active_file_count})</a>
-      <span class="status">filer fra kilde: {source_file_count}</span>
-      <span class="status">aktive filer bare i denne kilden: {exclusive_active_file_count}</span>
+      <span class="status">filer fra mappe: {source_file_count}</span>
+      <span class="status">fra bare denne: {exclusive_active_file_count}</span>
       <span class="status">status: {html.escape(status)}</span>
       <span class="status">importert: {html.escape(imported_at)}</span>
-      <div class="detail">{html.escape(str(source["path"]))}</div>
     </div>
     """

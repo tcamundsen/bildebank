@@ -3178,8 +3178,8 @@ class ServerBrowserCliTests(unittest.TestCase):
             [int(source["exclusive_active_file_count"]) for source in summaries],
             [2, 1],
         )
-        self.assertIn("aktive filer bare i denne kilden: 2", body)
-        self.assertIn("aktive filer bare i denne kilden: 1", body)
+        self.assertIn("fra bare denne: 2", body)
+        self.assertIn("fra bare denne: 1", body)
 
     def test_run_server_source_browser_reuses_source_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3380,6 +3380,9 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn('<span class="sep">/</span>Januar</nav>', month_body)
         self.assertNotIn('<footer class="browser-footer">', month_body)
         self.assertIn("<h1>Importerte mapper</h1>", sources_body)
+        self.assertIn('<div class="sources-table">', sources_body)
+        self.assertIn('<div class="source-row">', sources_body)
+        self.assertNotIn('<div class="people-row">', sources_body)
         self.assertIn('href="/source/1">Vis bilder (3)</a>', sources_body)
         self.assertIn("source-a", sources_body)
         self.assertIn("source-b", sources_body)
