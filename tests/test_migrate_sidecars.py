@@ -245,7 +245,7 @@ def test_migrate_v16_cleans_all_existing_item_sidecars_and_backs_up_faces(
 
     assert plan.terminal_file_moves == 2
     assert result.current_version == 16
-    assert result.target_version == 20
+    assert result.target_version == db.SCHEMA_VERSION
     assert result.cleans_item_sidecars
     assert result.terminal_file_moves == 2
     assert len(result.face_database_backups) == len(face_paths)
@@ -302,7 +302,7 @@ def test_migrate_v16_cleans_all_existing_item_sidecars_and_backs_up_faces(
 
     conn = db.connect(target)
     try:
-        assert db.schema_version(conn) == 20
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
         assert conn.execute(
             "SELECT COUNT(*) FROM file_sources WHERE file_id = ?",
             (ids["active_id"],),
@@ -371,7 +371,7 @@ def test_migrate_v16_rolls_back_main_and_sidecars_after_late_failure(
 
     result = db.migrate_database(target, face_config=face_config)
     assert result.current_version == 16
-    assert result.target_version == 20
+    assert result.target_version == db.SCHEMA_VERSION
     conn = db.connect(target)
     try:
         assert [
@@ -413,11 +413,11 @@ def test_migrate_v17_only_cleans_file_move_journal(
     result = db.migrate_database(target, face_config=face_config)
 
     assert plan.current_version == 17
-    assert plan.target_version == 20
+    assert plan.target_version == db.SCHEMA_VERSION
     assert not plan.cleans_item_sidecars
     assert plan.terminal_file_moves == 2
     assert result.current_version == 17
-    assert result.target_version == 20
+    assert result.target_version == db.SCHEMA_VERSION
     assert not result.cleans_item_sidecars
     assert result.terminal_file_moves == 2
     assert result.face_database_backups == ()
@@ -430,7 +430,7 @@ def test_migrate_v17_only_cleans_file_move_journal(
 
     conn = db.connect(target)
     try:
-        assert db.schema_version(conn) == 20
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
         assert [
             tuple(row)
             for row in conn.execute(
@@ -480,7 +480,9 @@ def test_migrate_v16_check_does_not_touch_or_back_up_sidecars(
     assert "Ingen endringer er gjort (--check)." in stdout
     assert {path: database_dump(path) for path in before} == before
     assert not list(
-        target.glob(".bilder.sqlite3.backup-before-schema-20-*")
+        target.glob(
+            f".bilder.sqlite3.backup-before-schema-{db.SCHEMA_VERSION}-*"
+        )
     )
     assert not list(
         face_path.parent.glob(
@@ -543,7 +545,10 @@ def test_migrate_v18_duplicate_repair_cleans_only_duplicate_sidecars(
     assert result.duplicate_sha256_groups == 1
     assert result.duplicate_sha256_files == 1
     assert len(result.face_database_backups) == 1
-    assert "main-schema-20" in result.face_database_backups[0].name
+    assert (
+        f"main-schema-{db.SCHEMA_VERSION}"
+        in result.face_database_backups[0].name
+    )
 
     conn = sqlite3.connect(face_path)
     try:

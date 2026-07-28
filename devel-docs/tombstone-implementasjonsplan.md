@@ -1,6 +1,7 @@
 # Implementasjonsplan: permanent sletting og tombstones
 
-Status: Ikke startet.
+Status: Kontrollpunkt A er implementert og verifisert. Kontrollpunkt B og C
+er ikke startet.
 
 Denne planen beskriver rekkefølgen for å implementere designet i
 `devel-docs/sletting-med-toombstone.md`. Designdokumentet er autoritativt for
@@ -76,12 +77,12 @@ Hvert kontrollpunkt skal:
 
 ## 4. Forberedelse før kode
 
-- [ ] Commit designdokumentet separat fra implementasjonen.
-- [ ] Kontroller at arbeidskopien ikke har overlappende, urelaterte endringer.
-- [ ] Kjør full Linux-testsuite som baseline:
+- [x] Commit designdokumentet separat fra implementasjonen.
+- [x] Kontroller at arbeidskopien ikke har overlappende, urelaterte endringer.
+- [x] Kjør full Linux-testsuite som baseline:
   `python -m pytest -n auto`.
-- [ ] Kjør prosjektets lint/formatkontroll uten å formatere urelaterte filer.
-- [ ] Oppdater den permanente-slettingsregelen først når implementasjonen
+- [x] Kjør prosjektets lint/formatkontroll uten å formatere urelaterte filer.
+- [x] Oppdater den permanente-slettingsregelen først når implementasjonen
   faktisk begynner.
 
 ## 5. Kontrollpunkt A: database v21

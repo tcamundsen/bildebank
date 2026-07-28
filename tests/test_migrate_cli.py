@@ -31,6 +31,21 @@ def database_dump(path: Path) -> str:
         conn.close()
 
 
+def downgrade_current_database_to_v20(target: Path) -> None:
+    conn = sqlite3.connect(target / DB_FILENAME)
+    try:
+        for trigger_name in db.FILE_PURGE_TRIGGER_NAMES:
+            conn.execute(f"DROP TRIGGER {trigger_name}")
+        conn.execute("DROP TABLE pending_file_purges")
+        conn.execute("DROP TABLE file_tombstones")
+        conn.execute(
+            "UPDATE meta SET value = '20' WHERE key = 'schema_version'"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 class MigrateCliTests(unittest.TestCase):
 
     def test_database_schema_includes_general_performance_indexes(self) -> None:
@@ -53,6 +68,147 @@ class MigrateCliTests(unittest.TestCase):
         self.assertIn("idx_files_active_target_path_key", indexes)
         self.assertIn("idx_file_sources_source_id_id", indexes)
         self.assertIn("idx_errors_unresolved_stage_id", indexes)
+
+    def test_migrate_check_v20_to_v21_changes_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            downgrade_current_database_to_v20(target)
+            database_path = target / DB_FILENAME
+            before = database_path.read_bytes()
+            before_mtime = database_path.stat().st_mtime_ns
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "migrate", "--check"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Nåværende schema_version: 20", stdout)
+            self.assertIn("Ny schema_version: 21", stdout)
+            self.assertIn("opprette file_tombstones", stdout)
+            self.assertIn("opprette pending_file_purges", stdout)
+            self.assertIn("Ingen endringer er gjort (--check).", stdout)
+            self.assertEqual(database_path.read_bytes(), before)
+            self.assertEqual(database_path.stat().st_mtime_ns, before_mtime)
+            self.assertFalse(
+                list(
+                    target.glob(
+                        f".bilder.sqlite3.backup-before-schema-{db.SCHEMA_VERSION}-*"
+                    )
+                )
+            )
+
+    def test_migrate_v20_to_v21_only_adds_empty_purge_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"unchanged-image")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            conn = db.connect(target)
+            try:
+                file_rows_before = [
+                    tuple(row)
+                    for row in conn.execute("SELECT * FROM files ORDER BY id")
+                ]
+                file_source_rows_before = [
+                    tuple(row)
+                    for row in conn.execute(
+                        "SELECT * FROM file_sources ORDER BY id"
+                    )
+                ]
+                target_relative = Path(
+                    str(
+                        conn.execute(
+                            "SELECT target_path FROM files"
+                        ).fetchone()["target_path"]
+                    )
+                )
+            finally:
+                conn.close()
+            target_file = target / target_relative
+            target_bytes_before = target_file.read_bytes()
+            downgrade_current_database_to_v20(target)
+
+            with mock.patch(
+                "bildebank.db_schema.hash_stable_collection_file",
+                side_effect=AssertionError("v20->v21 leste en samlingsfil"),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "migrate"]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Nåværende schema_version: 20", stdout)
+            self.assertIn("Setter schema_version=21.", stdout)
+            self.assertEqual(target_file.read_bytes(), target_bytes_before)
+            conn = db.connect(target)
+            try:
+                self.assertEqual(
+                    [tuple(row) for row in conn.execute(
+                        "SELECT * FROM files ORDER BY id"
+                    )],
+                    file_rows_before,
+                )
+                self.assertEqual(
+                    [tuple(row) for row in conn.execute(
+                        "SELECT * FROM file_sources ORDER BY id"
+                    )],
+                    file_source_rows_before,
+                )
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM file_tombstones"
+                    ).fetchone()[0],
+                    0,
+                )
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM pending_file_purges"
+                    ).fetchone()[0],
+                    0,
+                )
+                db.validate_file_purge_schema(conn)
+            finally:
+                conn.close()
+
+    def test_migrate_v20_to_v21_rolls_back_schema_on_late_failure(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            downgrade_current_database_to_v20(target)
+            database_path = target / DB_FILENAME
+            before = database_dump(database_path)
+
+            with mock.patch(
+                "bildebank.db_schema.validate_database_health",
+                side_effect=RuntimeError("injisert v21-feil"),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "migrate"]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertIn("injisert v21-feil", stderr)
+            self.assertEqual(database_dump(database_path), before)
 
     def test_migrate_promotes_existing_user_tag_to_system_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -359,12 +515,12 @@ class MigrateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 2", stdout)
-            self.assertIn("Ny schema_version: 20", stdout)
+            self.assertIn(f"Ny schema_version: {db.SCHEMA_VERSION}", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "20",
+                    str(db.SCHEMA_VERSION),
                 )
                 file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
                 source_columns = {row[1] for row in conn.execute("pragma table_info(sources)")}
@@ -442,14 +598,20 @@ class MigrateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 1", stdout)
-            self.assertIn("Ny schema_version: 20", stdout)
+            self.assertIn(f"Ny schema_version: {db.SCHEMA_VERSION}", stdout)
             self.assertIn("Vil opprette tabellen file_sources.", stdout)
             self.assertIn("  importerte filer: 1", stdout)
             self.assertIn("  duplikatfunn: 1", stdout)
             self.assertIn("  bygge om files uten gamle v1-kildekolonner", stdout)
             self.assertIn("  fjerne legacy-tabellen duplicate_findings", stdout)
             self.assertIn("Ingen endringer er gjort (--check).", stdout)
-            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-20-*")))
+            self.assertFalse(
+                list(
+                    target.glob(
+                        f".bilder.sqlite3.backup-before-schema-{db.SCHEMA_VERSION}-*"
+                    )
+                )
+            )
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertFalse(
@@ -472,13 +634,22 @@ class MigrateCliTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Ferdig. Databasen er migrert.", stdout)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-20-*"))), 1)
+            self.assertEqual(
+                len(
+                    list(
+                        target.glob(
+                            f".bilder.sqlite3.backup-before-schema-{db.SCHEMA_VERSION}-*"
+                        )
+                    )
+                ),
+                1,
+            )
 
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "20",
+                    str(db.SCHEMA_VERSION),
                 )
                 self.assertEqual(conn.execute("select count(*) from file_sources").fetchone()[0], 2)
                 file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
@@ -548,12 +719,12 @@ class MigrateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 5", stdout)
-            self.assertIn("Ny schema_version: 20", stdout)
+            self.assertIn(f"Ny schema_version: {db.SCHEMA_VERSION}", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "20",
+                    str(db.SCHEMA_VERSION),
                 )
                 self.assertTrue(
                     conn.execute(
@@ -577,7 +748,10 @@ class MigrateCliTests(unittest.TestCase):
             code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Nåværende schema_version: 20", stdout)
+            self.assertIn(
+                f"Nåværende schema_version: {db.SCHEMA_VERSION}",
+                stdout,
+            )
             self.assertIn("oppdatere manglende ytelsesindekser", stdout)
             self.assertIn("Oppdaterer manglende ytelsesindekser.", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
@@ -622,7 +796,11 @@ class MigrateCliTests(unittest.TestCase):
             self.assertIn("absolutt target_path", stderr)
             self.assertEqual(database_path.read_bytes(), before)
             self.assertFalse(
-                list(target.glob(".bilder.sqlite3.backup-before-schema-20-*"))
+                list(
+                    target.glob(
+                        f".bilder.sqlite3.backup-before-schema-{db.SCHEMA_VERSION}-*"
+                    )
+                )
             )
 
     def test_migrate_valid_current_schema_is_already_migrated_without_changes(self) -> None:
@@ -642,7 +820,11 @@ class MigrateCliTests(unittest.TestCase):
             self.assertEqual(database_path.read_bytes(), before)
             self.assertEqual(database_path.stat().st_mtime_ns, before_mtime)
             self.assertFalse(
-                list(target.glob(".bilder.sqlite3.backup-before-schema-20-*"))
+                list(
+                    target.glob(
+                        f".bilder.sqlite3.backup-before-schema-{db.SCHEMA_VERSION}-*"
+                    )
+                )
             )
 
     def test_migrate_check_reports_internal_v11_repairs_without_changes(self) -> None:
@@ -664,14 +846,23 @@ class MigrateCliTests(unittest.TestCase):
             code, stdout, stderr = capture_cli(["--target", str(target), "migrate", "--check"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("reparere intern v20-struktur", stdout)
+            self.assertIn(
+                f"reparere intern v{db.SCHEMA_VERSION}-struktur",
+                stdout,
+            )
             self.assertIn("systemtaggen", stdout)
             self.assertIn("meta.collection_id", stdout)
             self.assertIn("idx_file_tags_tag_id_file_id", stdout)
             self.assertIn("Ingen endringer er gjort (--check).", stdout)
             self.assertEqual(database_path.read_bytes(), before)
             self.assertEqual(database_path.stat().st_mtime_ns, before_mtime)
-            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-20-*")))
+            self.assertFalse(
+                list(
+                    target.glob(
+                        f".bilder.sqlite3.backup-before-schema-{db.SCHEMA_VERSION}-*"
+                    )
+                )
+            )
 
     def test_migrate_repairs_internal_v11_structure_and_preserves_tags_and_links(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -716,8 +907,20 @@ class MigrateCliTests(unittest.TestCase):
             code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Reparerer intern v20-struktur.", stdout)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-20-*"))), 1)
+            self.assertIn(
+                f"Reparerer intern v{db.SCHEMA_VERSION}-struktur.",
+                stdout,
+            )
+            self.assertEqual(
+                len(
+                    list(
+                        target.glob(
+                            f".bilder.sqlite3.backup-before-schema-{db.SCHEMA_VERSION}-*"
+                        )
+                    )
+                ),
+                1,
+            )
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 collection_id = conn.execute(
@@ -791,7 +994,7 @@ class MigrateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 9", stdout)
-            self.assertIn("Ny schema_version: 20", stdout)
+            self.assertIn(f"Ny schema_version: {db.SCHEMA_VERSION}", stdout)
             self.assertIn("Legger til kamerakolonner i files.", stdout)
             self.assertIn("refresh-metadata --rescan", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
@@ -801,7 +1004,7 @@ class MigrateCliTests(unittest.TestCase):
                 self.assertIn("camera_model", columns)
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "20",
+                    str(db.SCHEMA_VERSION),
                 )
                 self.assertEqual(
                     conn.execute("SELECT camera_make, camera_model FROM files").fetchone(),
@@ -826,7 +1029,7 @@ class MigrateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 10", stdout)
-            self.assertIn("Ny schema_version: 20", stdout)
+            self.assertIn(f"Ny schema_version: {db.SCHEMA_VERSION}", stdout)
             self.assertIn("Oppretter pending_file_deletes.", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
@@ -834,7 +1037,7 @@ class MigrateCliTests(unittest.TestCase):
                     conn.execute(
                         "SELECT value FROM meta WHERE key = 'schema_version'"
                     ).fetchone()[0],
-                    "20",
+                    str(db.SCHEMA_VERSION),
                 )
                 columns = {
                     row[1]
@@ -864,7 +1067,7 @@ class MigrateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 12", stdout)
-            self.assertIn("Ny schema_version: 20", stdout)
+            self.assertIn(f"Ny schema_version: {db.SCHEMA_VERSION}", stdout)
             self.assertIn("Legger til metadata_datetime i files.", stdout)
             self.assertIn("refresh-metadata --rescan", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
@@ -873,7 +1076,7 @@ class MigrateCliTests(unittest.TestCase):
                 self.assertIn("metadata_datetime", columns)
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "20",
+                    str(db.SCHEMA_VERSION),
                 )
                 self.assertIsNone(conn.execute("SELECT metadata_datetime FROM files").fetchone()[0])
             finally:
@@ -914,7 +1117,7 @@ class MigrateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 14", stdout)
-            self.assertIn("Ny schema_version: 20", stdout)
+            self.assertIn(f"Ny schema_version: {db.SCHEMA_VERSION}", stdout)
             self.assertIn("Legger til comment i files.", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
@@ -930,7 +1133,7 @@ class MigrateCliTests(unittest.TestCase):
                 self.assertIsNone(conn.execute("SELECT comment FROM files").fetchone()[0])
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "20",
+                    str(db.SCHEMA_VERSION),
                 )
             finally:
                 conn.close()
@@ -995,7 +1198,7 @@ class MigrateCliTests(unittest.TestCase):
                     conn.execute(
                         "SELECT value FROM meta WHERE key = 'schema_version'"
                     ).fetchone()[0],
-                    "20",
+                    str(db.SCHEMA_VERSION),
                 )
             finally:
                 conn.close()
@@ -1035,13 +1238,13 @@ class MigrateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 7", stdout)
-            self.assertIn("Ny schema_version: 20", stdout)
+            self.assertIn(f"Ny schema_version: {db.SCHEMA_VERSION}", stdout)
             self.assertIn("Fyller h3_res10 og h3_res11", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "20",
+                    str(db.SCHEMA_VERSION),
                 )
                 columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
                 indexes = {row[1] for row in conn.execute("PRAGMA index_list(files)")}
@@ -1082,14 +1285,14 @@ class MigrateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 6", stdout)
-            self.assertIn("Ny schema_version: 20", stdout)
+            self.assertIn(f"Ny schema_version: {db.SCHEMA_VERSION}", stdout)
             self.assertIn("Rydder gamle GPS-feilmeldinger.", stdout)
             self.assertIn("bildebank vacuum", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "20",
+                    str(db.SCHEMA_VERSION),
                 )
                 self.assertEqual(
                     conn.execute("SELECT gps_error FROM files").fetchone()[0],
@@ -1132,7 +1335,7 @@ class MigrateCliTests(unittest.TestCase):
             finally:
                 conn.close()
 
-    def test_current_schema_rejects_v20_database_with_absolute_target_path(self) -> None:
+    def test_current_schema_rejects_v21_database_with_absolute_target_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -1151,7 +1354,11 @@ class MigrateCliTests(unittest.TestCase):
                 conn.execute("ALTER TABLE sources DROP COLUMN superseded_by_source_id")
                 db.create_pending_file_deletes_schema(conn)
                 db.create_pending_file_moves_schema(conn)
-                conn.execute("UPDATE meta SET value = '20' WHERE key = 'schema_version'")
+                db.create_file_purge_schema(conn)
+                conn.execute(
+                    "UPDATE meta SET value = ? WHERE key = 'schema_version'",
+                    (str(db.SCHEMA_VERSION),),
+                )
                 conn.commit()
             finally:
                 conn.close()
@@ -1186,7 +1393,9 @@ class MigrateCliTests(unittest.TestCase):
             self.assertEqual(database_dump(database_path), before)
             self.assertEqual(database_path.read_bytes(), before_bytes)
             backups = list(
-                target.glob(".bilder.sqlite3.backup-before-schema-20-*")
+                target.glob(
+                    f".bilder.sqlite3.backup-before-schema-{db.SCHEMA_VERSION}-*"
+                )
             )
             self.assertEqual(len(backups), 1)
             self.assertEqual(backups[0].read_bytes(), before_bytes)
@@ -1278,7 +1487,7 @@ class MigrateCliTests(unittest.TestCase):
             code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Ny schema_version: 20", stdout)
+            self.assertIn(f"Ny schema_version: {db.SCHEMA_VERSION}", stdout)
             conn = sqlite3.connect(db_path)
             try:
                 names = [row[0] for row in conn.execute("SELECT name FROM sources ORDER BY id")]
@@ -1306,7 +1515,16 @@ class MigrateCliTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Databasen ble ikke migrert", stderr)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-20-*"))), 1)
+            self.assertEqual(
+                len(
+                    list(
+                        target.glob(
+                            f".bilder.sqlite3.backup-before-schema-{db.SCHEMA_VERSION}-*"
+                        )
+                    )
+                ),
+                1,
+            )
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
@@ -1344,7 +1562,9 @@ class MigrateCliTests(unittest.TestCase):
             self.assertIn("Ingen endringer er skrevet", stderr)
             self.assertEqual(database_dump(database_path), before_dump)
             backups = list(
-                target.glob(".bilder.sqlite3.backup-before-schema-20-*")
+                target.glob(
+                    f".bilder.sqlite3.backup-before-schema-{db.SCHEMA_VERSION}-*"
+                )
             )
             self.assertEqual(len(backups), 1)
             self.assertEqual(backups[0].read_bytes(), before_bytes)
@@ -1480,5 +1700,5 @@ class MigrateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
-            self.assertIn("schema_version=20", stderr)
+            self.assertIn(f"schema_version={db.SCHEMA_VERSION}", stderr)
             self.assertIn("bildebank migrate", stderr)

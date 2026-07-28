@@ -42,7 +42,7 @@ from .db_tags import (
     tag_name_key,
 )
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 ITEM_SIDECAR_CLEANUP_SCHEMA_VERSION = 17
 DUPLICATE_SHA256_REPAIR_REASON = "schema-v19-duplicate-sha256"
 GPS_ERROR_EXIFTOOL = "exiftool_error"
@@ -70,6 +70,12 @@ PERFORMANCE_INDEX_NAMES = (
     "idx_file_sources_source_id_id",
     "idx_file_sources_source_id_file_id",
     "idx_errors_unresolved_stage_id",
+)
+FILE_PURGE_TRIGGER_NAMES = (
+    "trg_files_sha256_not_tombstoned_insert",
+    "trg_files_sha256_not_tombstoned_update",
+    "trg_tombstones_sha256_not_in_files_insert",
+    "trg_tombstones_sha256_not_in_files_update",
 )
 
 
@@ -128,6 +134,8 @@ class MigrationPlan:
     orphaned_derived_files: int = 0
     unsafe_derived_paths: tuple[Path, ...] = ()
     derived_pending_delete_ids: tuple[int, ...] = ()
+    creates_file_tombstones: bool = False
+    creates_pending_file_purges: bool = False
 
 
 @dataclass(frozen=True)
@@ -485,6 +493,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    create_file_purge_schema(conn)
     ensure_compatible_columns(conn)
 
 
@@ -630,6 +639,109 @@ def create_pending_file_moves_schema(conn: sqlite3.Connection) -> None:
             completed_at TEXT,
             last_error TEXT
         )
+        """
+    )
+
+
+def create_file_purge_schema(conn: sqlite3.Connection) -> None:
+    execute_sql_statements(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS file_tombstones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sha256 TEXT NOT NULL UNIQUE,
+            size_bytes INTEGER NOT NULL,
+            original_filename TEXT NOT NULL,
+            former_target_path TEXT NOT NULL,
+            purged_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_file_tombstones_purged_at_id
+        ON file_tombstones(purged_at DESC, id DESC);
+
+        CREATE TABLE IF NOT EXISTS pending_file_purges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id INTEGER NOT NULL UNIQUE
+                REFERENCES files(id) ON DELETE RESTRICT,
+            expected_path TEXT NOT NULL,
+            expected_sha256 TEXT NOT NULL,
+            expected_size_bytes INTEGER NOT NULL,
+            expected_deleted_at TEXT NOT NULL,
+            original_filename TEXT NOT NULL,
+            former_target_path TEXT NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_files_sha256_not_tombstoned_insert
+        BEFORE INSERT ON files
+        WHEN EXISTS (
+            SELECT 1
+            FROM file_tombstones
+            WHERE sha256 = NEW.sha256
+        )
+        BEGIN
+            SELECT RAISE(
+                ABORT,
+                'files.sha256 finnes allerede i file_tombstones'
+            );
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_files_sha256_not_tombstoned_update
+        BEFORE UPDATE OF sha256 ON files
+        WHEN EXISTS (
+            SELECT 1
+            FROM file_tombstones
+            WHERE sha256 = NEW.sha256
+        )
+        BEGIN
+            SELECT RAISE(
+                ABORT,
+                'files.sha256 finnes allerede i file_tombstones'
+            );
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_tombstones_sha256_not_in_files_insert
+        BEFORE INSERT ON file_tombstones
+        WHEN EXISTS (
+            SELECT 1
+            FROM files
+            WHERE sha256 = NEW.sha256
+        )
+        BEGIN
+            SELECT RAISE(
+                ABORT,
+                'file_tombstones.sha256 finnes allerede i files'
+            );
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_tombstones_sha256_not_in_files_update
+        BEFORE UPDATE OF sha256 ON file_tombstones
+        WHEN EXISTS (
+            SELECT 1
+            FROM files
+            WHERE sha256 = NEW.sha256
+        )
+        BEGIN
+            SELECT RAISE(
+                ABORT,
+                'file_tombstones.sha256 finnes allerede i files'
+            );
+        END
         """
     )
 
@@ -851,6 +963,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                     require_pending_file_deletes=False,
                     require_pending_file_moves=False,
                     require_internal_structure=False,
+                    require_file_purge_schema=False,
                 )
             internal_repairs = current_schema_internal_repairs(conn)
             return MigrationPlan(
@@ -863,6 +976,23 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 internal_repairs=internal_repairs,
                 duplicate_sha256_groups=duplicate_sha256_groups,
                 duplicate_sha256_files=duplicate_sha256_files,
+            )
+        if version == 20:
+            if validate:
+                validate_current_schema(
+                    conn,
+                    require_file_purge_schema=False,
+                )
+            return MigrationPlan(
+                current_version=version,
+                target_version=SCHEMA_VERSION,
+                imported_files=count_rows(conn, "files"),
+                duplicate_findings=count_rows(conn, "duplicate_findings"),
+                creates_file_sources=False,
+                duplicate_sha256_groups=duplicate_sha256_groups,
+                duplicate_sha256_files=duplicate_sha256_files,
+                creates_file_tombstones=True,
+                creates_pending_file_purges=True,
             )
         if version in {
             5,
@@ -892,6 +1022,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                     require_pending_file_moves=version >= 12,
                     require_metadata_datetime_column=version >= 13,
                     require_comment_column=version >= 15,
+                    require_file_purge_schema=False,
                     require_internal_structure=False,
                     require_no_superseded_sources=False,
                 )
@@ -929,6 +1060,8 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 cleans_orphaned_derived_files=True,
                 orphaned_derived_files=orphaned_derived_files,
                 unsafe_derived_paths=unsafe_derived_paths,
+                creates_file_tombstones=True,
+                creates_pending_file_purges=True,
             )
         if validate:
             validate_pre_migration(conn, version)
@@ -967,6 +1100,8 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
             duplicate_sha256_groups=duplicate_sha256_groups,
             duplicate_sha256_files=duplicate_sha256_files,
             cleans_orphaned_derived_files=True,
+            creates_file_tombstones=True,
+            creates_pending_file_purges=True,
         )
     finally:
         conn.close()
@@ -1040,6 +1175,7 @@ def migrate_database(
                     require_pending_file_deletes=False,
                     require_pending_file_moves=False,
                     require_internal_structure=False,
+                    require_file_purge_schema=False,
                 )
                 repair_current_schema_internal_structure(conn)
                 drop_performance_indexes(conn)
@@ -1068,6 +1204,40 @@ def migrate_database(
                 duplicate_sha256_files=duplicate_sha256_files,
                 duplicate_review_files=len(duplicate_sha256_groups),
                 duplicate_pending_delete_ids=duplicate_pending_delete_ids,
+            )
+        if version == 20:
+            imported_files = count_rows(conn, "files")
+            duplicate_findings = count_rows(conn, "duplicate_findings")
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                validate_current_schema(
+                    conn,
+                    require_file_purge_schema=False,
+                )
+                create_file_purge_schema(conn)
+                set_meta(conn, "schema_version", str(SCHEMA_VERSION))
+                log_command(
+                    conn,
+                    "migrate",
+                    {
+                        "from_schema_version": version,
+                        "to_schema_version": SCHEMA_VERSION,
+                    },
+                )
+                validate_current_schema(conn)
+                validate_database_health(conn)
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+            return MigrationPlan(
+                current_version=version,
+                target_version=SCHEMA_VERSION,
+                imported_files=imported_files,
+                duplicate_findings=duplicate_findings,
+                creates_file_sources=False,
+                creates_file_tombstones=True,
+                creates_pending_file_purges=True,
             )
         if version in {
             5,
@@ -1129,7 +1299,11 @@ def migrate_database(
                 ensure_compatible_columns(conn)
                 set_collection_id(conn)
                 rebuild_sources_without_superseded(conn)
-                validate_current_schema(conn, require_performance_indexes=False)
+                validate_current_schema(
+                    conn,
+                    require_performance_indexes=False,
+                    require_file_purge_schema=False,
+                )
                 drop_performance_indexes(conn)
                 duplicate_pending_delete_ids = repair_duplicate_sha256_groups(
                     conn,
@@ -1153,6 +1327,7 @@ def migrate_database(
                     conn,
                     target,
                 )
+                create_file_purge_schema(conn)
                 set_meta(conn, "schema_version", str(SCHEMA_VERSION))
                 log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
                 validate_current_schema(conn)
@@ -1199,6 +1374,8 @@ def migrate_database(
                     else ()
                 ),
                 derived_pending_delete_ids=derived_pending_delete_ids,
+                creates_file_tombstones=True,
+                creates_pending_file_purges=True,
             )
         validate_pre_migration(conn, version)
         imported_files = count_rows(conn, "files")
@@ -1280,6 +1457,7 @@ def migrate_database(
                 conn,
                 target,
             )
+            create_file_purge_schema(conn)
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
             validate_current_schema(conn)
@@ -1331,6 +1509,8 @@ def migrate_database(
                 else ()
             ),
             derived_pending_delete_ids=derived_pending_delete_ids,
+            creates_file_tombstones=True,
+            creates_pending_file_purges=True,
         )
     finally:
         conn.close()
@@ -1494,6 +1674,7 @@ def validate_current_schema(
     require_pending_file_deletes: bool = True,
     require_pending_file_delete_identity: bool = True,
     require_pending_file_moves: bool = True,
+    require_file_purge_schema: bool = True,
     require_internal_structure: bool = True,
     require_no_superseded_sources: bool = True,
 ) -> None:
@@ -1544,6 +1725,8 @@ def validate_current_schema(
         )
     if require_pending_file_moves:
         validate_pending_file_moves_schema(conn)
+    if require_file_purge_schema:
+        validate_file_purge_schema(conn)
     if table_exists(conn, "errors") and conn.execute("PRAGMA foreign_key_list(errors)").fetchall():
         raise ValueError("errors har gammel foreign key til sources. Kjør bildebank migrate.")
     validate_file_sources_schema(conn)
@@ -1617,6 +1800,134 @@ def validate_pending_file_moves_schema(conn: sqlite3.Connection) -> None:
             "pending_file_moves mangler forventede kolonner: "
             f"{', '.join(missing)}"
         )
+
+
+def validate_file_purge_schema(conn: sqlite3.Connection) -> None:
+    if not table_exists(conn, "file_tombstones"):
+        raise ValueError("Databasen mangler tabellen file_tombstones.")
+    tombstone_columns = {
+        "id",
+        "sha256",
+        "size_bytes",
+        "original_filename",
+        "former_target_path",
+        "purged_at",
+    }
+    missing = sorted(tombstone_columns - table_columns(conn, "file_tombstones"))
+    if missing:
+        raise ValueError(
+            "file_tombstones mangler forventede kolonner: "
+            f"{', '.join(missing)}"
+        )
+    if not _has_index_columns(
+        conn,
+        table="file_tombstones",
+        columns=("sha256",),
+        unique=True,
+    ):
+        raise ValueError("file_tombstones mangler unik nøkkel for sha256.")
+    if not _has_index_columns(
+        conn,
+        table="file_tombstones",
+        columns=("purged_at", "id"),
+        index_name="idx_file_tombstones_purged_at_id",
+    ):
+        raise ValueError(
+            "file_tombstones mangler visningsindeksen for purged_at og id."
+        )
+
+    if not table_exists(conn, "pending_file_purges"):
+        raise ValueError("Databasen mangler tabellen pending_file_purges.")
+    purge_columns = {
+        "id",
+        "file_id",
+        "expected_path",
+        "expected_sha256",
+        "expected_size_bytes",
+        "expected_deleted_at",
+        "original_filename",
+        "former_target_path",
+        "attempts",
+        "last_error",
+        "created_at",
+        "updated_at",
+    }
+    missing = sorted(purge_columns - table_columns(conn, "pending_file_purges"))
+    if missing:
+        raise ValueError(
+            "pending_file_purges mangler forventede kolonner: "
+            f"{', '.join(missing)}"
+        )
+    if not _has_index_columns(
+        conn,
+        table="pending_file_purges",
+        columns=("file_id",),
+        unique=True,
+    ):
+        raise ValueError("pending_file_purges mangler unik nøkkel for file_id.")
+    foreign_keys = list(conn.execute("PRAGMA foreign_key_list(pending_file_purges)"))
+    if not any(
+        str(row["table"]) == "files"
+        and str(row["from"]) == "file_id"
+        and str(row["to"]) == "id"
+        and str(row["on_delete"]).upper() in {"RESTRICT", "NO ACTION"}
+        for row in foreign_keys
+    ):
+        raise ValueError(
+            "pending_file_purges.file_id mangler restriktiv foreign key til files.id."
+        )
+
+    trigger_names = {
+        str(row["name"])
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'trigger'"
+        )
+    }
+    missing_triggers = sorted(set(FILE_PURGE_TRIGGER_NAMES) - trigger_names)
+    if missing_triggers:
+        raise ValueError(
+            "Databasen mangler tombstone-trigger: "
+            f"{missing_triggers[0]}."
+        )
+
+    conflict = conn.execute(
+        """
+        SELECT files.id AS file_id, file_tombstones.id AS tombstone_id
+        FROM files
+        JOIN file_tombstones
+          ON file_tombstones.sha256 = files.sha256
+        ORDER BY files.id, file_tombstones.id
+        LIMIT 1
+        """
+    ).fetchone()
+    if conflict is not None:
+        raise ValueError(
+            "Samme SHA-256 finnes i både files og file_tombstones "
+            f"(files #{conflict['file_id']}, tombstone #{conflict['tombstone_id']})."
+        )
+
+
+def _has_index_columns(
+    conn: sqlite3.Connection,
+    *,
+    table: str,
+    columns: tuple[str, ...],
+    unique: bool | None = None,
+    index_name: str | None = None,
+) -> bool:
+    for index in conn.execute(f"PRAGMA index_list({table})"):
+        name = str(index["name"])
+        if index_name is not None and name != index_name:
+            continue
+        if unique is not None and bool(index["unique"]) != unique:
+            continue
+        actual_columns = tuple(
+            str(row["name"])
+            for row in conn.execute(f"PRAGMA index_info({name})")
+        )
+        if actual_columns == columns:
+            return True
+    return False
 
 
 def validate_tags_schema(conn: sqlite3.Connection) -> None:
@@ -1711,6 +2022,10 @@ def current_schema_internal_repairs(conn: sqlite3.Connection) -> tuple[str, ...]
             validate_pending_file_moves_schema(conn)
         except ValueError as exc:
             repairs.append(str(exc))
+    try:
+        validate_file_purge_schema(conn)
+    except ValueError as exc:
+        repairs.append(str(exc))
     tags_exists = table_exists(conn, "tags")
     file_tags_exists = table_exists(conn, "file_tags")
     if not tags_exists:
@@ -1741,6 +2056,7 @@ def repair_current_schema_internal_structure(conn: sqlite3.Connection) -> None:
     repair_tags_schema(conn)
     repair_pending_file_deletes_schema(conn)
     repair_pending_file_moves_schema(conn)
+    create_file_purge_schema(conn)
     value = get_meta(conn, COLLECTION_ID_META_KEY)
     if value is None:
         set_meta(conn, COLLECTION_ID_META_KEY, str(uuid.uuid4()))

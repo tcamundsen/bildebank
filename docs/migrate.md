@@ -61,6 +61,18 @@ v19-reparasjon av duplikate bilder, fordi tilhørende ansiktsdata da ryddes.
 
 Hvis migreringen feiler, skal databasen ikke oppgraderes, og backupen beholdes.
 
+## Migrering til v21
+
+V21 forbereder databasen for permanent sletting fra Bildebanks papirkurv.
+Migreringen oppretter tomme tabeller for slettemarkører og ventende,
+bekreftede sletteoperasjoner. Den legger også inn databasesperrer som hindrer
+at samme filinnhold samtidig registreres som både beholdt og permanent
+slettet.
+
+Migreringen leser, flytter eller sletter ingen bilder eller videoer. Filer som
+allerede ligger i `deleted`, blir liggende uendret. En fil som mangler på disk,
+blir heller ikke tolket som permanent slettet.
+
 ## Migrering til v20
 
 V20 rydder foreldreløse thumbnails og videoavspillingskopier som eldre

@@ -3162,6 +3162,10 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  legge til innholdsidentitet for pending_file_deletes")
     if plan.creates_pending_file_moves:
         print("  opprette pending_file_moves")
+    if plan.creates_file_tombstones:
+        print("  opprette file_tombstones med SHA-256-sperrer")
+    if plan.creates_pending_file_purges:
+        print("  opprette pending_file_purges")
     if plan.adds_metadata_datetime_column:
         print("  legge til metadata_datetime i files")
     if plan.adds_comment_column:
@@ -3259,6 +3263,10 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Legger til innholdsidentitet for pending_file_deletes.")
     if result.creates_pending_file_moves:
         print("Oppretter pending_file_moves.")
+    if result.creates_file_tombstones:
+        print("Oppretter file_tombstones med SHA-256-sperrer.")
+    if result.creates_pending_file_purges:
+        print("Oppretter pending_file_purges.")
     if result.adds_metadata_datetime_column:
         print("Legger til metadata_datetime i files.")
         print("Kjør bildebank refresh-metadata --rescan for å fylle tidspunkt for eksisterende filer.")

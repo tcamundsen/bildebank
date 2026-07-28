@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bildebank.cli import build_parser
-from bildebank.db import DB_FILENAME
+from bildebank.db import DB_FILENAME, SCHEMA_VERSION
 from bildebank.importer import safe_copy
 from bildebank.media import sha256_file
 from bildebank.target_lock import LOCK_FILENAME
@@ -54,7 +54,7 @@ class ImportCliTests(unittest.TestCase):
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "20",
+                    str(SCHEMA_VERSION),
                 )
                 file_columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
                 self.assertNotIn("source_id", file_columns)

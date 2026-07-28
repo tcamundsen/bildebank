@@ -365,7 +365,7 @@ def test_v20_migration_cleans_only_recognized_orphaned_derived_files(
     assert main(["--target", str(target), "migrate"]) == 0
     output = capsys.readouterr().out
 
-    assert "schema_version=20" in output
+    assert f"schema_version={db.SCHEMA_VERSION}" in output
     assert owned_thumbnail.exists()
     assert owned_preview.exists()
     assert unknown.exists()
@@ -406,7 +406,7 @@ def test_v20_migration_keeps_derived_file_for_image_in_trash(
     assert list_pending_deletes(target) == []
 
 
-def test_current_v20_migrate_does_not_rescan_derived_files(
+def test_current_v21_migrate_does_not_rescan_derived_files(
     tmp_path: Path,
 ) -> None:
     target = tmp_path / "target"
@@ -443,7 +443,7 @@ def test_v20_migration_keeps_failed_derived_delete_in_queue(
 
     conn = db.connect(target)
     try:
-        assert db.schema_version(conn) == 20
+        assert db.schema_version(conn) == db.SCHEMA_VERSION
     finally:
         conn.close()
     pending = list_pending_deletes(target)

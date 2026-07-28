@@ -282,7 +282,7 @@ lagring uten å kreve en separat databaseserver.
 
 ## Databaseversjoner
 
-- gjeldende schema er v20
+- gjeldende schema er v21
 - eldste hoveddatabaseformat som støttes av gjeldende migrator er v5
 - v1–v4 er historiske, utfasete formater; eldre hjelpegrener i koden er ikke
   et løfte om at disse formatene kan oppgraderes direkte
@@ -300,9 +300,16 @@ lagring uten å kreve en separat databaseserver.
   devel-docs/database-v16-migration.md,
   devel-docs/database-v17-migration.md,
   devel-docs/database-v18-migration.md og
-  devel-docs/database-v19-migration.md og
-  devel-docs/database-v20-migration.md
-- ny runtime-kode skal anta v20, med mindre oppgaven eksplisitt gjelder
+  devel-docs/database-v19-migration.md,
+  devel-docs/database-v20-migration.md og
+  devel-docs/database-v21-migration.md
+- v21 oppretter `file_tombstones` og den restriktive journalen
+  `pending_file_purges`. SQLite-triggere håndhever at samme SHA-256 ikke kan
+  finnes i både `files` og `file_tombstones`
+- migrering fra v20 til v21 er en ren skjemamigrering. Den skanner eller
+  endrer ikke mediefiler og oppretter ikke tombstones fra eksisterende
+  papirkurvinnhold eller manglende filer
+- ny runtime-kode skal anta v21, med mindre oppgaven eksplisitt gjelder
   migrering
 - den separate OpenCLIP-databasen har schema v1 og er beskrevet i
   devel-docs/openclip-database.md

@@ -117,6 +117,19 @@ skal ikke selv flytte filer på disk. Faktisk filflytting, låsing, verifisering
 og rollback-håndtering hører til høyere nivåer som `file_lifecycle.py`,
 `file_moves.py` og importerflyten.
 
+### `db_purge.py`
+
+Eier databaseoperasjoner for permanent sletting:
+
+- tombstone-oppslag og stabil listing
+- oppretting, oppdatering og fjerning av `pending_file_purges`
+- eksakt sammenstilling av purge- og `files`-identitet
+- atomisk overgang fra journalført `files`-rad til `file_tombstones`
+
+Modulen utfører ingen filsystemoperasjoner. Bekreftelse, target-lås,
+filidentitetskontroll og fysisk sletting hører til den høyere
+purge-domenemodulen.
+
 ## Endringsregler
 
 - Hold `db.py` kompatibel som facade når navn flyttes.

@@ -36,6 +36,8 @@ def test_schema_summary_uses_generated_schema_when_example_database_is_stale(
     assert "source_path_key" in file_source_columns
     assert "recorded_at" in file_source_columns
     assert "pending_file_moves" in tables
+    assert "file_tombstones" in tables
+    assert "pending_file_purges" in tables
 
 
 def test_schema_summary_uses_example_database_when_it_is_current(tmp_path, monkeypatch) -> None:
