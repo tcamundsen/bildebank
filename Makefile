@@ -1,4 +1,4 @@
-.PHONY: html cli-help dead-code clean-html clean-doc-stamps
+.PHONY: html cli-help dead-code clean-html clean-doc-stamps join-docs
 
 DOCS_DIR := docs
 HTML_DIR := html
@@ -15,6 +15,10 @@ CLI_HELP_STAMPS := $(patsubst $(DOCS_DIR)/%.md,$(STAMP_DIR)/%.stamp,$(DOC_SOURCE
 html: $(HTML_FILES)
 
 cli-help: $(CLI_HELP_STAMPS)
+
+join-docs:
+	python $(TOOLS_DIR)/join_docs.py
+
 
 dead-code:
 	python -m vulture bildebank tests tools --min-confidence 60
