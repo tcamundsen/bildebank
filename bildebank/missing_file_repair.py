@@ -183,6 +183,15 @@ def read_repair_file_row(target: Path, file_id: int):
         ).fetchone()
         if row is None:
             raise ValueError(f"Fant ikke file #{file_id} i hoveddatabasen.")
+        pending_purge = db.pending_file_purge_for_file(
+            conn,
+            file_id=file_id,
+        )
+        if pending_purge is not None:
+            raise ValueError(
+                f"file #{file_id} har ventende permanent sletting "
+                f"(purge #{int(pending_purge['id'])}) og kan ikke repareres."
+            )
 
         path_issues = [
             issue

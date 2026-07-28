@@ -39,6 +39,9 @@ class ImportStats:
     imported: int = 0
     duplicates: int = 0
     skipped_existing: int = 0
+    tombstones: int = 0
+    pending_purges: int = 0
+    tombstone_conflicts: int = 0
     name_conflicts: int = 0
     errors: int = 0
     stopped: bool = False
@@ -64,6 +67,10 @@ class WalkError:
 
 
 class DuplicateFileIntegrityError(ValueError):
+    pass
+
+
+class TombstoneIntegrityError(ValueError):
     pass
 
 
@@ -138,7 +145,14 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
                     action="scannet",
                     details=import_progress_details(stats),
                 )
-            if (stats.imported + stats.duplicates + stats.skipped_existing) % COMMIT_EVERY == 0:
+            handled = (
+                stats.imported
+                + stats.duplicates
+                + stats.skipped_existing
+                + stats.tombstones
+                + stats.pending_purges
+            )
+            if handled % COMMIT_EVERY == 0:
                 conn.commit()
     except KeyboardInterrupt:
         stats.stopped = True
@@ -262,7 +276,14 @@ def rescan_source(conn, target: Path, source: db.Source, *, verbose: bool = True
                     action="scannet",
                     details=import_progress_details(stats),
                 )
-            if (stats.imported + stats.duplicates + stats.skipped_existing) % COMMIT_EVERY == 0:
+            handled = (
+                stats.imported
+                + stats.duplicates
+                + stats.skipped_existing
+                + stats.tombstones
+                + stats.pending_purges
+            )
+            if handled % COMMIT_EVERY == 0:
                 conn.commit()
     except KeyboardInterrupt:
         stats.stopped = True
@@ -329,7 +350,11 @@ def import_progress_details(stats: ImportStats, *, dry_run: bool = False) -> str
     imported_label = "ville_importert" if dry_run else "importert"
     return (
         f"{imported_label}={stats.imported}, duplikater={stats.duplicates}, "
-        f"eksisterende={stats.skipped_existing}, feil={stats.errors}"
+        f"eksisterende={stats.skipped_existing}, "
+        f"permanent_slettet={stats.tombstones}, "
+        f"ventende_purge={stats.pending_purges}, "
+        f"tombstone_integritetsfeil={stats.tombstone_conflicts}, "
+        f"feil={stats.errors}"
     )
 
 
@@ -361,6 +386,14 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
 
     file_hash = sha256_file(path)
     size_bytes = path.stat().st_size
+
+    if import_identity_is_blocked(
+        conn,
+        file_hash=file_hash,
+        size_bytes=size_bytes,
+        stats=stats,
+    ):
+        return
 
     existing = verified_duplicate_file(conn, target, file_hash)
     if existing is not None:
@@ -440,6 +473,15 @@ def process_file_dry_run(
         return
 
     file_hash = sha256_file(path)
+    size_bytes = path.stat().st_size
+    if import_identity_is_blocked(
+        conn,
+        file_hash=file_hash,
+        size_bytes=size_bytes,
+        stats=stats,
+    ):
+        return
+
     existing = verified_duplicate_file(conn, target, file_hash)
     if existing is not None:
         stats.duplicates += 1
@@ -469,6 +511,42 @@ def verified_duplicate_file(conn, target: Path, file_hash: str):
     row = rows[0]
     verify_duplicate_target_file(target, row, file_hash)
     return row
+
+
+def import_identity_is_blocked(
+    conn,
+    *,
+    file_hash: str,
+    size_bytes: int,
+    stats: ImportStats,
+) -> bool:
+    tombstone = db.file_tombstone_by_sha256(
+        conn,
+        sha256=file_hash,
+    )
+    if tombstone is not None:
+        if int(tombstone["size_bytes"]) != size_bytes:
+            stats.tombstone_conflicts += 1
+            raise TombstoneIntegrityError(
+                "Integritetskonflikt: kildefilens SHA-256 finnes som "
+                "tombstone, men størrelsen stemmer ikke."
+            )
+        stats.tombstones += 1
+        return True
+
+    pending = db.pending_file_purge_for_sha256(
+        conn,
+        sha256=file_hash,
+    )
+    if pending is not None:
+        if int(pending["expected_size_bytes"]) != size_bytes:
+            raise DuplicateFileIntegrityError(
+                "Integritetskonflikt: kildefilens SHA-256 har ventende "
+                "permanent sletting, men størrelsen stemmer ikke."
+            )
+        stats.pending_purges += 1
+        return True
+    return False
 
 
 def validate_import_file(path: Path, target: Path) -> None:

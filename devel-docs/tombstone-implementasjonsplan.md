@@ -1,6 +1,6 @@
 # Implementasjonsplan: permanent sletting og tombstones
 
-Status: Kontrollpunkt A er implementert og verifisert. Kontrollpunkt B og C
+Status: Kontrollpunkt A og B er implementert og verifisert. Kontrollpunkt C
 er ikke startet.
 
 Denne planen beskriver rekkefølgen for å implementere designet i

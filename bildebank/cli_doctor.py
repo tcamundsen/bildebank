@@ -198,6 +198,7 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
                 )
                 doctor_check_pending_file_moves(target)
                 doctor_check_pending_file_deletes(target)
+                doctor_check_file_purges(target)
                 doctor_check_duplicate_sha256(target)
                 doctor_check_files_have_sources(target)
                 doctor_check_file_source_identity(target)
@@ -1398,6 +1399,182 @@ def doctor_pending_delete_details(
     doctor_report_omitted_details(len(rows))
 
 
+def doctor_check_file_purges(target: Path) -> None:
+    conn = db.connect_read_only(target)
+    try:
+        duplicate_hashes = list(
+            conn.execute(
+                """
+                SELECT files.id AS file_id, file_tombstones.id AS tombstone_id
+                FROM files
+                JOIN file_tombstones
+                  ON file_tombstones.sha256 = files.sha256
+                ORDER BY files.id
+                """
+            )
+        )
+        purge_rows = [
+            db.pending_file_purge_identity(
+                conn,
+                purge_id=int(row["id"]),
+            )
+            for row in db.pending_file_purges(conn)
+        ]
+    finally:
+        conn.close()
+
+    if duplicate_hashes:
+        doctor_error(
+            f"{len(duplicate_hashes)} SHA-256-identitet(er) finnes både i "
+            "files og file_tombstones."
+        )
+        for row in duplicate_hashes[:20]:
+            doctor_info(
+                f"file #{int(row['file_id'])} og "
+                f"tombstone #{int(row['tombstone_id'])}"
+            )
+        doctor_report_omitted_details(len(duplicate_hashes))
+        doctor_advice(
+            "Ikke reparer dette automatisk; avklar om filen eller "
+            "tombstonen er riktig."
+        )
+    else:
+        doctor_ok("ingen SHA-256 finnes både i files og file_tombstones")
+
+    if not purge_rows:
+        doctor_ok("ingen ventende permanente slettinger")
+        return
+
+    identity_errors: list[tuple[int, str]] = []
+    matching: list[int] = []
+    missing: list[int] = []
+    unexpected: list[tuple[int, str]] = []
+    for row in purge_rows:
+        if row is None:
+            continue
+        purge_id = int(row["id"])
+        if row["file_target_path"] is None:
+            identity_errors.append(
+                (purge_id, "tilhørende files-rad mangler")
+            )
+            continue
+        expected_to_actual = (
+            ("expected_path", "file_target_path"),
+            ("expected_sha256", "file_sha256"),
+            ("expected_size_bytes", "file_size_bytes"),
+            ("expected_deleted_at", "file_deleted_at"),
+            ("original_filename", "file_original_filename"),
+            ("former_target_path", "file_former_target_path"),
+        )
+        if any(
+            row[expected] != row[actual]
+            for expected, actual in expected_to_actual
+        ):
+            identity_errors.append(
+                (purge_id, "purge-identiteten stemmer ikke med files-raden")
+            )
+            continue
+        try:
+            relative_path = parse_collection_relative_path(
+                row["expected_path"]
+            )
+        except InvalidCollectionRelativePath as exc:
+            identity_errors.append(
+                (purge_id, f"ugyldig forventet sti: {exc}")
+            )
+            continue
+        if not is_deleted_collection_file_path(relative_path):
+            identity_errors.append(
+                (purge_id, "forventet sti ligger ikke gyldig under deleted/")
+            )
+            continue
+
+        inspection = inspect_collection_file(target, relative_path)
+        if inspection.status == COLLECTION_FILE_MISSING:
+            missing.append(purge_id)
+            continue
+        if inspection.status != COLLECTION_FILE_OK:
+            unexpected.append(
+                (
+                    purge_id,
+                    inspection.message
+                    or "stien er ikke en vanlig, trygg fil",
+                )
+            )
+            continue
+        expected_size = row["expected_size_bytes"]
+        if (
+            type(expected_size) is not int
+            or inspection.size_bytes != expected_size
+        ):
+            unexpected.append(
+                (purge_id, "filstørrelsen stemmer ikke med purge-posten")
+            )
+            continue
+        try:
+            actual_sha256, actual_size = hash_stable_collection_file(
+                target,
+                relative_path,
+            )
+        except (CollectionFileHashError, OSError) as exc:
+            unexpected.append(
+                (purge_id, f"filen kunne ikke hashes stabilt: {exc}")
+            )
+            continue
+        if (
+            actual_sha256 != row["expected_sha256"]
+            or actual_size != expected_size
+        ):
+            unexpected.append(
+                (purge_id, "innholdet stemmer ikke med purge-posten")
+            )
+            continue
+        matching.append(purge_id)
+
+    if identity_errors:
+        doctor_error(
+            f"{len(identity_errors)} purge-post(er) har ugyldig "
+            "databaseidentitet."
+        )
+        for purge_id, message in identity_errors[:20]:
+            doctor_info(f"pending_file_purges #{purge_id}: {message}")
+        doctor_report_omitted_details(len(identity_errors))
+    if matching:
+        doctor_obs(
+            f"{len(matching)} ventende permanent(e) sletting(er) har fortsatt "
+            "riktig original på disk."
+        )
+        for purge_id in matching[:20]:
+            doctor_info(
+                f"pending_file_purges #{purge_id}: originalen finnes og "
+                "slettes ikke automatisk av recovery"
+            )
+        doctor_report_omitted_details(len(matching))
+    if missing:
+        doctor_obs(
+            f"{len(missing)} ventende permanent(e) sletting(er) har en "
+            "original som allerede er borte."
+        )
+        for purge_id in missing[:20]:
+            doctor_info(
+                f"pending_file_purges #{purge_id}: slutt-transaksjonen kan "
+                "fullføres av recovery"
+            )
+        doctor_report_omitted_details(len(missing))
+    if unexpected:
+        doctor_error(
+            f"{len(unexpected)} purge-sti(er) inneholder uventet eller "
+            "utrygt innhold."
+        )
+        for purge_id, message in unexpected[:20]:
+            doctor_info(f"pending_file_purges #{purge_id}: {message}")
+        doctor_report_omitted_details(len(unexpected))
+        doctor_advice(
+            "Undersøk purge-posten og filinnholdet manuelt; ingenting er "
+            "slettet av doctor."
+        )
+
+
 def doctor_check_openclip_consistency(target: Path) -> None:
     path = openclip_db_path(target)
     if not path.exists():
@@ -1627,9 +1804,15 @@ def doctor_report_omitted_openclip_groups(total: int) -> None:
 def doctor_check_files_on_disk(target: Path) -> None:
     conn = db.connect_read_only(target)
     try:
-        rows = db.all_file_integrity_rows(conn)
+        all_rows = db.all_file_integrity_rows(conn)
+        pending_file_ids = {
+            int(row["file_id"]) for row in db.pending_file_purges(conn)
+        }
     finally:
         conn.close()
+    rows = [
+        row for row in all_rows if int(row["id"]) not in pending_file_ids
+    ]
 
     missing: list[tuple[int, str, Path]] = []
     not_regular: list[tuple[int, str, Path]] = []

@@ -8,6 +8,7 @@ from . import db
 from .config import FaceRecognitionConfig
 from .db import DB_FILENAME
 from .file_moves import recover_pending_file_moves_in_connection
+from .file_purge import recover_pending_file_purges_in_connection
 from .snapshot import (
     MainDatabaseSourceError,
     REPOSITORY_LOCK_FILENAME,
@@ -254,11 +255,13 @@ def recover_snapshot_pending_file_moves(
         # or uses a schema this runtime cannot safely mutate.
         return 0
     try:
-        return recover_pending_file_moves_in_connection(
+        recovered_moves = recover_pending_file_moves_in_connection(
             conn,
             source,
             face_config=face_config,
         )
+        recover_pending_file_purges_in_connection(conn, source)
+        return recovered_moves
     finally:
         conn.close()
 

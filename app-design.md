@@ -458,9 +458,24 @@ fjerne cachefilen. Når bildet beholdes fordi en annen `file_sources`-rad
 fortsatt finnes, skal også de avledede filene beholdes.
 
 Dette endrer ikke kontrakten for selve mediefilen: `remove` beholder den under
-`deleted/`. En eventuell fremtidig funksjon for permanent tømming av
-`deleted/` er en egen destruktiv operasjon som også må avklare proveniens,
-senere reimport og eksisterende snapshots.
+`deleted/`. Permanent sletting er en separat, eksplisitt operasjon. Den kan
+bare starte fra et eksakt, bekreftet øyeblikksbilde av en databaseført slettet
+fil. Ukjente filer under `deleted/` skal aldri tas med automatisk.
+
+Permanent sletting journalføres i `pending_file_purges` og committes før
+fysisk sletting. Originalen og kjente regenererbare avledede filer valideres
+stabilt før hver unlink. Når originalen er borte, fullfører én
+databasetransaksjon overgangen fra `files` til `file_tombstones`. En
+ufullført purge sperrer andre livsløpsendringer for den berørte filen.
+Recovery fullfører bare en allerede journalført purge når originalen er borte;
+den starter eller fortsetter aldri fysisk sletting automatisk når riktig
+original fortsatt finnes.
+
+En tombstone er uavhengig av importkilder og hindrer senere import av samme
+SHA-256. Importen oppretter da ingen `file_sources`-rad. Samme SHA-256 med
+annen størrelse behandles som integritetsfeil, mens en vanlig slettet
+`files`-rad uten purge fortsatt følger den eksisterende
+duplikatoppførselen.
 
 Før importen hopper over kopiering på grunn av et database-treff på SHA-256, må
 den verifisere at den registrerte filen fortsatt finnes på disk og har

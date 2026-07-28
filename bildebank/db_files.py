@@ -20,6 +20,7 @@ from .db_core import (
 )
 from .db_schema import VIDEO_EXTENSIONS
 from .db_sources import Source
+from .db_purge import require_no_pending_file_purge
 
 
 MAX_FILE_COMMENT_LENGTH = 2000
@@ -40,6 +41,11 @@ def set_file_comment(
     file_id: int,
     comment: str | None,
 ) -> str | None:
+    require_no_pending_file_purge(
+        conn,
+        file_id=file_id,
+        operation="endre kommentaren",
+    )
     normalized = None if comment is None else normalize_file_comment(comment)
     cursor = conn.execute(
         "UPDATE files SET comment = ? WHERE id = ?",
@@ -540,6 +546,27 @@ def insert_or_validate_file_source(
 
 def build_unimport_plan(conn: sqlite3.Connection, target: Path, source: Source) -> UnimportPlan:
     rows = source_file_sources(conn, source.id)
+    pending = conn.execute(
+        """
+        SELECT
+            pending_file_purges.file_id,
+            pending_file_purges.id AS purge_id
+        FROM pending_file_purges
+        JOIN file_sources
+          ON file_sources.file_id = pending_file_purges.file_id
+        WHERE file_sources.source_id = ?
+        ORDER BY pending_file_purges.id
+        LIMIT 1
+        """,
+        (source.id,),
+    ).fetchone()
+    if pending is not None:
+        raise ValueError(
+            "Kan ikke angre importen; en fil fra kilden har ventende "
+            "permanent sletting "
+            f"(file #{int(pending['file_id'])}, "
+            f"purge #{int(pending['purge_id'])})."
+        )
     source_counts: dict[int, int] = {}
     for row in rows:
         file_id = int(row["file_id"])

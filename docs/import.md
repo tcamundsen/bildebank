@@ -108,6 +108,17 @@ Dette er med vilje: `remove` betyr at bildet ikke skal vises i den aktive
 bildesamlingen. En senere import skal ikke omgjøre den beslutningen bare fordi
 den samme filen dukker opp på nytt i en annen mappe, USB-brikke eller backup.
 
+Hvis bildet senere er slettet permanent og har en slettingsmarkør
+(`tombstone`), hopper importen over filinnholdet helt. Det kopieres ikke inn på
+nytt, og den nye importen kobles ikke til slettingsmarkøren. Oppsummeringen
+viser dette som `permanent_slettet`.
+
+En fil som har en ufullført permanent sletting vises som `ventende_purge` og
+kobles heller ikke til den nye importen. Hvis SHA-256 treffer en
+slettingsmarkør, men den registrerte størrelsen ikke stemmer, rapporterer
+Bildebank en integritetsfeil, fortsetter med de andre filene og avslutter
+kommandoen med feilstatus.
+
 Hvis du vil ha bildet tilbake i den aktive samlingen, bruk `undelete`:
 
 ```powershell

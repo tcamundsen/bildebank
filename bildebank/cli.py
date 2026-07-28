@@ -33,6 +33,7 @@ from .face import (
 )
 from .file_lifecycle import remove_file, undelete_file
 from .file_moves import recover_pending_file_moves
+from .file_purge import recover_pending_file_purges
 from .file_tags import set_file_tag
 from .ffmpeg_tools import FFmpegTools, install_managed_ffmpeg, resolve_ffmpeg_tools
 from .formatting import format_bytes
@@ -1350,6 +1351,7 @@ def run(args: argparse.Namespace) -> int:
             migrate_legacy=False,
         ).face_recognition
         recover_pending_file_moves(target, face_config=face_config)
+        recover_pending_file_purges(target)
     if should_record_target(args):
         record_target_best_effort(program_repo_root(), target)
 
@@ -3608,6 +3610,9 @@ def summary_line(stats) -> str:
         "Oppsummering: "
         f"scannet={stats.scanned}, importert={stats.imported}, "
         f"duplikater={stats.duplicates}, eksisterende={stats.skipped_existing}, "
+        f"permanent_slettet={stats.tombstones}, "
+        f"ventende_purge={stats.pending_purges}, "
+        f"tombstone_integritetsfeil={stats.tombstone_conflicts}, "
         f"navnekollisjoner={stats.name_conflicts}, feil={stats.errors}{stopped}"
     )
 

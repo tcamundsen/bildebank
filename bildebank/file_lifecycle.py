@@ -56,6 +56,11 @@ def remove_file(
                 ).resolve()
                 relative_path = _active_relative_path(target, original_path)
 
+            db.require_no_pending_file_purge(
+                conn,
+                file_id=int(row["id"]),
+                operation="flytte filen til deleted/",
+            )
             if not original_path.exists():
                 raise ValueError(f"Filen finnes ikke på disk: {original_path}")
             _verify_expected_sha256(original_path, str(row["sha256"]))
@@ -152,6 +157,11 @@ def undelete_file(
                     invalid_message=f"Slettet fil ligger ikke under deleted/: {deleted_path}",
                 )
 
+            db.require_no_pending_file_purge(
+                conn,
+                file_id=int(row["id"]),
+                operation="gjenopprette filen",
+            )
             if not deleted_path.exists():
                 raise ValueError(f"Slettet fil finnes ikke på disk: {deleted_path}")
             _verify_expected_sha256(deleted_path, str(row["sha256"]))

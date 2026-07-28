@@ -5,6 +5,38 @@ import sqlite3
 from .value_parsing import optional_int
 
 
+def deleted_file_purge_rows(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int | None = None,
+) -> list[sqlite3.Row]:
+    where = "AND files.id = ?" if file_id is not None else ""
+    parameters: tuple[object, ...] = (file_id,) if file_id is not None else ()
+    return list(
+        conn.execute(
+            f"""
+            SELECT
+                files.id,
+                files.target_path,
+                files.original_filename,
+                files.stored_filename,
+                files.sha256,
+                files.size_bytes,
+                files.deleted_at,
+                files.deleted_original_target_path,
+                pending_file_purges.id AS purge_id
+            FROM files
+            LEFT JOIN pending_file_purges
+              ON pending_file_purges.file_id = files.id
+            WHERE files.deleted_at IS NOT NULL
+              {where}
+            ORDER BY files.id
+            """,
+            parameters,
+        )
+    )
+
+
 def file_tombstones(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return list(
         conn.execute(
@@ -101,6 +133,47 @@ def pending_file_purge_for_file(
     ).fetchone()
 
 
+def pending_file_purge_for_sha256(
+    conn: sqlite3.Connection,
+    *,
+    sha256: str,
+) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT
+            pending_file_purges.id,
+            pending_file_purges.file_id,
+            pending_file_purges.expected_path,
+            pending_file_purges.expected_sha256,
+            pending_file_purges.expected_size_bytes,
+            pending_file_purges.expected_deleted_at,
+            pending_file_purges.original_filename,
+            pending_file_purges.former_target_path,
+            pending_file_purges.attempts,
+            pending_file_purges.last_error,
+            pending_file_purges.created_at,
+            pending_file_purges.updated_at
+        FROM pending_file_purges
+        WHERE expected_sha256 = ?
+        """,
+        (sha256,),
+    ).fetchone()
+
+
+def require_no_pending_file_purge(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    operation: str,
+) -> None:
+    pending = pending_file_purge_for_file(conn, file_id=file_id)
+    if pending is not None:
+        raise ValueError(
+            f"Kan ikke {operation}; filen har ventende permanent sletting "
+            f"(purge #{int(pending['id'])})."
+        )
+
+
 def pending_file_purge_identity(
     conn: sqlite3.Connection,
     *,
@@ -122,6 +195,7 @@ def pending_file_purge_identity(
             pending_file_purges.created_at,
             pending_file_purges.updated_at,
             files.target_path AS file_target_path,
+            files.stored_filename AS file_stored_filename,
             files.sha256 AS file_sha256,
             files.size_bytes AS file_size_bytes,
             files.deleted_at AS file_deleted_at,
