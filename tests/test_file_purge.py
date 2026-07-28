@@ -312,7 +312,14 @@ def test_invalid_original_does_not_start_new_purge(
         original.unlink()
         link_target = target / "other.jpg"
         link_target.write_bytes(b"original")
-        original.symlink_to(link_target)
+        try:
+            original.symlink_to(link_target)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314:
+                pytest.skip(
+                    "Windows-brukeren har ikke rettighet til å opprette symlink."
+                )
+            raise
 
     result = purge_file(target, confirmation)
 
@@ -344,10 +351,7 @@ def test_unsafe_derived_file_leaves_original_and_retryable_journal(
     current_thumbnail = target / thumbnail_relative_path(
         Path("2024", "01", "image.jpg")
     )
-    current_thumbnail.parent.mkdir(parents=True)
-    link_target = target / "unmanaged-thumbnail.jpg"
-    link_target.write_bytes(b"thumb")
-    current_thumbnail.symlink_to(link_target)
+    current_thumbnail.mkdir(parents=True)
 
     confirmation = preview_file_purge(
         target,
@@ -358,7 +362,7 @@ def test_unsafe_derived_file_leaves_original_and_retryable_journal(
     assert result.status == "pending"
     assert result.purge_id is not None
     assert original.read_bytes() == b"original"
-    assert current_thumbnail.is_symlink()
+    assert current_thumbnail.is_dir()
 
 
 def test_journal_creation_failure_changes_nothing(tmp_path: Path) -> None:
