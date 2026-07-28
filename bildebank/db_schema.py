@@ -1143,6 +1143,8 @@ def migrate_database(
     face_config: FaceRecognitionConfig | None = None,
 ) -> MigrationPlan:
     conn = connect(target, require_current=False)
+    duplicate_pending_delete_ids: tuple[int, ...]
+    derived_pending_delete_ids: tuple[int, ...]
     try:
         version = schema_version(conn)
         if version == SCHEMA_VERSION:
@@ -1166,7 +1168,7 @@ def migrate_database(
                 if duplicate_sha256_groups
                 else ()
             )
-            duplicate_pending_delete_ids: tuple[int, ...] = ()
+            duplicate_pending_delete_ids = ()
             try:
                 conn.execute("BEGIN IMMEDIATE")
                 validate_current_schema(
@@ -1290,9 +1292,9 @@ def migrate_database(
                 if cleans_item_sidecars or duplicate_sha256_groups
                 else ()
             )
-            duplicate_pending_delete_ids: tuple[int, ...] = ()
+            duplicate_pending_delete_ids = ()
             derived_cleanup_plan = None
-            derived_pending_delete_ids: tuple[int, ...] = ()
+            derived_pending_delete_ids = ()
             try:
                 conn.execute("PRAGMA foreign_keys = OFF")
                 conn.execute("BEGIN IMMEDIATE")
@@ -1412,9 +1414,9 @@ def migrate_database(
             face_config,
             target_schema_version=ITEM_SIDECAR_CLEANUP_SCHEMA_VERSION,
         )
-        duplicate_pending_delete_ids: tuple[int, ...] = ()
+        duplicate_pending_delete_ids = ()
         derived_cleanup_plan = None
-        derived_pending_delete_ids: tuple[int, ...] = ()
+        derived_pending_delete_ids = ()
         try:
             conn.execute("PRAGMA foreign_keys = OFF")
             conn.execute("BEGIN IMMEDIATE")
