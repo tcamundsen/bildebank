@@ -422,6 +422,11 @@ class SnapshotTab:
             self.repository_collection = collection
             self._set_repository(latest_available_snapshot_repository(collection))
         self._add_tooltip(
+            self.choose_repository_button,
+            "Velg en eksisterende snapshot som skal oppdateres, eller en ny tom "
+            "mappe hvor snapshot kan opprettes.",
+        )
+        self._add_tooltip(
             self.create_button,
             "Lager et nytt, uforanderlig snapshot uten å slette eldre snapshots. "
             "En skrivefri plan vises før du bekrefter.",
