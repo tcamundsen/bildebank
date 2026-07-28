@@ -68,7 +68,7 @@ def join_markdown_files(
             rel_path = file
 
         if include_markers:
-            chunks.append(f"## Fil: {rel_path}\n\n{content}")
+            chunks.append(f"## Fil: {rel_path.as_posix()}\n\n{content}")
         else:
             chunks.append(content)
 

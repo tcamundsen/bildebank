@@ -224,7 +224,10 @@ def test_unimport_keeps_unsafe_derived_file_and_database_unchanged(
     outside = tmp_path / "outside.jpg"
     outside.write_bytes(b"outside")
     thumbnail.parent.mkdir(parents=True)
-    thumbnail.symlink_to(outside)
+    try:
+        thumbnail.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"Kan ikke opprette symlink: {exc}")
 
     with pytest.raises(ValueError, match="Avledet fil kan ikke slettes trygt"):
         run_unimport(
@@ -515,7 +518,10 @@ def test_v20_migration_does_not_follow_derived_directory_symlink(
     outside.mkdir()
     outside_file = outside / "orphan.jpg"
     outside_file.write_bytes(b"outside")
-    (target / "thumbs").symlink_to(outside, target_is_directory=True)
+    try:
+        (target / "thumbs").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"Kan ikke opprette symlink: {exc}")
     mark_as_schema_v19(target)
 
     assert main(["--target", str(target), "migrate"]) == 0
