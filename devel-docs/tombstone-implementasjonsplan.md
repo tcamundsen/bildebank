@@ -1,8 +1,7 @@
 # Implementasjonsplan: permanent sletting og tombstones
 
-Status: Kontrollpunkt A, B og C er implementert. A og B er verifisert på både
-Linux og Windows. C er verifisert automatisk på Linux og venter på den
-manuelle Windows-kontrollen i punkt 9.
+Status: Kontrollpunkt A, B og C er implementert og verifisert på både Linux
+og Windows.
 
 Denne planen beskriver rekkefølgen for å implementere designet i
 `devel-docs/sletting-med-toombstone.md`. Designdokumentet er autoritativt for
