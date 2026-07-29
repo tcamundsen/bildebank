@@ -311,7 +311,38 @@
     .people-table th:last-child { text-align: center; }
     .people-table th:last-child, .people-table td:last-child { white-space: nowrap; }
     .tag-table { display: grid; gap: 8px; margin-top: 18px; }
-    .sources-table { display: grid; gap: 8px; margin-top: 18px; }
+    .sources-table {
+      --source-grid-columns:
+        minmax(240px, 2fr) minmax(76px, 0.45fr) minmax(92px, 0.5fr)
+        minmax(90px, 0.6fr) minmax(150px, 0.95fr) minmax(100px, 0.7fr);
+      display: grid;
+      gap: 8px;
+      margin-top: 18px;
+    }
+    .source-header, .source-row {
+      display: grid;
+      grid-template-columns: var(--source-grid-columns);
+      gap: 12px;
+    }
+    .source-header {
+      padding: 0 10px 2px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .source-row {
+      align-items: start;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      font-size: 14px;
+    }
+    .source-field { min-width: 0; }
+    .source-field-label { display: none; }
+    .source-name { font-weight: 700; overflow-wrap: anywhere; }
+    .source-path { margin-top: 4px; color: var(--muted); overflow-wrap: anywhere; }
+    .source-action { display: flex; align-items: start; }
     .removed-list { display: grid; gap: 6px; margin-top: 18px; }
     .removed-page-actions {
       display: flex;
@@ -1318,21 +1349,6 @@
       min-height: 34px;
       padding: 6px 10px;
     }
-    .source-row > :nth-child(2) {
-      grid-column: span 2;
-    }
-    .source-row {
-      display: grid;
-      grid-template-columns:  1fr 2fr 2fr auto;
-      gap: 8px;
-      align-items: center;
-      padding: 8px;
-      border: 1px solid var(--border);
-      background: var(--panel);
-      color: #fff;
-      min-height: 34px;
-      padding: 6px 10px;
-    }
     .assign-person-button:hover { background: rgb(255 255 255 / 18%); }
     .assign-person-button:disabled { opacity: 0.55; cursor: default; }
     .assign-status { color: var(--muted); font-size: 13px; min-height: 1.3em; }
@@ -1362,8 +1378,12 @@
       .nav-button-pair { flex: 1 1 auto; }
       .nav-button-pair .nav-button { flex: 1 1 0; }
       .top-actions { margin-left: 0; width: 100%; justify-content: stretch; }
-      .source-row, .tag-row { grid-template-columns: 1fr; align-items: stretch; }
-      .source-row > :nth-child(2) { grid-column: auto; }
+      .source-header { display: none; }
+      .source-row { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+      .source-folder, .source-action { grid-column: 1 / -1; }
+      .source-field-label { display: block; margin-bottom: 3px; color: var(--muted); font-size: 13px; }
+      .source-action { display: block; }
+      .tag-row { grid-template-columns: 1fr; align-items: stretch; }
       .removed-row, .tombstone-row { grid-template-columns: 1fr; align-items: stretch; }
       .removed-row-actions { justify-content: stretch; }
       .removed-row-actions .nav-button { flex: 1 1 auto; }
@@ -1372,4 +1392,8 @@
       .manual-h3-option { grid-template-columns: 1fr; }
       .new-person-form { grid-template-columns: 1fr; align-items: stretch; }
       .info-row { grid-template-columns: 1fr; gap: 4px; }
+    }
+    @media (max-width: 420px) {
+      .source-row { grid-template-columns: 1fr; }
+      .source-folder, .source-action { grid-column: auto; }
     }

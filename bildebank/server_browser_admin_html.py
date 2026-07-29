@@ -24,7 +24,19 @@ def sources_page_html(
     sources = source_summary_rows(target)
     rows = "\n".join(source_row_html(source) for source in sources)
     content = (
-        f'<div class="sources-table">{rows}</div>'
+        f"""
+        <div class="sources-table">
+          <div class="source-header" aria-hidden="true">
+            <span>Mappe &amp; sti</span>
+            <span>Filer totalt</span>
+            <span>Bare i denne</span>
+            <span>Status</span>
+            <span>Importert</span>
+            <span>Handling</span>
+          </div>
+          {rows}
+        </div>
+        """
         if rows
         else '<p class="meta">Ingen importerte kilder registrert.</p>'
     )
@@ -115,14 +127,43 @@ def source_row_html(source: sqlite3.Row) -> str:
     source_file_count = int(source["source_file_count"])
     imported_at = str(source["imported_at"] or "-")
     source_browser = imported_source_browser_source(source)
+    status_label = source_status_label(status)
+    active_file_label = "1 bilde" if active_file_count == 1 else f"{active_file_count} bilder"
     return f"""
     <div class="source-row">
-      <div class="detail">{html.escape(name)}</div>
-      <div class="detail">{html.escape(str(source["path"]))}</div>
-      <a class="person-link" href="{html.escape(source_browser.root_url)}">Vis bilder ({active_file_count})</a>
-      <span class="status">filer fra mappe: {source_file_count}</span>
-      <span class="status">fra bare denne: {exclusive_active_file_count}</span>
-      <span class="status">status: {html.escape(status)}</span>
-      <span class="status">importert: {html.escape(imported_at)}</span>
+      <div class="source-field source-folder">
+        <span class="source-field-label">Mappe &amp; sti</span>
+        <div class="source-name">{html.escape(name)}</div>
+        <div class="source-path">{html.escape(str(source["path"]))}</div>
+      </div>
+      <div class="source-field">
+        <span class="source-field-label">Filer totalt</span>
+        <span>{source_file_count}</span>
+      </div>
+      <div class="source-field">
+        <span class="source-field-label">Bare i denne</span>
+        <span>{exclusive_active_file_count}</span>
+      </div>
+      <div class="source-field">
+        <span class="source-field-label">Status</span>
+        <span>{html.escape(status_label)}</span>
+      </div>
+      <div class="source-field">
+        <span class="source-field-label">Importert</span>
+        <span>{html.escape(imported_at)}</span>
+      </div>
+      <div class="source-field source-action">
+        <span class="source-field-label">Handling</span>
+        <a class="person-link" href="{html.escape(source_browser.root_url)}">{active_file_label}</a>
+      </div>
     </div>
     """
+
+
+def source_status_label(status: str) -> str:
+    return {
+        "imported": "Importert",
+        "pending": "Venter",
+        "dry-run": "Testkjøring",
+        "superseded": "Erstattet",
+    }.get(status, status)
