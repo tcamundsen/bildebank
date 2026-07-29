@@ -308,6 +308,7 @@
       vertical-align: middle;
     }
     .people-table th { color: var(--muted); font-size: 13px; font-weight: 600; }
+    .people-table th:last-child { text-align: center; }
     .people-table th:last-child, .people-table td:last-child { white-space: nowrap; }
     .tag-table { display: grid; gap: 8px; margin-top: 18px; }
     .sources-table { display: grid; gap: 8px; margin-top: 18px; }
