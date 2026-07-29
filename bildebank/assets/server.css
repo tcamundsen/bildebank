@@ -296,7 +296,20 @@
       flex-wrap: wrap;
       margin-bottom: 18px;
     }
-    .people-table { display: grid; gap: 8px; margin-top: 18px; }
+    .people-table-wrap { margin-top: 18px; overflow-x: auto; }
+    .people-table {
+      width: fit-content;
+      border-collapse: collapse;
+    }
+    .people-table th, .people-table td {
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: middle;
+    }
+    .people-table th { color: var(--muted); font-size: 13px; font-weight: 600; }
+    .people-table th:last-child, .people-table td:last-child { white-space: nowrap; }
+    .tag-table { display: grid; gap: 8px; margin-top: 18px; }
     .sources-table { display: grid; gap: 8px; margin-top: 18px; }
     .removed-list { display: grid; gap: 6px; margin-top: 18px; }
     .removed-page-actions {
@@ -343,16 +356,6 @@
       font-size: 14px;
     }
     .tombstone-row span { color: var(--muted); overflow-wrap: anywhere; }
-    .people-row {
-      display: grid;
-      grid-template-columns: 5fr 2fr 3fr; /*minmax(160px, 1fr) auto auto auto auto;*/
-      gap: 8px;
-      align-items: center;
-      padding: 8px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--panel);
-    }
     .tag-row {
       display: grid;
       grid-template-columns: 3fr 1fr 1fr 2fr auto;
@@ -364,18 +367,18 @@
       background: var(--panel);
     }
     .people-name { font-weight: 700; overflow-wrap: anywhere; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-    .rename-person-link {
-      border: 0;
-      padding: 0;
-      background: transparent;
-      color: var(--muted);
-      font: inherit;
-      font-size: 13px;
-      font-weight: 400;
+    .people-warning { display: block; margin-top: 4px; }
+    .person-actions { display: flex; gap: 6px; }
+    .person-action-button {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      min-width: 32px;
+      min-height: 32px;
+      padding: 4px 6px;
+      background: #303030;
       cursor: pointer;
     }
-    .rename-person-link:hover { color: var(--text); text-decoration: underline; }
-    .people-warning { justify-self: start; }
+    .person-action-button:hover { background: #3a3a3a; }
     a, .disabled { color: var(--accent); }
     a { text-decoration: none; }
     a:hover { text-decoration: underline; }
@@ -1358,7 +1361,7 @@
       .nav-button-pair { flex: 1 1 auto; }
       .nav-button-pair .nav-button { flex: 1 1 0; }
       .top-actions { margin-left: 0; width: 100%; justify-content: stretch; }
-      .people-row, .source-row, .tag-row { grid-template-columns: 1fr; align-items: stretch; }
+      .source-row, .tag-row { grid-template-columns: 1fr; align-items: stretch; }
       .source-row > :nth-child(2) { grid-column: auto; }
       .removed-row, .tombstone-row { grid-template-columns: 1fr; align-items: stretch; }
       .removed-row-actions { justify-content: stretch; }

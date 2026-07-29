@@ -54,7 +54,7 @@ def tags_page_html(
     finally:
         conn.close()
     items = "\n".join(tag_row_html(row) for row in rows)
-    content = f'<div class="people-table">{items}</div>' if items else '<p class="meta">Ingen tagger registrert.</p>'
+    content = f'<div class="tag-table">{items}</div>' if items else '<p class="meta">Ingen tagger registrert.</p>'
     return shell_page_html(
         "Tagger",
         f"""

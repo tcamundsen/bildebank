@@ -281,6 +281,7 @@ class MetadataTagsCliTests(unittest.TestCase):
         self.assertIn('action="/tags/create"', tags_body)
         self.assertIn('action="/tags/rename"', tags_body)
         self.assertIn('action="/tags/delete"', tags_body)
+        self.assertIn('<div class="tag-table">', tags_body)
         self.assertIn('<div class="tag-row">', tags_body)
         self.assertIn('class="tag-actions"', tags_body)
         self.assertIn(".tag-actions", SERVER_CSS)

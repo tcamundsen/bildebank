@@ -1279,17 +1279,23 @@ def people_row_html(person: dict[str, object]) -> str:
             f"NB: {max_confirmed_faces} bekreftede ansikter i samme bilde"
             "</span>"
         )
+    reference_label = "1 bilde" if reference_count == 1 else f"{reference_count} bilder"
+    all_label = "1 bilde" if all_count == 1 else f"{all_count} bilder"
     return f"""
-    <div class="people-row">
-      <div class="people-name">
-        <span>{html.escape(name)}</span>
-        <button class="rename-person-link" type="button" data-open-person-rename data-person-name="{html.escape(name)}">endre navn</button>
-        <button class="rename-person-link delete-person-link" type="button" data-delete-person-name="{html.escape(name)}">slett person</button>
-      </div>
-      {duplicate_warning}
-      <a class="person-link" href="{html.escape(person_references_url(name))}">Referansebilder ({reference_count})</a>
-      <a class="person-link" href="{html.escape(all_source.root_url)}">Bekreftede og forslag ({all_count})</a>
-    </div>
+    <tr>
+      <td>
+        <div class="people-name">{html.escape(name)}</div>
+        {duplicate_warning}
+      </td>
+      <td><a class="person-link" href="{html.escape(person_references_url(name))}">{reference_label}</a></td>
+      <td><a class="person-link" href="{html.escape(all_source.root_url)}">{all_label}</a></td>
+      <td>
+        <div class="person-actions">
+          <button class="person-action-button" type="button" title="Endre" aria-label="Endre" data-open-person-rename data-person-name="{html.escape(name)}">✏️</button>
+          <button class="person-action-button danger-button" type="button" title="Slett" aria-label="Slett" data-delete-person-name="{html.escape(name)}">🗑️</button>
+        </div>
+      </td>
+    </tr>
     """
 
 
@@ -1421,7 +1427,21 @@ def people_page_html(
     )
     rows = "\n".join(people_row_html(person) for person in people)
     content = (
-        f'<div class="people-table">{rows}</div>'
+        f"""
+        <div class="people-table-wrap">
+          <table class="people-table">
+            <thead>
+              <tr>
+                <th scope="col">Person</th>
+                <th scope="col">Referansebilder</th>
+                <th scope="col">Bekreftede &amp; forslag</th>
+                <th scope="col">Handlinger</th>
+              </tr>
+            </thead>
+            <tbody>{rows}</tbody>
+          </table>
+        </div>
+        """
         if rows
         else '<p class="meta">Ingen personer registrert.</p>'
     )
