@@ -446,6 +446,8 @@ def respond_hotkey_action(handler: BildebankRequestHandler) -> None:
     start = time.perf_counter()
     if hotkey.action == "manual_date":
         clear_browser_navigation_cache(handler.server)
+    if hotkey.action in {"rotate_left", "rotate_right"}:
+        clear_browser_navigation_cache(handler.server)
     if hotkey.action == "tag":
         handler.server.note_tag_navigation_change(str(result.get("tag_name") or hotkey.tag_name))
     if hotkey.action == "person":

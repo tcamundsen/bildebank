@@ -48,6 +48,18 @@ class ConfigCliTests(unittest.TestCase):
 
         self.assertEqual(config.browser.hotkeys["1"], BrowserHotkeyConfig(action="tag", tag_name="Familie"))
 
+    def test_load_config_reads_rotate_hotkey(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "bildebank-config.toml").write_text(
+                '[browser.hotkeys]\n"1" = { action = "rotate_right" }\n',
+                encoding="utf-8",
+            )
+
+            config = load_config(root)
+
+        self.assertEqual(config.browser.hotkeys["1"], BrowserHotkeyConfig(action="rotate_right"))
+
     def test_config_enables_face_recognition(self) -> None:
         code, stdout, stderr = capture_cli(["config", "face_recognition", "enable"])
 

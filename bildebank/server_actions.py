@@ -197,6 +197,13 @@ def apply_browser_hotkey_to_file(
             "tag_name": db.normalize_tag_name(hotkey.tag_name),
             "tagged": True,
         }
+    if hotkey.action in {"rotate_left", "rotate_right"}:
+        direction = "left" if hotkey.action == "rotate_left" else "right"
+        return {
+            "action": hotkey.action,
+            "file_id": file_id,
+            "rotation": rotate_file_view(target, file_id, direction),
+        }
     raise ValueError(f"Ukjent hurtigtasthandling: {hotkey.action}")
 
 

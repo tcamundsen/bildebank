@@ -990,6 +990,10 @@
           return true;
         }
       }
+      if (payload.action === "rotate_left" || payload.action === "rotate_right") {
+        applyViewRotation(payload.rotation);
+        return true;
+      }
       window.location.reload();
     } catch (error) {
       alert(error.message || "Kunne ikke utføre hurtigtast.");

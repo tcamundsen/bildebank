@@ -192,6 +192,8 @@ class ServerSettingsTests(unittest.TestCase):
         self.assertIn("function updateHotkeyForm", SERVER_JS)
         self.assertIn('<option value="person" selected>Legg til person</option>', body)
         self.assertIn('<option value="tag">Sett tagg</option>', body)
+        self.assertIn('<option value="rotate_left">Roter til venstre</option>', body)
+        self.assertIn('<option value="rotate_right">Roter til høyre</option>', body)
         self.assertIn('<option value="Kari" selected>Kari</option>', body)
         self.assertIn('<span class="app-toggle-status">På</span>', body)
         self.assertIn(str(target), body)
@@ -956,6 +958,37 @@ class ServerSettingsTests(unittest.TestCase):
             BrowserHotkeyConfig(action="tag", tag_name="Familie"),
         )
         self.assertIn('"1" = { action = "tag", tag_name = "Familie" }', config_text)
+        self.assertEqual(handler.location, "/settings")
+
+    def test_run_server_hotkey_post_updates_rotate_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = b"key=1&action=rotate_right"
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                server = SimpleNamespace(config=AppConfig())
+                location: str | None = None
+
+                def redirect(self, location: str) -> None:
+                    self.location = location
+
+                def respond_text(self, content: str, *, status: HTTPStatus) -> None:
+                    raise AssertionError(f"{status}: {content}")
+
+            handler = FakeHandler()
+            with patch(
+                "bildebank.server_app.server_program_repo_root", return_value=root
+            ):
+                server_endpoints_admin.respond_set_hotkey(handler)  # type: ignore[arg-type]
+
+            config = load_config(root)
+
+        self.assertEqual(config.browser.hotkeys["1"], BrowserHotkeyConfig(action="rotate_right"))
+        self.assertEqual(
+            handler.server.config.browser.hotkeys["1"], BrowserHotkeyConfig(action="rotate_right")
+        )
         self.assertEqual(handler.location, "/settings")
 
     def test_run_server_hotkey_post_rejects_invalid_date(self) -> None:

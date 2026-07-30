@@ -38,6 +38,7 @@ from bildebank.server_pages import (
 )
 from bildebank.target_lock import LOCK_FILENAME
 from tests.cli_helpers import run_cli
+from tests.db_test_helpers import insert_test_file
 from tests.test_media import minimal_mp4_with_creation_date, minimal_png
 
 
@@ -892,6 +893,7 @@ class ServerItemActionsCliTests(unittest.TestCase):
             self.assertIsNotNone(item)
             hotkeys = {
                 "1": BrowserHotkeyConfig(action="h3", h3_cell=h3_cell),
+                "2": BrowserHotkeyConfig(action="rotate_left"),
                 "3": BrowserHotkeyConfig(action="person", person_name="Viljar"),
                 "4": BrowserHotkeyConfig(action="tag", tag_name="Familie"),
                 "5": BrowserHotkeyConfig(
@@ -928,6 +930,7 @@ class ServerItemActionsCliTests(unittest.TestCase):
             tag_rail_body,
         )
         self.assertIn("<span>1:</span> Sett H3 til Brevik", tag_rail_body)
+        self.assertIn("<span>2:</span> Roter til venstre", tag_rail_body)
         self.assertIn("<span>3:</span> Legg til Viljar", tag_rail_body)
         self.assertIn("<span>4:</span> Sett tagg Familie", tag_rail_body)
         self.assertIn("<span>5:</span> Sett dato til 30.12.48 ±1w", tag_rail_body)
@@ -942,6 +945,47 @@ class ServerItemActionsCliTests(unittest.TestCase):
         self.assertIn('itemRoot?.dataset.browserHotkeysEnabled === "true"', SERVER_JS)
         self.assertIn('itemRoot?.dataset.browserHotkeysEnabled !== "true"', SERVER_JS)
         self.assertNotIn('class="hotkey-hints"', hidden_body)
+
+    def test_run_server_hotkey_action_rotates_item(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            db.init_database(target)
+            insert_test_file(target, "2024/01/image.jpg", sha256="image-sha")
+            data = json.dumps({"file_id": 1, "key": "1"}).encode("utf-8")
+            response: dict[str, object] = {}
+            hotkeys = {"1": BrowserHotkeyConfig(action="rotate_left")}
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(
+                    target=target,
+                    config=AppConfig(
+                        browser=BrowserConfig(hotkey_hints_enabled=True, hotkeys=hotkeys)
+                    ),
+                )
+
+                def respond_json(
+                    self,
+                    content: dict[str, object],
+                    *,
+                    status: HTTPStatus = HTTPStatus.OK,
+                ) -> None:
+                    response["content"] = content
+                    response["status"] = status
+
+            server_endpoints_items.respond_hotkey_action(FakeHandler())  # type: ignore[arg-type]
+            item = browser_item_by_id(target, 1)
+
+        self.assertEqual(response["status"], HTTPStatus.OK)
+        self.assertEqual(response["content"]["action"], "rotate_left")
+        self.assertEqual(response["content"]["rotation"], 270)
+        self.assertEqual(item["view_rotation_degrees"], 270)
+        self.assertIn('payload.action === "rotate_left" || payload.action === "rotate_right"', SERVER_JS)
+        self.assertIn("applyViewRotation(payload.rotation);", SERVER_JS)
 
     def test_run_server_hotkey_action_sets_h3_location(self) -> None:
         import h3

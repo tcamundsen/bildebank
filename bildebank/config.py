@@ -15,7 +15,7 @@ ENABLED_CONFIG_SECTIONS = frozenset({"face_recognition", "image_search"})
 DEFAULT_FACE_MODEL_NAME = "antelopev2"
 FACE_DATABASE_DIR = Path(".bildebank-faces")
 HOTKEY_KEYS = ("1", "2", "3", "4", "5")
-HOTKEY_ACTIONS = frozenset({"", "h3", "manual_date", "person", "tag"})
+HOTKEY_ACTIONS = frozenset({"", "h3", "manual_date", "person", "tag", "rotate_left", "rotate_right"})
 
 
 @dataclass(frozen=True)
@@ -227,6 +227,8 @@ def validate_browser_hotkey(config: BrowserHotkeyConfig) -> None:
     if config.action == "manual_date":
         validate_manual_date_hotkey(config)
         return
+    if config.action in {"rotate_left", "rotate_right"}:
+        return
     raise ValueError(f"Ukjent hurtigtasthandling: {config.action}")
 
 
@@ -395,6 +397,8 @@ def browser_hotkey_to_toml_values(hotkey: BrowserHotkeyConfig) -> dict[str, obje
         if hotkey.note:
             values["note"] = hotkey.note
         return values
+    if hotkey.action in {"rotate_left", "rotate_right"}:
+        return {"action": hotkey.action}
     raise ValueError(f"Ukjent hurtigtasthandling: {hotkey.action}")
 
 

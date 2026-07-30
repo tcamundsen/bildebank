@@ -689,6 +689,8 @@ def app_status_hotkey_form_html(
         <option value="manual_date"{selected_attr(hotkey.action == "manual_date")}>Sett dato</option>
         <option value="person"{selected_attr(hotkey.action == "person")}>Legg til person</option>
         <option value="tag"{selected_attr(hotkey.action == "tag")}>Sett tagg</option>
+        <option value="rotate_left"{selected_attr(hotkey.action == "rotate_left")}>Roter til venstre</option>
+        <option value="rotate_right"{selected_attr(hotkey.action == "rotate_right")}>Roter til høyre</option>
       </select>
       <span class="hotkey-fields" data-hotkey-fields="h3">
         <select name="h3_cell" aria-label="H3-celle">{hotkey_h3_options_html(hotkey.h3_cell, named_h3_cells)}</select>

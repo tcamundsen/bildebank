@@ -934,6 +934,10 @@ def hotkey_hint_label(
         return f"Legg til {hotkey.person_name}"
     if hotkey.action == "tag" and hotkey.tag_name:
         return f"Sett tagg {db.normalize_tag_name(hotkey.tag_name)}"
+    if hotkey.action == "rotate_left":
+        return "Roter til venstre"
+    if hotkey.action == "rotate_right":
+        return "Roter til høyre"
     if hotkey.action == "manual_date":
         text = hotkey_date_hint_text(hotkey)
         return f"Sett dato til {text}" if text else ""
