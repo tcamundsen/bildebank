@@ -63,6 +63,7 @@ from .db_schema import (
     create_pending_file_deletes_schema,
     create_pending_file_moves_schema,
     create_file_purge_schema,
+    create_file_view_stats_schema,
     migration_plan,
     backup_database,
     migrate_database,
@@ -73,6 +74,7 @@ from .db_schema import (
     validate_pending_file_deletes_schema,
     validate_pending_file_moves_schema,
     validate_file_purge_schema,
+    validate_file_view_stats_schema,
     validate_tags_schema,
     validate_tags_schema_structure,
     validate_collection_id,
@@ -126,6 +128,7 @@ from .db_tags import (
     tags_for_file,
     untag_file,
 )
+from .db_view_stats import record_file_view, random_view_candidate_file_id
 from .db_files import (
     FilePathIntegrityIssue,
     MAX_FILE_COMMENT_LENGTH,
@@ -285,6 +288,7 @@ __all__ = (
     "create_pending_file_deletes_schema",
     "create_pending_file_moves_schema",
     "create_file_purge_schema",
+    "create_file_view_stats_schema",
     "migration_plan",
     "backup_database",
     "migrate_database",
@@ -295,6 +299,7 @@ __all__ = (
     "validate_pending_file_deletes_schema",
     "validate_pending_file_moves_schema",
     "validate_file_purge_schema",
+    "validate_file_view_stats_schema",
     "validate_tags_schema",
     "validate_tags_schema_structure",
     "validate_collection_id",
@@ -423,6 +428,8 @@ __all__ = (
     "prepared_pending_file_moves",
     "set_manual_date",
     "update_file_placement",
+    "record_file_view",
+    "random_view_candidate_file_id",
     "Source",
     "add_named_source",
     "find_source_by_name",

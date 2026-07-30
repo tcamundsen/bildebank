@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime as dt
+import sqlite3
 import time
 import urllib.parse
 from http import HTTPStatus
@@ -18,7 +20,7 @@ from .server_browser_sources import (
 )
 from .server_faces import clear_face_caches
 from .server_filter import text_filter_browser_source
-from .target_lock import TargetLockError
+from .target_lock import LOCK_FILENAME, TargetLockError
 from .value_parsing import require_int
 
 if TYPE_CHECKING:
@@ -34,6 +36,50 @@ def clear_browser_navigation_cache(server: Any) -> None:
 def server_face_config(server: Any) -> FaceRecognitionConfig | None:
     config = getattr(server, "config", None)
     return getattr(config, "face_recognition", None)
+
+
+def _viewed_at_utc() -> str:
+    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _database_is_busy(exc: sqlite3.OperationalError) -> bool:
+    return "locked" in str(exc).lower() or "busy" in str(exc).lower()
+
+
+def respond_item_viewed(handler: BildebankRequestHandler) -> None:
+    try:
+        payload = server_request.read_json_payload(handler.headers, handler.rfile)
+        file_id = require_int(payload.get("file_id"), "file_id")
+        if file_id < 1:
+            raise ValueError("Ugyldig file_id.")
+    except (UnicodeDecodeError, ValueError):
+        handler.respond_json(
+            {"ok": False, "error": "Ugyldig file_id."},
+            status=HTTPStatus.BAD_REQUEST,
+        )
+        return
+
+    if (handler.server.target / LOCK_FILENAME).exists():
+        handler.respond_empty()
+        return
+
+    conn = None
+    try:
+        conn = db.connect(handler.server.target, timeout=0.0)
+        conn.execute("BEGIN IMMEDIATE")
+        db.record_file_view(conn, file_id=file_id, viewed_at=_viewed_at_utc())
+        conn.commit()
+    except sqlite3.OperationalError as exc:
+        if conn is not None:
+            conn.rollback()
+        if _database_is_busy(exc):
+            handler.respond_empty()
+            return
+        raise
+    finally:
+        if conn is not None:
+            conn.close()
+    handler.respond_empty()
 
 
 def respond_comment_item(handler: BildebankRequestHandler) -> None:

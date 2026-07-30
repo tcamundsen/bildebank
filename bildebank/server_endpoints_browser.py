@@ -57,6 +57,21 @@ def respond_browser_root(handler: BildebankRequestHandler) -> None:
     respond_years(handler)
 
 
+def respond_random_item(handler: BildebankRequestHandler) -> None:
+    conn = db.connect_read_only(handler.server.target)
+    try:
+        file_id = db.random_view_candidate_file_id(conn)
+    finally:
+        conn.close()
+    if file_id is None:
+        handler.respond_text(
+            "Fant ingen aktive bilder eller videoer i bildesamlingen.",
+            status=HTTPStatus.NOT_FOUND,
+        )
+        return
+    handler.redirect(f"/item/{file_id}")
+
+
 def respond_item(handler: BildebankRequestHandler, raw_file_id: str) -> None:
     start = time.perf_counter()
     file_id = parse_file_id(raw_file_id)

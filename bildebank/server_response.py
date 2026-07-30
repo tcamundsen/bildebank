@@ -111,6 +111,12 @@ class ServerResponseMixin:
     def respond_json(self, content: dict[str, Any], *, status: HTTPStatus = HTTPStatus.OK) -> None:
         self.respond_bytes(json.dumps(content).encode("utf-8"), "application/json; charset=utf-8", status=status)
 
+    def respond_empty(self, *, status: HTTPStatus = HTTPStatus.NO_CONTENT) -> None:
+        self.send_response(status)
+        self.send_header("Content-Length", "0")
+        self.respond_timing_headers()
+        self.end_headers()
+
     def respond_static_asset(self, content: str, content_type: str) -> None:
         encoded = content.encode("utf-8")
         self.send_response(HTTPStatus.OK)

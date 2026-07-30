@@ -108,8 +108,9 @@ def connect(
     *,
     require_current: bool = True,
     schema_validator: SchemaValidator | None = None,
+    timeout: float = 5.0,
 ) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path_for_target(target))
+    conn = sqlite3.connect(db_path_for_target(target), timeout=timeout)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:

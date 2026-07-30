@@ -69,7 +69,7 @@ class MigrateCliTests(unittest.TestCase):
         self.assertIn("idx_file_sources_source_id_id", indexes)
         self.assertIn("idx_errors_unresolved_stage_id", indexes)
 
-    def test_migrate_check_v20_to_v21_changes_nothing(self) -> None:
+    def test_migrate_check_v20_to_v22_changes_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             init_database(target)
@@ -84,7 +84,7 @@ class MigrateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 20", stdout)
-            self.assertIn("Ny schema_version: 21", stdout)
+            self.assertIn("Ny schema_version: 22", stdout)
             self.assertIn("opprette file_tombstones", stdout)
             self.assertIn("opprette pending_file_purges", stdout)
             self.assertIn("Ingen endringer er gjort (--check).", stdout)
@@ -98,7 +98,7 @@ class MigrateCliTests(unittest.TestCase):
                 )
             )
 
-    def test_migrate_v20_to_v21_only_adds_empty_purge_schema(self) -> None:
+    def test_migrate_v20_to_v22_only_adds_empty_purge_and_view_stats_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -148,7 +148,7 @@ class MigrateCliTests(unittest.TestCase):
 
             with mock.patch(
                 "bildebank.db_schema.hash_stable_collection_file",
-                side_effect=AssertionError("v20->v21 leste en samlingsfil"),
+                side_effect=AssertionError("v20->v22 leste en samlingsfil"),
             ):
                 code, stdout, stderr = capture_cli(
                     ["--target", str(target), "migrate"]
@@ -156,7 +156,7 @@ class MigrateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 20", stdout)
-            self.assertIn("Setter schema_version=21.", stdout)
+            self.assertIn("Setter schema_version=22.", stdout)
             self.assertEqual(target_file.read_bytes(), target_bytes_before)
             conn = db.connect(target)
             try:
@@ -1355,6 +1355,7 @@ class MigrateCliTests(unittest.TestCase):
                 db.create_pending_file_deletes_schema(conn)
                 db.create_pending_file_moves_schema(conn)
                 db.create_file_purge_schema(conn)
+                db.create_file_view_stats_schema(conn)
                 conn.execute(
                     "UPDATE meta SET value = ? WHERE key = 'schema_version'",
                     (str(db.SCHEMA_VERSION),),

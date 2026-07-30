@@ -5,6 +5,75 @@
     headers.set("X-CSRF-Token", csrfToken);
     return fetch(input, {...init, headers});
   }
+  function registerViewedItem() {
+    const itemRoot = document.querySelector('[data-browser-item-id][data-view-registration-enabled="true"]');
+    const fileId = Number(itemRoot?.dataset.browserItemId);
+    if (!itemRoot || !Number.isInteger(fileId) || fileId < 1) return;
+    let registered = false;
+    const register = () => {
+      if (registered) return;
+      registered = true;
+      csrfFetch("/api/item-viewed", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({file_id: fileId}),
+      }).catch(() => {});
+    };
+    const image = itemRoot.querySelector(".stage img");
+    if (image instanceof HTMLImageElement) {
+      let timer = 0;
+      const cancel = () => {
+        if (timer) window.clearTimeout(timer);
+        timer = 0;
+      };
+      const start = () => {
+        cancel();
+        if (registered || document.hidden || !image.complete || image.naturalWidth < 1) return;
+        timer = window.setTimeout(register, 2000);
+      };
+      image.addEventListener("load", start);
+      image.addEventListener("error", cancel);
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) cancel();
+        else start();
+      });
+      window.addEventListener("pagehide", cancel, {once: true});
+      start();
+      return;
+    }
+    const video = itemRoot.querySelector(".stage video");
+    if (!(video instanceof HTMLVideoElement)) return;
+    let watched = 0;
+    let previousTime = null;
+    const resetReferenceTime = () => { previousTime = null; };
+    const addProgress = ({allowPaused = false} = {}) => {
+      const currentTime = video.currentTime;
+      if (document.hidden || video.seeking || (!allowPaused && video.paused) || previousTime === null) {
+        previousTime = currentTime;
+        return;
+      }
+      const elapsed = currentTime - previousTime;
+      previousTime = currentTime;
+      if (elapsed <= 0) return;
+      watched += elapsed;
+      if (watched >= 8) register();
+    };
+    video.addEventListener("playing", () => { previousTime = video.currentTime; });
+    video.addEventListener("timeupdate", () => addProgress());
+    video.addEventListener("seeking", resetReferenceTime);
+    video.addEventListener("seeked", resetReferenceTime);
+    video.addEventListener("loadedmetadata", resetReferenceTime);
+    video.addEventListener("emptied", resetReferenceTime);
+    video.addEventListener("waiting", resetReferenceTime);
+    video.addEventListener("ended", () => {
+      addProgress({allowPaused: true});
+      if (Number.isFinite(video.duration) && video.duration < 8 && watched >= video.duration - 0.5) register();
+    });
+    document.addEventListener("visibilitychange", resetReferenceTime);
+    window.addEventListener("pagehide", resetReferenceTime, {once: true});
+    if (!video.paused && !document.hidden) previousTime = video.currentTime;
+  }
+  registerViewedItem();
   const faceOverlay = document.getElementById("faceOverlay");
   const infoOverlay = document.getElementById("infoOverlay");
   const openFacesButton = document.querySelector("[data-open-faces]");

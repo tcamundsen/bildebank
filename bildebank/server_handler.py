@@ -201,6 +201,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             ):
                 self.respond_read_only_forbidden(parsed.path)
                 return
+            if parsed.path == "/random":
+                server_endpoints_browser.respond_random_item(self)
+                return
             if parsed.path == "/":
                 server_endpoints_browser.respond_browser_root(self)
                 return
@@ -723,6 +726,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/item-rotate":
                 server_endpoints_items.respond_rotate_item(self)
+                return
+            if parsed.path == "/api/item-viewed":
+                server_endpoints_items.respond_item_viewed(self)
                 return
             if parsed.path == "/api/item-comment":
                 server_endpoints_items.respond_comment_item(self)

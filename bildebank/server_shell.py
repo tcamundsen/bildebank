@@ -83,6 +83,7 @@ def source_top_links_html(
     all_items_label: str = "Alle bilder",
 ) -> str:
     links = [
+        '<a class="server-search-link" href="/random">Tilfeldig bilde</a>',
         '<a class="server-search-link" href="/filter">Filtersøk</a>',
         '<a class="server-search-link" href="/geo">Steder</a>',
         '<a class="server-search-link" href="/tags">Tagger</a>',

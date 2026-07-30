@@ -42,7 +42,7 @@ from .db_tags import (
     tag_name_key,
 )
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 ITEM_SIDECAR_CLEANUP_SCHEMA_VERSION = 17
 DUPLICATE_SHA256_REPAIR_REASON = "schema-v19-duplicate-sha256"
 GPS_ERROR_EXIFTOOL = "exiftool_error"
@@ -136,6 +136,7 @@ class MigrationPlan:
     derived_pending_delete_ids: tuple[int, ...] = ()
     creates_file_tombstones: bool = False
     creates_pending_file_purges: bool = False
+    creates_file_view_stats: bool = False
 
 
 @dataclass(frozen=True)
@@ -145,11 +146,17 @@ class DuplicateSha256Group:
     duplicate_file_ids: tuple[int, ...]
 
 
-def connect(target: Path, *, require_current: bool = True) -> sqlite3.Connection:
+def connect(
+    target: Path,
+    *,
+    require_current: bool = True,
+    timeout: float = 5.0,
+) -> sqlite3.Connection:
     return db_core.connect(
         target,
         require_current=require_current,
         schema_validator=require_current_schema,
+        timeout=timeout,
     )
 
 
@@ -231,6 +238,7 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
     ensure_column(conn, "pending_file_deletes", "expected_sha256", "TEXT")
     ensure_column(conn, "pending_file_deletes", "expected_size_bytes", "INTEGER")
     create_pending_file_moves_schema(conn)
+    create_file_view_stats_schema(conn)
     if table_exists(conn, "errors"):
         ensure_column(conn, "errors", "resolved_at", "TEXT")
     if table_exists(conn, "files"):
@@ -494,6 +502,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
         """
     )
     create_file_purge_schema(conn)
+    create_file_view_stats_schema(conn)
     ensure_compatible_columns(conn)
 
 
@@ -746,6 +755,23 @@ def create_file_purge_schema(conn: sqlite3.Connection) -> None:
     )
 
 
+def create_file_view_stats_schema(conn: sqlite3.Connection) -> None:
+    execute_sql_statements(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS file_view_stats (
+            file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+            view_count INTEGER NOT NULL CHECK (view_count >= 1),
+            first_viewed_at TEXT NOT NULL,
+            last_viewed_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_file_view_stats_last_viewed_at
+        ON file_view_stats(last_viewed_at, file_id);
+        """,
+    )
+
+
 def duplicate_sha256_summary(conn: sqlite3.Connection) -> tuple[int, int]:
     if not table_exists(conn, "files"):
         return 0, 0
@@ -977,11 +1003,23 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 duplicate_sha256_groups=duplicate_sha256_groups,
                 duplicate_sha256_files=duplicate_sha256_files,
             )
+        if version == 21:
+            if validate:
+                validate_current_schema(conn, require_file_view_stats=False)
+            return MigrationPlan(
+                current_version=version,
+                target_version=SCHEMA_VERSION,
+                imported_files=count_rows(conn, "files"),
+                duplicate_findings=count_rows(conn, "duplicate_findings"),
+                creates_file_sources=False,
+                creates_file_view_stats=True,
+            )
         if version == 20:
             if validate:
                 validate_current_schema(
                     conn,
                     require_file_purge_schema=False,
+                    require_file_view_stats=False,
                 )
             return MigrationPlan(
                 current_version=version,
@@ -993,6 +1031,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 duplicate_sha256_files=duplicate_sha256_files,
                 creates_file_tombstones=True,
                 creates_pending_file_purges=True,
+                creates_file_view_stats=True,
             )
         if version in {
             5,
@@ -1023,6 +1062,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                     require_metadata_datetime_column=version >= 13,
                     require_comment_column=version >= 15,
                     require_file_purge_schema=False,
+                    require_file_view_stats=False,
                     require_internal_structure=False,
                     require_no_superseded_sources=False,
                 )
@@ -1062,6 +1102,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 unsafe_derived_paths=unsafe_derived_paths,
                 creates_file_tombstones=True,
                 creates_pending_file_purges=True,
+                creates_file_view_stats=True,
             )
         if validate:
             validate_pre_migration(conn, version)
@@ -1102,6 +1143,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
             cleans_orphaned_derived_files=True,
             creates_file_tombstones=True,
             creates_pending_file_purges=True,
+            creates_file_view_stats=True,
         )
     finally:
         conn.close()
@@ -1207,6 +1249,33 @@ def migrate_database(
                 duplicate_review_files=len(duplicate_sha256_groups),
                 duplicate_pending_delete_ids=duplicate_pending_delete_ids,
             )
+        if version == 21:
+            imported_files = count_rows(conn, "files")
+            duplicate_findings = count_rows(conn, "duplicate_findings")
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                validate_current_schema(conn, require_file_view_stats=False)
+                create_file_view_stats_schema(conn)
+                set_meta(conn, "schema_version", str(SCHEMA_VERSION))
+                log_command(
+                    conn,
+                    "migrate",
+                    {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION},
+                )
+                validate_current_schema(conn)
+                validate_database_health(conn)
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+            return MigrationPlan(
+                current_version=version,
+                target_version=SCHEMA_VERSION,
+                imported_files=imported_files,
+                duplicate_findings=duplicate_findings,
+                creates_file_sources=False,
+                creates_file_view_stats=True,
+            )
         if version == 20:
             imported_files = count_rows(conn, "files")
             duplicate_findings = count_rows(conn, "duplicate_findings")
@@ -1215,8 +1284,10 @@ def migrate_database(
                 validate_current_schema(
                     conn,
                     require_file_purge_schema=False,
+                    require_file_view_stats=False,
                 )
                 create_file_purge_schema(conn)
+                create_file_view_stats_schema(conn)
                 set_meta(conn, "schema_version", str(SCHEMA_VERSION))
                 log_command(
                     conn,
@@ -1240,6 +1311,7 @@ def migrate_database(
                 creates_file_sources=False,
                 creates_file_tombstones=True,
                 creates_pending_file_purges=True,
+                creates_file_view_stats=True,
             )
         if version in {
             5,
@@ -1305,6 +1377,7 @@ def migrate_database(
                     conn,
                     require_performance_indexes=False,
                     require_file_purge_schema=False,
+                    require_file_view_stats=False,
                 )
                 drop_performance_indexes(conn)
                 duplicate_pending_delete_ids = repair_duplicate_sha256_groups(
@@ -1330,6 +1403,7 @@ def migrate_database(
                     target,
                 )
                 create_file_purge_schema(conn)
+                create_file_view_stats_schema(conn)
                 set_meta(conn, "schema_version", str(SCHEMA_VERSION))
                 log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
                 validate_current_schema(conn)
@@ -1378,6 +1452,7 @@ def migrate_database(
                 derived_pending_delete_ids=derived_pending_delete_ids,
                 creates_file_tombstones=True,
                 creates_pending_file_purges=True,
+                creates_file_view_stats=True,
             )
         validate_pre_migration(conn, version)
         imported_files = count_rows(conn, "files")
@@ -1460,6 +1535,7 @@ def migrate_database(
                 target,
             )
             create_file_purge_schema(conn)
+            create_file_view_stats_schema(conn)
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
             validate_current_schema(conn)
@@ -1513,6 +1589,7 @@ def migrate_database(
             derived_pending_delete_ids=derived_pending_delete_ids,
             creates_file_tombstones=True,
             creates_pending_file_purges=True,
+            creates_file_view_stats=True,
         )
     finally:
         conn.close()
@@ -1677,6 +1754,7 @@ def validate_current_schema(
     require_pending_file_delete_identity: bool = True,
     require_pending_file_moves: bool = True,
     require_file_purge_schema: bool = True,
+    require_file_view_stats: bool = True,
     require_internal_structure: bool = True,
     require_no_superseded_sources: bool = True,
 ) -> None:
@@ -1729,6 +1807,8 @@ def validate_current_schema(
         validate_pending_file_moves_schema(conn)
     if require_file_purge_schema:
         validate_file_purge_schema(conn)
+    if require_file_view_stats:
+        validate_file_view_stats_schema(conn)
     if table_exists(conn, "errors") and conn.execute("PRAGMA foreign_key_list(errors)").fetchall():
         raise ValueError("errors har gammel foreign key til sources. Kjør bildebank migrate.")
     validate_file_sources_schema(conn)
@@ -1906,6 +1986,45 @@ def validate_file_purge_schema(conn: sqlite3.Connection) -> None:
         raise ValueError(
             "Samme SHA-256 finnes i både files og file_tombstones "
             f"(files #{conflict['file_id']}, tombstone #{conflict['tombstone_id']})."
+        )
+
+
+def validate_file_view_stats_schema(conn: sqlite3.Connection) -> None:
+    if not table_exists(conn, "file_view_stats"):
+        raise ValueError("Databasen mangler tabellen file_view_stats.")
+    columns = table_columns(conn, "file_view_stats")
+    expected_columns = {"file_id", "view_count", "first_viewed_at", "last_viewed_at"}
+    missing = sorted(expected_columns - columns)
+    if missing:
+        raise ValueError(
+            "file_view_stats mangler forventede kolonner: "
+            f"{', '.join(missing)}"
+        )
+    table_info = {
+        str(row["name"]): row
+        for row in conn.execute("PRAGMA table_info(file_view_stats)")
+    }
+    if int(table_info["file_id"]["pk"]) != 1:
+        raise ValueError("file_view_stats.file_id må være primærnøkkel.")
+    if not _has_index_columns(
+        conn,
+        table="file_view_stats",
+        columns=("last_viewed_at", "file_id"),
+        index_name="idx_file_view_stats_last_viewed_at",
+    ):
+        raise ValueError(
+            "file_view_stats mangler visningsindeksen for last_viewed_at og file_id."
+        )
+    foreign_keys = list(conn.execute("PRAGMA foreign_key_list(file_view_stats)"))
+    if not any(
+        str(row["table"]) == "files"
+        and str(row["from"]) == "file_id"
+        and str(row["to"]) == "id"
+        and str(row["on_delete"]).upper() == "CASCADE"
+        for row in foreign_keys
+    ):
+        raise ValueError(
+            "file_view_stats.file_id mangler CASCADE foreign key til files.id."
         )
 
 
