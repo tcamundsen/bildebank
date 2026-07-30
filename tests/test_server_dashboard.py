@@ -84,6 +84,7 @@ class ServerDashboardTests(unittest.TestCase):
                     sha256="sha-image",
                     operation="refresh-metadata",
                 )
+                db.record_file_view(conn, file_id=image_id, viewed_at="2026-07-30 10:00:00")
                 conn.commit()
             finally:
                 conn.close()
@@ -100,6 +101,7 @@ class ServerDashboardTests(unittest.TestCase):
         self.assertRegex(body, r"<dt>Aktive filer</dt>\s*<dd>3 \(6\.0 KB\)</dd>")
         self.assertRegex(body, r"<dt>Bilder</dt>\s*<dd>2 \(4\.0 KB\)</dd>")
         self.assertRegex(body, r"<dt>Videoer</dt>\s*<dd>1 \(2\.0 KB\)</dd>")
+        self.assertRegex(body, r"<dt>Registrert sett</dt>\s*<dd>1 av 3</dd>")
         self.assertRegex(body, r"<dt>Slettede bilder</dt>\s*<dd>1 \(4\.0 KB\)</dd>")
         self.assertIn("<dt>Kilder: error</dt>", body)
         self.assertIn("<dt>Kilder: imported</dt>", body)

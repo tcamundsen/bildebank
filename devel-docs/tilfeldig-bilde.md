@@ -133,9 +133,11 @@ bilder som har ligget lengst. Rangeringen bruker `last_viewed_at`, ikke bare
 fortsatt kunne dukke opp igjen.
 
 En lenke eller knapp med teksten «Tilfeldig bilde» skal være tilgjengelig i
-den vanlige browsernavigasjonen. Første versjon trenger ikke vise teller eller
-sist-sett-tid i brukergrensesnittet, og den skal ikke legge til sortering etter
-visningsstatistikk i alle eksisterende oversikter.
+den vanlige browsernavigasjonen. Dashboardet skal vise «Registrert sett» som
+antall unike, kvalifiserte bilde- og videofiler med en rad i
+`file_view_stats`, av det totale antallet kvalifiserte aktive filer, for
+eksempel `327 av 14499`. Det skal ikke legges til sortering etter
+visningsstatistikk i eksisterende oversikter.
 
 ## Implementasjonsdetaljer
 

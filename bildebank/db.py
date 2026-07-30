@@ -128,7 +128,7 @@ from .db_tags import (
     tags_for_file,
     untag_file,
 )
-from .db_view_stats import record_file_view, random_view_candidate_file_id
+from .db_view_stats import record_file_view, random_view_candidate_file_id, view_registration_counts
 from .db_files import (
     FilePathIntegrityIssue,
     MAX_FILE_COMMENT_LENGTH,
@@ -430,6 +430,7 @@ __all__ = (
     "update_file_placement",
     "record_file_view",
     "random_view_candidate_file_id",
+    "view_registration_counts",
     "Source",
     "add_named_source",
     "find_source_by_name",

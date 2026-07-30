@@ -38,6 +38,26 @@ def random_view_candidate_file_id(
     *,
     choose: Callable[[Sequence[int]], int] = random.choice,
 ) -> int | None:
+    candidates = eligible_view_candidates(conn)
+    if not candidates:
+        return None
+    unseen_ids = [file_id for file_id, last_viewed_at in candidates if last_viewed_at is None]
+    if unseen_ids:
+        return choose(unseen_ids)
+    candidates.sort(key=lambda candidate: (str(candidate[1]), candidate[0]))
+    pool_size = min(len(candidates), max(20, math.ceil(len(candidates) * 0.05)))
+    return choose([file_id for file_id, _ in candidates[:pool_size]])
+
+
+def view_registration_counts(conn: sqlite3.Connection) -> tuple[int, int]:
+    candidates = eligible_view_candidates(conn)
+    return (
+        sum(last_viewed_at is not None for _, last_viewed_at in candidates),
+        len(candidates),
+    )
+
+
+def eligible_view_candidates(conn: sqlite3.Connection) -> list[tuple[int, str | None]]:
     rows = conn.execute(
         """
         SELECT files.id, files.target_path, file_view_stats.last_viewed_at
@@ -51,11 +71,4 @@ def random_view_candidate_file_id(
         for row in rows
         if media_kind(Path(str(row["target_path"]))) in {"image", "video"}
     ]
-    if not candidates:
-        return None
-    unseen_ids = [file_id for file_id, last_viewed_at in candidates if last_viewed_at is None]
-    if unseen_ids:
-        return choose(unseen_ids)
-    candidates.sort(key=lambda candidate: (str(candidate[1]), candidate[0]))
-    pool_size = min(len(candidates), max(20, math.ceil(len(candidates) * 0.05)))
-    return choose([file_id for file_id, _ in candidates[:pool_size]])
+    return candidates

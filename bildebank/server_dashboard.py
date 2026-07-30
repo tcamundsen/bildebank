@@ -39,6 +39,8 @@ class DashboardSummary:
     active_image_size_bytes: int
     active_videos: int
     active_video_size_bytes: int
+    viewed_random_files: int
+    random_view_files: int
     deleted_files: int
     deleted_file_size_bytes: int
     source_status_counts: dict[str, int]
@@ -109,6 +111,7 @@ def dashboard_summary(
             collection_id,
         )
         size_totals = collection_size_totals(conn)
+        viewed_random_files, random_view_files = db.view_registration_counts(conn)
         return DashboardSummary(
             total_active=int(total_active),
             total_active_size_bytes=size_totals["active"],
@@ -116,6 +119,8 @@ def dashboard_summary(
             active_image_size_bytes=size_totals["images"],
             active_videos=int(media_counts.get("videoer", 0)),
             active_video_size_bytes=size_totals["videos"],
+            viewed_random_files=viewed_random_files,
+            random_view_files=random_view_files,
             deleted_files=count_deleted_files(conn),
             deleted_file_size_bytes=size_totals["deleted"],
             source_status_counts=source_status_counts(conn),
@@ -290,6 +295,7 @@ def overview_section_html(summary: DashboardSummary) -> str:
           {info_row_html("Aktive filer", count_and_size(summary.total_active, summary.total_active_size_bytes))}
           {info_row_html("Bilder", count_and_size(summary.active_images, summary.active_image_size_bytes))}
           {info_row_html("Videoer", count_and_size(summary.active_videos, summary.active_video_size_bytes))}
+          {info_row_html("Registrert sett", f"{summary.viewed_random_files} av {summary.random_view_files}")}
           {info_row_html("Slettede bilder", count_and_size(summary.deleted_files, summary.deleted_file_size_bytes))}
           {source_rows}
           {info_row_html("Registrerte kildefiler", str(summary.source_file_count))}
