@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import random
 import sqlite3
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
 
 from .media import media_kind
@@ -36,9 +36,10 @@ def record_file_view(
 def random_view_candidate_file_id(
     conn: sqlite3.Connection,
     *,
+    browser_file_ids: Collection[int] | None = None,
     choose: Callable[[Sequence[int]], int] = random.choice,
 ) -> int | None:
-    candidates = eligible_view_candidates(conn)
+    candidates = eligible_view_candidates(conn, browser_file_ids=browser_file_ids)
     if not candidates:
         return None
     unseen_ids = [file_id for file_id, last_viewed_at in candidates if last_viewed_at is None]
@@ -49,15 +50,24 @@ def random_view_candidate_file_id(
     return choose([file_id for file_id, _ in candidates[:pool_size]])
 
 
-def view_registration_counts(conn: sqlite3.Connection) -> tuple[int, int]:
-    candidates = eligible_view_candidates(conn)
+def view_registration_counts(
+    conn: sqlite3.Connection,
+    *,
+    browser_file_ids: Collection[int] | None = None,
+) -> tuple[int, int]:
+    candidates = eligible_view_candidates(conn, browser_file_ids=browser_file_ids)
     return (
         sum(last_viewed_at is not None for _, last_viewed_at in candidates),
         len(candidates),
     )
 
 
-def eligible_view_candidates(conn: sqlite3.Connection) -> list[tuple[int, str | None]]:
+def eligible_view_candidates(
+    conn: sqlite3.Connection,
+    *,
+    browser_file_ids: Collection[int] | None = None,
+) -> list[tuple[int, str | None]]:
+    browser_file_id_set = set(browser_file_ids) if browser_file_ids is not None else None
     rows = conn.execute(
         """
         SELECT files.id, files.target_path, file_view_stats.last_viewed_at
@@ -69,6 +79,9 @@ def eligible_view_candidates(conn: sqlite3.Connection) -> list[tuple[int, str | 
     candidates = [
         (int(row["id"]), row["last_viewed_at"])
         for row in rows
-        if media_kind(Path(str(row["target_path"]))) in {"image", "video"}
+        if (
+            (browser_file_id_set is None or int(row["id"]) in browser_file_id_set)
+            and media_kind(Path(str(row["target_path"]))) in {"image", "video"}
+        )
     ]
     return candidates

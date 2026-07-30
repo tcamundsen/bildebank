@@ -58,9 +58,15 @@ def respond_browser_root(handler: BildebankRequestHandler) -> None:
 
 
 def respond_random_item(handler: BildebankRequestHandler) -> None:
+    browser_file_ids = handler.server.browser_item_ids(
+        hide_out_of_focus=handler.server.hide_out_of_focus
+    )
     conn = db.connect_read_only(handler.server.target)
     try:
-        file_id = db.random_view_candidate_file_id(conn)
+        file_id = db.random_view_candidate_file_id(
+            conn,
+            browser_file_ids=browser_file_ids,
+        )
     finally:
         conn.close()
     if file_id is None:

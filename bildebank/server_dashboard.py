@@ -12,6 +12,7 @@ from .config import AppConfig
 from .formatting import format_bytes
 from .media import VIDEO_EXTENSIONS
 from .program_state import KnownSnapshotRepository, known_snapshot_repositories
+from .server_browser_queries import browser_item_ids
 
 
 ShellPageRenderer = Callable[..., str]
@@ -111,7 +112,10 @@ def dashboard_summary(
             collection_id,
         )
         size_totals = collection_size_totals(conn)
-        viewed_random_files, random_view_files = db.view_registration_counts(conn)
+        viewed_random_files, random_view_files = db.view_registration_counts(
+            conn,
+            browser_file_ids=browser_item_ids(target, conn=conn),
+        )
         return DashboardSummary(
             total_active=int(total_active),
             total_active_size_bytes=size_totals["active"],
