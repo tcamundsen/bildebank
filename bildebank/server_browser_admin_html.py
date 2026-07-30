@@ -65,8 +65,36 @@ def tags_page_html(
         rows = list(db.tags(conn))
     finally:
         conn.close()
-    items = "\n".join(tag_row_html(row) for row in rows)
-    content = f'<div class="tag-table">{items}</div>' if items else '<p class="meta">Ingen tagger registrert.</p>'
+    user_rows = [row for row in rows if row["kind"] == db.TAG_KIND_USER]
+    system_rows = [row for row in rows if row["kind"] == db.TAG_KIND_SYSTEM]
+    user_content = (
+        f"""
+        <div class="user-tag-table">
+          <div class="user-tag-header" aria-hidden="true">
+            <span>Tagg</span>
+            <span>Bilder</span>
+            <span>Opprettet</span>
+            <span>Handlinger</span>
+          </div>
+          {"\n".join(user_tag_row_html(row) for row in user_rows)}
+        </div>
+        """
+        if user_rows
+        else '<p class="meta">Ingen brukertagger registrert.</p>'
+    )
+    system_content = (
+        f"""
+        <div class="system-tag-table">
+          <div class="system-tag-header" aria-hidden="true">
+            <span>Tagg</span>
+            <span>Bilder</span>
+          </div>
+          {"\n".join(system_tag_row_html(row) for row in system_rows)}
+        </div>
+        """
+        if system_rows
+        else '<p class="meta">Ingen systemtagger registrert.</p>'
+    )
     return shell_page_html(
         "Tagger",
         f"""
@@ -75,42 +103,73 @@ def tags_page_html(
           <label>Ny tagg <input name="name" autocomplete="off"></label>
           <button type="submit">Legg til</button>
         </form>
-        {content}
+        <section class="tag-section">
+          <h2>Brukertagger</h2>
+          {user_content}
+        </section>
+        <section class="tag-section">
+          <h2>Systemtagger</h2>
+          {system_content}
+        </section>
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
     )
 
 
-def tag_row_html(row: sqlite3.Row) -> str:
-    tag_id = int(row["id"])
+def system_tag_row_html(row: sqlite3.Row) -> str:
     name = str(row["name"])
-    kind = str(row["kind"])
-    kind_label = "systemtagg" if kind == db.TAG_KIND_SYSTEM else "brukertagg"
+    image_count = int(row["file_count"])
+    image_count_label = "1 bilde" if image_count == 1 else f"{image_count} bilder"
     url = "/tag/" + urllib.parse.quote(name, safe="")
-    actions = tag_row_actions_html(tag_id, name, kind)
     return f"""
-    <div class="tag-row">
+    <div class="system-tag-row">
       <div class="people-name">{html.escape(name)}</div>
-      <a class="person-link" href="{html.escape(url)}">Vis bilder ({int(row["file_count"])})</a>
-      <span class="status">{html.escape(kind_label)}</span>
-      <span class="status">opprettet: {html.escape(str(row["created_at"]))}</span>
-      {actions}
+      <a class="person-link" href="{html.escape(url)}">{image_count_label}</a>
     </div>
     """
 
 
-def tag_row_actions_html(tag_id: int, name: str, kind: str) -> str:
-    if kind == db.TAG_KIND_SYSTEM:
-        return '<span class="status">systemtagg kan ikke endres</span>'
+def user_tag_row_html(row: sqlite3.Row) -> str:
+    tag_id = int(row["id"])
+    name = str(row["name"])
+    image_count = int(row["file_count"])
+    image_count_label = "1 bilde" if image_count == 1 else f"{image_count} bilder"
+    url = "/tag/" + urllib.parse.quote(name, safe="")
+    return f"""
+    <div class="user-tag-row">
+      <div class="user-tag-field">
+        <span class="user-tag-field-label">Tagg</span>
+        <div class="people-name">{html.escape(name)}</div>
+      </div>
+      <div class="user-tag-field">
+        <span class="user-tag-field-label">Bilder</span>
+        <a class="person-link" href="{html.escape(url)}">{image_count_label}</a>
+      </div>
+      <div class="user-tag-field">
+        <span class="user-tag-field-label">Opprettet</span>
+        <span>{html.escape(str(row["created_at"]))}</span>
+      </div>
+      <div class="user-tag-field user-tag-action">
+        <span class="user-tag-field-label">Handlinger</span>
+        {tag_row_actions_html(tag_id, name)}
+      </div>
+    </div>
+    """
+
+
+def tag_row_actions_html(tag_id: int, name: str) -> str:
     escaped_name = html.escape(name)
     return f"""
       <div class="tag-actions">
-        <form action="/tags/rename" method="post" class="inline-edit-form">
-          <input type="hidden" name="tag_id" value="{tag_id}">
-          <input name="name" value="{escaped_name}" autocomplete="off" aria-label="Nytt taggnavn">
-          <button type="submit">Endre navn</button>
-        </form>
+        <details class="tag-rename-details">
+          <summary class="tag-rename-toggle">Endre navn</summary>
+          <form action="/tags/rename" method="post" class="inline-edit-form tag-rename-form">
+            <input type="hidden" name="tag_id" value="{tag_id}">
+            <input name="name" value="{escaped_name}" autocomplete="off" aria-label="Nytt taggnavn">
+            <button type="submit">Lagre</button>
+          </form>
+        </details>
         <form action="/tags/delete" method="post">
           <input type="hidden" name="tag_id" value="{tag_id}">
           <button type="submit" class="danger-button" data-confirm-submit="Slette taggen {escaped_name} fra alle bilder?">Slett</button>
