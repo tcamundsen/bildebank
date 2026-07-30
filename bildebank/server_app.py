@@ -75,6 +75,7 @@ def app_status_page_html(
         (
             app_status_row_html("Bildesamling", str(target)),
             app_status_row_html("Bildebank-versjon", __version__),
+            app_status_image_view_delay_row_html(),
             app_status_hide_out_of_focus_row_html(config.browser.hide_out_of_focus),
             app_status_hotkeys_row_html(
                 config.browser.hotkeys or {},
@@ -594,6 +595,26 @@ def app_status_hide_out_of_focus_row_html(enabled: bool) -> str:
             <span class="app-toggle-status">{status}</span>
           </label>
         </form>
+      </dd>
+    </div>
+    """
+
+
+def app_status_image_view_delay_row_html() -> str:
+    return """
+    <div class="info-row">
+      <dt>Regn stillbilder som sett etter</dt>
+      <dd>
+        <label>
+          <select data-image-view-delay-select aria-label="Tid før stillbilder regnes som sett">
+            <option value="500">0,5 sekunder</option>
+            <option value="1000">1 sekund</option>
+            <option value="2000">2 sekunder</option>
+            <option value="3000">3 sekunder</option>
+            <option value="5000">5 sekunder</option>
+          </select>
+        </label>
+        <span class="meta">Gjelder bare denne nettleseren. Videoer bruker fortsatt 8 sekunder.</span>
       </dd>
     </div>
     """

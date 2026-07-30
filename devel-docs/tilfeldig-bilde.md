@@ -87,9 +87,12 @@ visningsdata. Nye og eksisterende bilder starter derfor som usette.
 ## Server og klient
 
 En enkeltbildeside skal merke hovedområdet med fil-ID. For stillbilder starter
-`server.js` timeren først når hovedbildet er klart og dokumentet er synlig. For
-videoer følger den videoelementets avspillings- og seek-hendelser, slik at bare
-reell avspilling uten hopping framover teller. Når grensen er nådd, sender den
+`server.js` timeren først når hovedbildet er klart og dokumentet er synlig.
+Terskelen velges per nettleserprofil i Innstillinger: 0,5, 1, 2, 3 eller 5
+sekunder. Den lagres i nettleserens lokale lagring, slik at ulike brukere ikke
+endrer hverandres valg; standard og fallback er 0,5 sekunder. For videoer
+følger den videoelementets avspillings- og seek-hendelser, slik at bare reell
+avspilling uten hopping framover teller. Når grensen er nådd, sender den
 ett CSRF-beskyttet POST-kall til `/api/item-viewed` med fil-ID. Kallet er en
 bakgrunnsoppdatering; feil skal ikke endre navigasjonen eller vise en
 feilmelding til brukeren. Når serveren bekrefter at registreringen faktisk er
@@ -151,7 +154,7 @@ fra URL eller feilrespons.
 For et stillbilde skal klienten vente på `load`-hendelsen på hovedbildet. Hvis
 bildet allerede er lastet når koden installerer lytteren, brukes `complete` og
 gyldig bildebredde som tilsvarende bekreftelse. Først deretter starter den
-to sekunders timeren. `visibilitychange`, `pagehide` og mislykket bildelasting
+valgte timeren. `visibilitychange`, `pagehide` og mislykket bildelasting
 avbryter timeren. Det er én klientflaggsvariabel som hindrer mer enn ett POST
 kall for samme sideinnlasting.
 

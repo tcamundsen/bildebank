@@ -5,6 +5,30 @@
     headers.set("X-CSRF-Token", csrfToken);
     return fetch(input, {...init, headers});
   }
+  const imageViewDelayStorageKey = "bildebank.image-view-delay-ms";
+  const imageViewDelayOptions = new Set([500, 1000, 2000, 3000, 5000]);
+  const defaultImageViewDelayMs = 500;
+  function imageViewDelayMs() {
+    try {
+      const value = Number(window.localStorage.getItem(imageViewDelayStorageKey));
+      if (imageViewDelayOptions.has(value)) return value;
+    } catch (_) {}
+    return defaultImageViewDelayMs;
+  }
+  function initializeImageViewDelaySetting() {
+    const select = document.querySelector("[data-image-view-delay-select]");
+    if (!(select instanceof HTMLSelectElement)) return;
+    select.value = String(imageViewDelayMs());
+    select.addEventListener("change", () => {
+      const value = Number(select.value);
+      if (!imageViewDelayOptions.has(value)) {
+        select.value = String(imageViewDelayMs());
+        return;
+      }
+      try { window.localStorage.setItem(imageViewDelayStorageKey, String(value)); } catch (_) {}
+    });
+  }
+  initializeImageViewDelaySetting();
   function registerViewedItem() {
     const itemRoot = document.querySelector('[data-browser-item-id][data-view-registration-enabled="true"]');
     const fileId = Number(itemRoot?.dataset.browserItemId);
@@ -34,7 +58,7 @@
       const start = () => {
         cancel();
         if (registered || document.hidden || !image.complete || image.naturalWidth < 1) return;
-        timer = window.setTimeout(register, 2000);
+        timer = window.setTimeout(register, imageViewDelayMs());
       };
       image.addEventListener("load", start);
       image.addEventListener("error", cancel);

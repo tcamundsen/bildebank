@@ -145,6 +145,7 @@ class ServerSettingsTests(unittest.TestCase):
             [
                 "Bildesamling",
                 "Bildebank-versjon",
+                "Regn stillbilder som sett etter",
                 "Skjul bilder tagget “Ute av fokus”",
                 "Hurtigtaster 1-5",
                 "InsightFace aktivert",
@@ -160,7 +161,7 @@ class ServerSettingsTests(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            settings_labels[4:8],
+            settings_labels[5:9],
             [
                 "InsightFace aktivert",
                 "InsightFace-modell",
@@ -169,6 +170,11 @@ class ServerSettingsTests(unittest.TestCase):
             ],
         )
         self.assertIn('action="/settings/hide-out-of-focus"', body)
+        self.assertIn('data-image-view-delay-select', body)
+        self.assertIn('<option value="500">0,5 sekunder</option>', body)
+        self.assertIn("Gjelder bare denne nettleseren.", body)
+        self.assertIn("function initializeImageViewDelaySetting", SERVER_JS)
+        self.assertIn('window.localStorage.setItem(imageViewDelayStorageKey, String(value))', SERVER_JS)
         self.assertNotIn('action="/settings/manual-h3-cell"', body)
         self.assertNotIn("Aktiv manuell H3-celle", body)
         self.assertIn("Hurtigtaster 1-5", body)

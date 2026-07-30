@@ -210,4 +210,5 @@ def test_random_endpoint_and_item_page_client_markup(tmp_path: Path) -> None:
     assert 'data-view-status hidden aria-live="polite">(sett)</span>' in page
     assert "/api/item-viewed" in SERVER_JS
     assert "payload?.recorded === true" in SERVER_JS
+    assert "window.setTimeout(register, imageViewDelayMs())" in SERVER_JS
     assert "video.addEventListener(\"seeking\"" in SERVER_JS
