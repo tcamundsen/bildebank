@@ -92,7 +92,9 @@ videoer følger den videoelementets avspillings- og seek-hendelser, slik at bare
 reell avspilling uten hopping framover teller. Når grensen er nådd, sender den
 ett CSRF-beskyttet POST-kall til `/api/item-viewed` med fil-ID. Kallet er en
 bakgrunnsoppdatering; feil skal ikke endre navigasjonen eller vise en
-feilmelding til brukeren.
+feilmelding til brukeren. Når serveren bekrefter at registreringen faktisk er
+lagret, vises den diskrete, vedvarende markøren `(sett)` etter filnavnet i
+brødsmulen. Markøren vises ikke ved tyst hopp over eller feil.
 
 Endepunktet skal:
 
@@ -100,8 +102,9 @@ Endepunktet skal:
 - validere CSRF og en positiv heltalls-ID på vanlig måte
 - kontrollere i databasen at ID-en fortsatt er en aktiv `files`-rad
 - oppdatere statistikken i én kort transaksjon
-- svare med `204 No Content` både etter vellykket registrering og når
-  oppdateringen tyst hoppes over fordi samlingen er opptatt
+- svare med `200 OK` og `{"recorded": true}` etter vellykket registrering
+- svare med `204 No Content` når oppdateringen tyst hoppes over fordi
+  samlingen er opptatt eller filen ikke lenger er aktiv
 
 Read-only-server, LAN-share og slideshow skal ikke skrive statistikk. Klienten
 skal da ikke starte timeren eller sende POST-kallet. Dersom en kortvarig

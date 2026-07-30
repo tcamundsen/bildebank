@@ -64,10 +64,11 @@ def respond_item_viewed(handler: BildebankRequestHandler) -> None:
         return
 
     conn = None
+    recorded = False
     try:
         conn = db.connect(handler.server.target, timeout=0.0)
         conn.execute("BEGIN IMMEDIATE")
-        db.record_file_view(conn, file_id=file_id, viewed_at=_viewed_at_utc())
+        recorded = db.record_file_view(conn, file_id=file_id, viewed_at=_viewed_at_utc())
         conn.commit()
     except sqlite3.OperationalError as exc:
         if conn is not None:
@@ -79,6 +80,9 @@ def respond_item_viewed(handler: BildebankRequestHandler) -> None:
     finally:
         if conn is not None:
             conn.close()
+    if recorded:
+        handler.respond_json({"recorded": True})
+        return
     handler.respond_empty()
 
 

@@ -147,7 +147,8 @@ def test_item_viewed_endpoint_records_a_view_and_hides_busy_database(tmp_path: P
 
     handler = ViewEndpointHandler(target, {"file_id": file_id})
     server_endpoints_items.respond_item_viewed(handler)  # type: ignore[arg-type]
-    assert handler.status == HTTPStatus.NO_CONTENT
+    assert handler.status == HTTPStatus.OK
+    assert handler.body == {"recorded": True}
     conn = db.connect(target)
     try:
         assert conn.execute("SELECT view_count FROM file_view_stats").fetchone()["view_count"] == 1
@@ -206,5 +207,7 @@ def test_random_endpoint_and_item_page_client_markup(tmp_path: Path) -> None:
     assert 'data-view-registration-enabled="true"' in page
     assert "data-view-registration-enabled" not in read_only_page
     assert 'href="/random">Tilfeldig bilde</a>' in page
+    assert 'data-view-status hidden aria-live="polite">(sett)</span>' in page
     assert "/api/item-viewed" in SERVER_JS
+    assert "payload?.recorded === true" in SERVER_JS
     assert "video.addEventListener(\"seeking\"" in SERVER_JS

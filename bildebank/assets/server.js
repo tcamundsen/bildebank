@@ -9,6 +9,7 @@
     const itemRoot = document.querySelector('[data-browser-item-id][data-view-registration-enabled="true"]');
     const fileId = Number(itemRoot?.dataset.browserItemId);
     if (!itemRoot || !Number.isInteger(fileId) || fileId < 1) return;
+    const viewStatus = itemRoot.querySelector("[data-view-status]");
     let registered = false;
     const register = () => {
       if (registered) return;
@@ -17,6 +18,10 @@
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({file_id: fileId}),
+      }).then(async (response) => {
+        if (!response.ok) return;
+        const payload = await response.json().catch(() => null);
+        if (payload?.recorded === true && viewStatus) viewStatus.hidden = false;
       }).catch(() => {});
     };
     const image = itemRoot.querySelector(".stage img");

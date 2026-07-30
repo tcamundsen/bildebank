@@ -719,6 +719,7 @@ def source_item_breadcrumb_html(
         f'<a href="#" data-open-info data-info-item="{file_id}" '
         f'title="Vis detaljer om bildet" '
         f'aria-label="Åpne bildeinfo for {filename}">{filename}</a>'
+        ' <span data-view-status hidden aria-live="polite">(sett)</span>'
     )
     source_label, source_title = source_breadcrumb_label(
         target,
