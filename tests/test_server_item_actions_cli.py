@@ -1668,6 +1668,136 @@ class ServerItemActionsCliTests(unittest.TestCase):
         self.assertEqual(handler.body["gps_source"], "manual-h3")
         self.assertEqual(handler.body["redirect_url"], "/filter/missing%3Agps/item/2")
 
+    def test_run_server_manual_location_remove_redirects_after_leaving_filter(
+        self,
+    ) -> None:
+        import h3
+
+        h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 3)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            for day in (1, 2):
+                (source / f"IMG_202401{day:02d}.png").write_bytes(
+                    minimal_png(100 + day, 80)
+                )
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            cells = {
+                "h3_res0": h3.cell_to_parent(h3_cell, 0),
+                "h3_res3": h3_cell,
+            }
+            conn = db.connect(target)
+            try:
+                db.set_file_manual_h3_location(conn, file_id=1, h3_cells=cells)
+                db.set_file_manual_h3_location(conn, file_id=2, h3_cells=cells)
+                conn.commit()
+            finally:
+                conn.close()
+            filter_source = text_filter_browser_source("location:manual", target)
+            data = json.dumps(
+                {"file_id": 1, "source_url": filter_source.root_url}
+            ).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+
+                def respond_json(
+                    self,
+                    content: dict[str, object],
+                    *,
+                    status: HTTPStatus = HTTPStatus.OK,
+                ) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            server_endpoints_items.respond_remove_manual_location_item(handler)  # type: ignore[arg-type]
+
+        self.assertIsNone(handler.body["gps_source"])
+        self.assertEqual(
+            handler.body["redirect_url"],
+            "/filter/location%3Amanual/item/2",
+        )
+
+    def test_run_server_manual_date_redirects_after_leaving_filter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            for day in (1, 2):
+                (source / f"IMG_202401{day:02d}.png").write_bytes(
+                    minimal_png(100 + day, 80)
+                )
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            filter_source = text_filter_browser_source("year:2024", target)
+            data = json.dumps(
+                {
+                    "file_id": 1,
+                    "mode": "exact",
+                    "date": "2004-07-15",
+                    "source_url": filter_source.root_url,
+                }
+            ).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+
+                def respond_json(
+                    self,
+                    content: dict[str, object],
+                    *,
+                    status: HTTPStatus = HTTPStatus.OK,
+                ) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            server_endpoints_items.respond_manual_date_item(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.body["manual_date_from"], "2004-07-15")
+        self.assertEqual(handler.body["redirect_url"], "/filter/year%3A2024/item/2")
+
     def test_run_server_item_manual_location_remove_endpoint_clears_manual_h3(
         self,
     ) -> None:

@@ -879,21 +879,28 @@
     if (manualDateStatus) manualDateStatus.textContent = "Lagrer...";
     manualDateForm.querySelectorAll("button, input").forEach(item => item.disabled = true);
     try {
+      const itemRoot = document.querySelector("[data-browser-item-id]");
+      const requestBody = {
+        file_id: Number(manualDateFileId),
+        mode: selectedManualDateMode(),
+        date: manualDateInput("date")?.value || "",
+        uncertainty: manualDateInput("uncertainty")?.value || "",
+        date_from: manualDateInput("date_from")?.value || "",
+        date_to: manualDateInput("date_to")?.value || "",
+        note: manualDateInput("note")?.value || "",
+      };
+      if (itemRoot?.dataset.browserSourceUrl) requestBody.source_url = itemRoot.dataset.browserSourceUrl;
       const response = await csrfFetch("/api/item-manual-date", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          file_id: Number(manualDateFileId),
-          mode: selectedManualDateMode(),
-          date: manualDateInput("date")?.value || "",
-          uncertainty: manualDateInput("uncertainty")?.value || "",
-          date_from: manualDateInput("date_from")?.value || "",
-          date_to: manualDateInput("date_to")?.value || "",
-          note: manualDateInput("note")?.value || "",
-        }),
+        body: JSON.stringify(requestBody),
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke lagre dato.");
+      if (payload.redirect_url) {
+        window.location.href = payload.redirect_url;
+        return;
+      }
       window.location.reload();
     } catch (error) {
       if (manualDateStatus) manualDateStatus.textContent = error.message || "Kunne ikke lagre dato.";
@@ -907,13 +914,20 @@
     if (manualDateStatus) manualDateStatus.textContent = "Fjerner...";
     manualDateForm?.querySelectorAll("button, input").forEach(item => item.disabled = true);
     try {
+      const itemRoot = document.querySelector("[data-browser-item-id]");
+      const requestBody = {file_id: Number(manualDateFileId)};
+      if (itemRoot?.dataset.browserSourceUrl) requestBody.source_url = itemRoot.dataset.browserSourceUrl;
       const response = await csrfFetch("/api/item-manual-date-clear", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({file_id: Number(manualDateFileId)}),
+        body: JSON.stringify(requestBody),
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke fjerne dato.");
+      if (payload.redirect_url) {
+        window.location.href = payload.redirect_url;
+        return;
+      }
       window.location.reload();
     } catch (error) {
       if (manualDateStatus) manualDateStatus.textContent = error.message || "Kunne ikke fjerne dato.";
@@ -1105,13 +1119,20 @@
     if (!confirm("Fjerne manuell H3-lokasjon fra bildet?")) return;
     button.disabled = true;
     try {
+      const itemRoot = document.querySelector("[data-browser-item-id]");
+      const requestBody = {file_id: fileId};
+      if (itemRoot?.dataset.browserSourceUrl) requestBody.source_url = itemRoot.dataset.browserSourceUrl;
       const response = await csrfFetch("/api/item-manual-location-remove", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({file_id: fileId}),
+        body: JSON.stringify(requestBody),
       });
       const payload = await response.json();
       if (!payload.ok) throw new Error(payload.error || "Kunne ikke fjerne manuelt sted.");
+      if (payload.redirect_url) {
+        window.location.href = payload.redirect_url;
+        return;
+      }
       window.location.reload();
     } catch (error) {
       alert(error.message || "Kunne ikke fjerne manuelt sted.");

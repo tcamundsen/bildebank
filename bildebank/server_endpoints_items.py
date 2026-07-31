@@ -33,6 +33,22 @@ def clear_browser_navigation_cache(server: Any) -> None:
         clear_cache()
 
 
+def clear_file_navigation_cache(server: Any) -> None:
+    clear_cache = getattr(server, "clear_file_navigation_cache", None)
+    if clear_cache is not None:
+        clear_cache()
+        return
+    clear_browser_navigation_cache(server)
+
+
+def note_navigation_change(server: Any, method_name: str) -> None:
+    note_change = getattr(server, method_name, None)
+    if note_change is not None:
+        note_change()
+        return
+    clear_browser_navigation_cache(server)
+
+
 def server_face_config(server: Any) -> FaceRecognitionConfig | None:
     config = getattr(server, "config", None)
     return getattr(config, "face_recognition", None)
@@ -185,7 +201,7 @@ def respond_rotate_item(handler: BildebankRequestHandler) -> None:
     except ValueError as exc:
         handler.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
         return
-    clear_browser_navigation_cache(handler.server)
+    note_navigation_change(handler.server, "note_rotation_navigation_change")
     result: dict[str, object] = {"ok": True, "file_id": file_id, "rotation": rotation}
     if filter_source is not None:
         conn = db.connect(handler.server.target)
@@ -259,6 +275,12 @@ def respond_remove_manual_location_item(handler: BildebankRequestHandler) -> Non
     except ValueError:
         handler.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
         return
+    filter_source = filter_source_from_url(handler.server.target, payload.get("source_url"))
+    previous_filter_item, next_filter_item = filter_adjacent_items_before_change(
+        handler,
+        filter_source,
+        file_id,
+    )
     try:
         server_actions.remove_manual_h3_location_from_file(handler.server.target, file_id)
     except TargetLockError as exc:
@@ -267,7 +289,18 @@ def respond_remove_manual_location_item(handler: BildebankRequestHandler) -> Non
     except ValueError as exc:
         handler.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
         return
-    handler.respond_json({"ok": True, "file_id": file_id, "gps_source": None})
+    note_navigation_change(handler.server, "note_location_navigation_change")
+    result: dict[str, object] = {"ok": True, "file_id": file_id, "gps_source": None}
+    redirect_url = filter_redirect_after_change(
+        handler,
+        filter_source,
+        file_id,
+        previous_filter_item,
+        next_filter_item,
+    )
+    if redirect_url:
+        result["redirect_url"] = redirect_url
+    handler.respond_json(result)
 
 
 def respond_manual_location_item(handler: BildebankRequestHandler) -> None:
@@ -292,7 +325,7 @@ def respond_manual_location_item(handler: BildebankRequestHandler) -> None:
     except ValueError as exc:
         handler.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
         return
-    clear_browser_navigation_cache(handler.server)
+    note_navigation_change(handler.server, "note_location_navigation_change")
     result: dict[str, object] = {
         "ok": True,
         "file_id": file_id,
@@ -364,6 +397,12 @@ def respond_manual_date_item(handler: BildebankRequestHandler) -> None:
     except ValueError:
         handler.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
         return
+    filter_source = filter_source_from_url(handler.server.target, payload.get("source_url"))
+    previous_filter_item, next_filter_item = filter_adjacent_items_before_change(
+        handler,
+        filter_source,
+        file_id,
+    )
     try:
         date_from, date_to = server_actions.set_manual_date_on_file(
             handler.server.target,
@@ -381,15 +420,23 @@ def respond_manual_date_item(handler: BildebankRequestHandler) -> None:
     except ValueError as exc:
         handler.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
         return
-    clear_browser_navigation_cache(handler.server)
-    handler.respond_json(
-        {
-            "ok": True,
-            "file_id": file_id,
-            "manual_date_from": date_from.isoformat(),
-            "manual_date_to": date_to.isoformat(),
-        }
+    note_navigation_change(handler.server, "note_manual_date_navigation_change")
+    result: dict[str, object] = {
+        "ok": True,
+        "file_id": file_id,
+        "manual_date_from": date_from.isoformat(),
+        "manual_date_to": date_to.isoformat(),
+    }
+    redirect_url = filter_redirect_after_change(
+        handler,
+        filter_source,
+        file_id,
+        previous_filter_item,
+        next_filter_item,
     )
+    if redirect_url:
+        result["redirect_url"] = redirect_url
+    handler.respond_json(result)
 
 
 def respond_clear_manual_date_item(handler: BildebankRequestHandler) -> None:
@@ -399,6 +446,12 @@ def respond_clear_manual_date_item(handler: BildebankRequestHandler) -> None:
     except ValueError:
         handler.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
         return
+    filter_source = filter_source_from_url(handler.server.target, payload.get("source_url"))
+    previous_filter_item, next_filter_item = filter_adjacent_items_before_change(
+        handler,
+        filter_source,
+        file_id,
+    )
     try:
         server_actions.clear_manual_date_on_file(handler.server.target, file_id)
     except TargetLockError as exc:
@@ -407,8 +460,18 @@ def respond_clear_manual_date_item(handler: BildebankRequestHandler) -> None:
     except ValueError as exc:
         handler.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
         return
-    clear_browser_navigation_cache(handler.server)
-    handler.respond_json({"ok": True, "file_id": file_id})
+    note_navigation_change(handler.server, "note_manual_date_navigation_change")
+    result: dict[str, object] = {"ok": True, "file_id": file_id}
+    redirect_url = filter_redirect_after_change(
+        handler,
+        filter_source,
+        file_id,
+        previous_filter_item,
+        next_filter_item,
+    )
+    if redirect_url:
+        result["redirect_url"] = redirect_url
+    handler.respond_json(result)
 
 
 def respond_hotkey_action(handler: BildebankRequestHandler) -> None:
@@ -495,9 +558,11 @@ def respond_hotkey_action(handler: BildebankRequestHandler) -> None:
         return
     start = time.perf_counter()
     if hotkey.action == "manual_date":
-        clear_browser_navigation_cache(handler.server)
+        note_navigation_change(handler.server, "note_manual_date_navigation_change")
+    if hotkey.action == "h3":
+        note_navigation_change(handler.server, "note_location_navigation_change")
     if hotkey.action in {"rotate_left", "rotate_right"}:
-        clear_browser_navigation_cache(handler.server)
+        note_navigation_change(handler.server, "note_rotation_navigation_change")
     if hotkey.action == "tag":
         handler.server.note_tag_navigation_change(str(result.get("tag_name") or hotkey.tag_name))
     if hotkey.action == "person":
@@ -550,7 +615,7 @@ def respond_delete_item(handler: BildebankRequestHandler) -> None:
     except ValueError as exc:
         handler.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
         return
-    clear_browser_navigation_cache(handler.server)
+    clear_file_navigation_cache(handler.server)
     handler.respond_json({"ok": True, "file_id": file_id, "deleted_path": deleted_path.as_posix()})
 
 
@@ -573,5 +638,5 @@ def respond_undelete_item(handler: BildebankRequestHandler) -> None:
     except ValueError as exc:
         handler.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
         return
-    clear_browser_navigation_cache(handler.server)
+    clear_file_navigation_cache(handler.server)
     handler.respond_json({"ok": True, "file_id": file_id, "restored_path": restored_path.as_posix()})

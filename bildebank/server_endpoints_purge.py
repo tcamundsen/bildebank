@@ -16,7 +16,7 @@ from .file_purge import (
     TombstoneConfirmationIdentity,
     TombstonePreview,
 )
-from .server_endpoints_items import clear_browser_navigation_cache
+from .server_endpoints_items import clear_file_navigation_cache
 from .target_lock import TargetLockError
 
 if TYPE_CHECKING:
@@ -123,7 +123,7 @@ def respond_purge_file(handler: BildebankRequestHandler) -> None:
     except Exception:  # noqa: BLE001 - purge API must not expose local details
         _respond_operation_failed(handler)
         return
-    clear_browser_navigation_cache(handler.server)
+    clear_file_navigation_cache(handler.server)
     if result.status in {"skipped", "integrity-error"}:
         _respond_state_changed(handler, result=result)
         return
@@ -159,7 +159,7 @@ def respond_purge_deleted(handler: BildebankRequestHandler) -> None:
     except Exception:  # noqa: BLE001 - purge API must not expose local details
         _respond_operation_failed(handler)
         return
-    clear_browser_navigation_cache(handler.server)
+    clear_file_navigation_cache(handler.server)
     handler.respond_json(
         {
             "ok": True,
@@ -196,7 +196,7 @@ def respond_retry_file_purge(handler: BildebankRequestHandler) -> None:
     except Exception:  # noqa: BLE001 - purge API must not expose local details
         _respond_operation_failed(handler)
         return
-    clear_browser_navigation_cache(handler.server)
+    clear_file_navigation_cache(handler.server)
     handler.respond_json({"ok": True, "result": _result_json(result)})
 
 
@@ -223,7 +223,7 @@ def respond_abort_file_purge(handler: BildebankRequestHandler) -> None:
     except Exception:  # noqa: BLE001 - purge API must not expose local details
         _respond_operation_failed(handler)
         return
-    clear_browser_navigation_cache(handler.server)
+    clear_file_navigation_cache(handler.server)
     handler.respond_json(
         {"ok": True, "file_id": identity.file_id, "aborted": True}
     )
@@ -302,7 +302,7 @@ def respond_remove_tombstone(handler: BildebankRequestHandler) -> None:
     except Exception:  # noqa: BLE001 - tombstone API must not expose local details
         _respond_operation_failed(handler)
         return
-    clear_browser_navigation_cache(handler.server)
+    clear_file_navigation_cache(handler.server)
     handler.respond_json({"ok": True, "removed": True})
 
 

@@ -3702,6 +3702,89 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertNotIn((tag_filter_source, False), server._source_item_ids)
         self.assertIn((other_tag_source, False), server._source_item_ids)
 
+    def test_metadata_changes_only_clear_relevant_navigation_caches(self) -> None:
+        server = object.__new__(BildebankServer)
+        server.target = Path("/tmp/nonexistent-bildebank-target")
+        server.config = AppConfig()
+        server._browser_navigation_cache_version = 0
+        server._browser_navigation_db_mtime_ns = None
+        server._browser_navigation_face_db_mtime_ns = None
+        server._browser_navigation_checked_at = 0.0
+        server._browser_item_ids = {False: (0, [1, 2], {1: 0, 2: 1})}
+        server._browser_month_keys = {False: (0, ["2024-01"])}
+        server._browser_first_day_item_ids = {False: (0, {"2024-01-01": 1})}
+
+        rotated_source = text_filter_browser_source("is:rotated")
+        location_source = text_filter_browser_source("location:manual")
+        missing_gps_source = text_filter_browser_source("missing:gps")
+        unrelated_source = text_filter_browser_source("camera:Canon")
+        sources = (
+            rotated_source,
+            location_source,
+            missing_gps_source,
+            unrelated_source,
+        )
+        server._source_item_ids = {
+            (source, False): (0, [1], {1: 0}) for source in sources
+        }
+        server._source_month_keys = {
+            (source, False): (0, ["2024-01"]) for source in sources
+        }
+        server._source_item_counts = {
+            (source, False): (0, 1) for source in sources
+        }
+        server._source_first_day_item_ids = {
+            (source, False): (0, {"2024-01-01": 1}) for source in sources
+        }
+
+        with patch("bildebank.server_runtime.clear_sidecar_caches") as clear_sidecars:
+            server.note_rotation_navigation_change()
+
+            self.assertNotIn((rotated_source, False), server._source_item_ids)
+            self.assertIn((location_source, False), server._source_item_ids)
+            self.assertIn((unrelated_source, False), server._source_item_ids)
+            self.assertIn(False, server._browser_item_ids)
+
+            server.note_location_navigation_change()
+
+            self.assertNotIn((location_source, False), server._source_item_ids)
+            self.assertNotIn((missing_gps_source, False), server._source_item_ids)
+            self.assertIn((unrelated_source, False), server._source_item_ids)
+            self.assertIn(False, server._browser_item_ids)
+            clear_sidecars.assert_not_called()
+
+    def test_manual_date_and_file_changes_use_different_cache_scopes(self) -> None:
+        server = object.__new__(BildebankServer)
+        server.target = Path("/tmp/nonexistent-bildebank-target")
+        server.config = AppConfig()
+        server._browser_navigation_cache_version = 0
+        server._browser_navigation_db_mtime_ns = None
+        server._browser_navigation_face_db_mtime_ns = None
+        server._browser_navigation_checked_at = 0.0
+        server._browser_item_ids = {False: (0, [1], {1: 0})}
+        server._browser_month_keys = {False: (0, ["2024-01"])}
+        server._source_item_ids = {
+            (text_filter_browser_source("camera:Canon"), False): (0, [1], {1: 0})
+        }
+        server._source_month_keys = {}
+        server._source_item_counts = {}
+        server._browser_first_day_item_ids = {}
+        server._source_first_day_item_ids = {}
+
+        with patch("bildebank.server_runtime.clear_sidecar_caches") as clear_sidecars:
+            server.note_manual_date_navigation_change()
+
+            self.assertEqual(server._browser_item_ids, {})
+            self.assertEqual(server._browser_month_keys, {})
+            self.assertEqual(server._source_item_ids, {})
+            self.assertEqual(server._browser_navigation_cache_version, 1)
+            clear_sidecars.assert_not_called()
+
+            server.clear_file_navigation_cache()
+
+            self.assertEqual(server._browser_navigation_cache_version, 2)
+            clear_sidecars.assert_called_once_with()
+
     def test_run_server_out_of_focus_tag_change_clears_global_navigation_cache(
         self,
     ) -> None:

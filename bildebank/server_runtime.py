@@ -286,6 +286,36 @@ class BildebankServer(ThreadingHTTPServer):
         self._clear_source_navigation_cache_for_tag(tag_key)
         self._refresh_browser_navigation_mtimes()
 
+    def note_rotation_navigation_change(self) -> None:
+        self._clear_source_navigation_caches(
+            lambda source: bool(
+                source.text_filter is not None
+                and getattr(source.text_filter, "rotated", False)
+            )
+        )
+        self._refresh_browser_navigation_mtimes()
+
+    def note_location_navigation_change(self) -> None:
+        def source_matches(source: BrowserSource) -> bool:
+            if source.geo_place_slug is not None:
+                return True
+            text_filter = source.text_filter
+            if text_filter is None:
+                return False
+            return bool(
+                getattr(text_filter, "location", None) is not None
+                or getattr(text_filter, "location_place_cells", ())
+                or getattr(text_filter, "h3res_operator", None) is not None
+                or "gps" in getattr(text_filter, "missing", ())
+            )
+
+        self._clear_source_navigation_caches(source_matches)
+        self._refresh_browser_navigation_mtimes()
+
+    def note_manual_date_navigation_change(self) -> None:
+        # A manual date can change the order and month of the item in every source.
+        self.clear_browser_navigation_cache()
+
     def _clear_source_navigation_cache_for_tag(self, tag_key: str) -> None:
         def source_matches(source: BrowserSource) -> bool:
             if source.tag_name is not None and db.tag_name_key(source.tag_name) == tag_key:
@@ -293,6 +323,12 @@ class BildebankServer(ThreadingHTTPServer):
             text_filter = source.text_filter
             return bool(text_filter is not None and db.tag_name_key(getattr(text_filter, "tag", "") or "") == tag_key)
 
+        self._clear_source_navigation_caches(source_matches)
+
+    def _clear_source_navigation_caches(
+        self,
+        source_matches: Callable[[BrowserSource], bool],
+    ) -> None:
         def prune(cache: dict[tuple[BrowserSource, bool], Any]) -> None:
             for cache_key in list(cache):
                 source, _hide_out_of_focus = cache_key
@@ -369,9 +405,12 @@ class BildebankServer(ThreadingHTTPServer):
         getattr(self, "_source_item_counts", {}).clear()
         getattr(self, "_browser_first_day_item_ids", {}).clear()
         getattr(self, "_source_first_day_item_ids", {}).clear()
-        clear_sidecar_caches()
         self._browser_navigation_cache_version = getattr(self, "_browser_navigation_cache_version", 0) + 1
         self._refresh_browser_navigation_mtimes()
+
+    def clear_file_navigation_cache(self) -> None:
+        self.clear_browser_navigation_cache()
+        clear_sidecar_caches()
 
 
 def run_server(
