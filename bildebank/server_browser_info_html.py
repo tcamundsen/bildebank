@@ -64,6 +64,9 @@ def image_info_rows(
         info_row_html("Oppløsning", f"{dimensions.width} x {dimensions.height}" if dimensions else "-"),
         info_row_html("Kamera", camera_text_from_item(item)),
     ]
+    metadata_time = metadata_time_text(item)
+    if metadata_time:
+        rows.insert(2, info_row_html("Klokkeslett", metadata_time))
     if manual_date_text(item):
         rows.append(info_row_html("Opprinnelig dato", f"{item['taken_date'] or '-'} ({date_source_text(str(item['date_source'] or ''))})"))
         if item["manual_date_note"]:
@@ -210,6 +213,17 @@ def image_date_text(item: Any) -> str:
     taken_date = str(item["taken_date"] or "-")
     source = str(item["date_source"] or "")
     return f"{taken_date} ({date_source_text(source)})"
+
+
+def metadata_time_text(item: Any) -> str:
+    metadata_datetime = optional_item_value(item, "metadata_datetime")
+    if not metadata_datetime:
+        return ""
+    try:
+        parsed = dt.datetime.fromisoformat(str(metadata_datetime))
+    except ValueError:
+        return ""
+    return f"{parsed.strftime('%H:%M:%S')} (fra metadata)"
 
 
 def manual_date_text(item: Any) -> str:

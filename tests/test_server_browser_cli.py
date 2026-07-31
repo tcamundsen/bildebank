@@ -1202,6 +1202,7 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn("IMG_20240102.png", info_body)
         self.assertIn("<dt>Dato</dt>", info_body)
         self.assertIn("2024-01-02 (fra filnavn)", info_body)
+        self.assertNotIn("<dt>Klokkeslett</dt>", info_body)
         self.assertIn("Filstørrelse", info_body)
         self.assertIn("Oppløsning", info_body)
         self.assertIn("100 x 80", info_body)
@@ -1221,6 +1222,39 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn(f"H3-7: {cells['h3_res7']}", info_body)
         self.assertIn(source.name, info_body)
         self.assertIn("closeInfoOverlay", SERVER_JS)
+
+    def test_run_server_item_info_overlay_displays_metadata_time(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(
+                jpeg_with_exif_datetime("2024:01:02 12:34:56")
+            )
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            info_body = image_info_content_html(target, item)
+
+        self.assertIn("<dt>Dato</dt>", info_body)
+        self.assertIn("2024-01-02 (fra metadata)", info_body)
+        self.assertIn("<dt>Klokkeslett</dt>", info_body)
+        self.assertIn("12:34:56 (fra metadata)", info_body)
 
     def test_run_server_item_info_api_returns_lazy_panel_content(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
