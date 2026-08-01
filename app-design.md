@@ -190,7 +190,14 @@ manuell avklaring før en annen modell installeres under samme navn.
 
 De to OpenCLIP-modellene som Bildebank tilbyr automatisk, skal på samme måte ha
 fast repository, eksakt repository-revisjon, filnavn, størrelse og SHA-256.
-Nedlastingen skal publiseres fra staging etter kontroll. En tidligere
+Bare modellen som er valgt i config skal lastes ned automatisk; begge modellene
+kan lastes ned med et eksplisitt kommandolinjevalg. En avbrutt nedlasting kan
+beholdes i en modellspesifikk, kontrollert delmappe og fortsettes med HTTP Range.
+Deldata skal kontrolleres som en vanlig fil uten lenker, være begrenset av den
+fastlåste størrelsen og aldri brukes som en aktiv modell. En ferdig delnedlasting
+skal fortsatt valideres med størrelse og SHA-256 og publiseres fra unik staging.
+Ugyldige ferdige deldata kan fjernes fordi de er regenererbare og aldri har vært
+publisert som modell. En tidligere
 OpenCLIP/Hugging Face-cache kan brukes uten kopiering når den svarer til den
 samme fastlåste filen og ligger inne i den konfigurerte modellroten.
 

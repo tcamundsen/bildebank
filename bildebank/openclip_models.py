@@ -3,12 +3,13 @@ from __future__ import annotations
 import hashlib
 import shutil
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .config import OpenClipConfig
 from .downloaded_artifacts import (
-    download_https_file,
+    download_https_file_resumable,
     ensure_directory_without_links,
     reject_directory_link,
     validate_regular_file_without_links,
@@ -16,6 +17,7 @@ from .downloaded_artifacts import (
 
 
 OPENCLIP_MANAGED_DIRNAME = "bildebank-models"
+OPENCLIP_PARTIAL_DIRNAME = ".downloads"
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,19 @@ def managed_openclip_model_path(
     return managed_openclip_model_dir(config, spec) / spec.filename
 
 
+def partial_openclip_model_path(
+    config: OpenClipConfig,
+    spec: OpenClipModelSpec,
+) -> Path:
+    return (
+        config.model_root
+        / OPENCLIP_MANAGED_DIRNAME
+        / OPENCLIP_PARTIAL_DIRNAME
+        / spec.directory_name
+        / f"{spec.filename}.part"
+    )
+
+
 def legacy_openclip_model_path(
     config: OpenClipConfig,
     spec: OpenClipModelSpec,
@@ -110,6 +125,26 @@ def openclip_model_file_available(config: OpenClipConfig) -> bool:
     return True
 
 
+def openclip_model_partial_size(config: OpenClipConfig) -> int:
+    spec = openclip_model_spec(config)
+    if spec is None:
+        return 0
+    partial = partial_openclip_model_path(config, spec)
+    try:
+        partial_stat = validate_regular_file_without_links(
+            partial,
+            label="delvis OpenCLIP-modell",
+        )
+    except FileNotFoundError:
+        return 0
+    if partial_stat.st_size > spec.size_bytes:
+        raise RuntimeError(
+            "Den delvise OpenCLIP-modellen er større enn forventet: "
+            f"{partial}"
+        )
+    return partial_stat.st_size
+
+
 def require_openclip_model_file(config: OpenClipConfig) -> Path:
     try:
         return _resolve_openclip_model_file(config, check_hash=True)
@@ -121,11 +156,16 @@ def require_openclip_model_file(config: OpenClipConfig) -> Path:
             ) from exc
         raise ValueError(
             "Fant ikke den valgte OpenCLIP-modellen lokalt. "
-            "Kjør install-openclip.ps1 fra programmappen."
+            "Last ned valgt modell fra Oppsett-fanen eller kjør "
+            "bildebank download-openclip-model."
         ) from exc
 
 
-def install_openclip_model(config: OpenClipConfig) -> OpenClipInstallResult:
+def install_openclip_model(
+    config: OpenClipConfig,
+    *,
+    progress: Callable[[int, int], None] | None = None,
+) -> OpenClipInstallResult:
     spec = openclip_model_spec(config)
     if spec is None:
         supported = ", ".join(
@@ -194,28 +234,49 @@ def install_openclip_model(config: OpenClipConfig) -> OpenClipInstallResult:
     except RuntimeError as exc:
         raise ValueError(str(exc)) from exc
 
+    partial = partial_openclip_model_path(config, spec)
+    try:
+        ensure_directory_without_links(
+            partial.parent,
+            label="mappe for delvis OpenCLIP-modell",
+        )
+        try:
+            partial_stat = validate_regular_file_without_links(
+                partial,
+                label="delvis OpenCLIP-modell",
+            )
+        except FileNotFoundError:
+            pass
+        else:
+            if partial_stat.st_size > spec.size_bytes:
+                partial.unlink()
+        download_https_file_resumable(
+            spec.download_url,
+            partial,
+            user_agent="Bildebank OpenCLIP model installer",
+            max_bytes=spec.size_bytes,
+            expected_size=spec.size_bytes,
+            progress=progress,
+        )
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+
+    actual_hash = _sha256_file(partial)
+    if actual_hash != spec.sha256:
+        partial.unlink()
+        raise ValueError(
+            "OpenCLIP-modellen har feil SHA-256 og den ugyldige delnedlastingen "
+            f"ble fjernet: forventet {spec.sha256}, fikk {actual_hash}."
+        )
+
     staging = models_root / (
         f".{spec.directory_name}.installing-{uuid.uuid4().hex}"
     )
+    staged_file = staging / spec.filename
+    published = False
     try:
         staging.mkdir()
-        staged_file = staging / spec.filename
-        try:
-            download_https_file(
-                spec.download_url,
-                staged_file,
-                user_agent="Bildebank OpenCLIP model installer",
-                max_bytes=spec.size_bytes,
-                expected_size=spec.size_bytes,
-            )
-        except RuntimeError as exc:
-            raise ValueError(str(exc)) from exc
-        actual_hash = _sha256_file(staged_file)
-        if actual_hash != spec.sha256:
-            raise ValueError(
-                "OpenCLIP-modellen har feil SHA-256: "
-                f"forventet {spec.sha256}, fikk {actual_hash}."
-            )
+        partial.replace(staged_file)
 
         _validate_model_candidate(
             staged_file,
@@ -227,7 +288,14 @@ def install_openclip_model(config: OpenClipConfig) -> OpenClipInstallResult:
         if destination.exists():
             destination.rmdir()
         staging.rename(destination)
+        published = True
     finally:
+        if not published and staged_file.exists() and not partial.exists():
+            ensure_directory_without_links(
+                partial.parent,
+                label="mappe for delvis OpenCLIP-modell",
+            )
+            staged_file.replace(partial)
         if staging.exists():
             shutil.rmtree(staging)
 

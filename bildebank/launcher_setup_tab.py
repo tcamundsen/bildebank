@@ -7,6 +7,7 @@ from typing import Any, Protocol
 
 from .launcher_commands import (
     download_face_model_command,
+    download_openclip_model_command,
     ffmpeg_install_command,
     insightface_install_command,
     openclip_install_command,
@@ -25,8 +26,10 @@ from .launcher_status import (
     insightface_model_status,
     openclip_dependency_status,
     openclip_install_supported,
+    openclip_model_download_button_state,
     openclip_model_status,
 )
+from .formatting import format_bytes
 
 
 class ButtonFactory(Protocol):
@@ -87,6 +90,7 @@ class SetupTab:
         self.frame = ttk.Frame(notebook, padding=padding)
         self.install_insightface_button: Any | None = None
         self.install_openclip_button: Any | None = None
+        self.download_openclip_model_button: Any | None = None
         self.download_face_model_button: Any | None = None
         self.install_ffmpeg_button: Any | None = None
 
@@ -159,10 +163,17 @@ class SetupTab:
             padx=padding,
         )
         ttk.Label(openclip_frame, textvariable=self.openclip_model_status_value).grid(
-            row=0,
-            column=2,
+            row=1,
+            column=0,
             sticky="w",
+            padx=(0, padding),
         )
+        self.download_openclip_model_button = button(
+            openclip_frame,
+            text="Last ned valgt modell",
+            command=self.download_openclip_model,
+        )
+        self.download_openclip_model_button.grid(row=1, column=1, sticky="w", pady=pady)
 
     def log_unsupported_installers(self) -> None:
         if not insightface_install_supported():
@@ -191,7 +202,15 @@ class SetupTab:
             f"Valgt modell: {self.face_model_status.model_name} ({self.face_model_status.status})"
         )
         self.openclip_status_value.set(f"open_clip: {self.openclip_status}")
-        self.openclip_model_status_value.set(f"AI-modell: {self.openclip_model_status.status}")
+        model_status = self.openclip_model_status.status
+        if self.openclip_model_status.partial_bytes:
+            model_status += (
+                f", {format_bytes(self.openclip_model_status.partial_bytes)} av "
+                f"{format_bytes(self.openclip_model_status.size_bytes)} lastet ned"
+            )
+        self.openclip_model_status_value.set(
+            f"Valgt modell: {self.openclip_model_status.model_name} ({model_status})"
+        )
         self.ffmpeg_status_value.set(f"FFmpeg: {self.ffmpeg_status.status}")
 
     def _log_status_detail(self, label: str, status: str, detail: str) -> None:
@@ -300,6 +319,15 @@ class SetupTab:
                     insightface_status=self.insightface_status,
                 )
             )
+        if self.download_openclip_model_button is not None:
+            self.download_openclip_model_button.configure(
+                state=openclip_model_download_button_state(
+                    enabled=setup_enabled,
+                    migration_required=migration_required,
+                    migration_status_error=migration_status_error,
+                    openclip_status=self.openclip_status,
+                )
+            )
         if self.install_ffmpeg_button is not None:
             self.install_ffmpeg_button.configure(
                 state=dependency_setup_button_state(
@@ -358,12 +386,9 @@ class SetupTab:
         if not openclip_install_supported():
             self._log("Kan ikke installere OpenCLIP her: install-openclip.ps1 er Windows-installasjonsflyt.")
             return
-        if (
-            self.openclip_status == "Installert"
-            or self.openclip_model_status.status == "Tilgjengelig"
-        ) and not self._confirm_rerun(
+        if self.openclip_status == "Installert" and not self._confirm_rerun(
             "Installer OpenCLIP på nytt?",
-            "OpenCLIP ser allerede ut til å være installert eller ha lokal AI-modell. Vil du kjøre installasjonen på nytt?",
+            "OpenCLIP-avhengighetene er allerede installert. Vil du kjøre installasjonen på nytt?",
         ):
             self._log("OpenCLIP-installasjon avbrutt.")
             return
@@ -377,6 +402,7 @@ class SetupTab:
             success_message="OpenCLIP-installasjon fullført.",
             failure_message="OpenCLIP-installasjon feilet.",
             on_success=lambda: self._openclip_install_finished(on_success),
+            cancellable=True,
         )
 
     def _install_finished(self, on_success: Callable[[], None]) -> None:
@@ -429,4 +455,31 @@ class SetupTab:
             success_message="Ansiktsmodell lastet ned.",
             failure_message="Nedlasting av ansiktsmodell feilet.",
             on_success=on_success,
+        )
+
+    def download_openclip_model(self) -> None:
+        if self.openclip_status != "Installert":
+            self._log("Kan ikke laste ned OpenCLIP-modellen før avhengighetene er installert.")
+            return
+        model_label = (
+            f"{self.openclip_model_status.model_name} "
+            f"({self.openclip_model_status.pretrained})"
+        )
+        if self.openclip_model_status.status == "Tilgjengelig" and not self._confirm_rerun(
+            "Last ned OpenCLIP-modell på nytt?",
+            f"OpenCLIP-modellen {model_label} er allerede tilgjengelig. Vil du kontrollere den på nytt?",
+        ):
+            self._log("Nedlasting av OpenCLIP-modell avbrutt.")
+            return
+        self._log(f"Laster ned OpenCLIP-modell {model_label} ...")
+        self.run_openclip_model_download(on_success=self.start_status_refresh)
+
+    def run_openclip_model_download(self, *, on_success: Callable[[], None]) -> None:
+        self._run_waiting_command(
+            download_openclip_model_command(),
+            running_message="Laster ned valgt OpenCLIP-modell ...",
+            success_message="OpenCLIP-modell lastet ned.",
+            failure_message="Nedlasting av OpenCLIP-modell feilet.",
+            on_success=on_success,
+            cancellable=True,
         )

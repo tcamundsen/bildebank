@@ -44,6 +44,13 @@ Statuskontrollen for InsightFace kjøres i en kortlivet Python-underprosess.
 InsightFace importerer OpenCV, og en import direkte i launcherprosessen ville
 holde `cv2.pyd` låst og blokkere reinstallasjon fra Oppsett-fanen på Windows.
 
+OpenCLIP-avhengigheter og modellnedlasting er separate handlinger i Oppsett-
+fanen. Automatisk klargjøring av bildesøk kjører bare trinnene som mangler.
+Modellkommandoen er avbrytbar, viser en sammenfoldet fremdriftslinje og beholder
+kontrollerte deldata slik at neste forsøk kan fortsette. Launcherens egne
+underprosesser bruker UTF-8 for å unngå feilviste norske tegn fra Python og
+PowerShell.
+
 Snapshotfanen bruker den eksisterende snapshotkjernen direkte. Liste- og
 browseoperasjoner leser validerte, publiserte manifester under repositorylås.
 Enkeltfiler planlegges og eksporteres med de samme funksjonene som

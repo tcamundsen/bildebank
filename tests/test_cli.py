@@ -144,8 +144,10 @@ pretrained = "laion2b_s34b_b79k"
     def test_download_openclip_model_can_install_all_pinned_models(self) -> None:
         calls = []
 
-        def install(config):
+        def install(config, *, progress):
             calls.append(config)
+            progress(0, 10)
+            progress(10, 10)
             return SimpleNamespace(
                 path=config.model_root / f"{config.model_name}.safetensors",
                 spec=SimpleNamespace(
@@ -168,6 +170,30 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual(len(calls), 2)
         self.assertIn("ViT-B-32 (laion2b_s34b_b79k)", stdout)
         self.assertIn("ViT-L-14 (laion2b_s32b_b82k)", stdout)
+        self.assertIn("OpenCLIP-modell:", stdout)
+
+    def test_download_openclip_model_installs_only_selected_model_by_default(self) -> None:
+        calls = []
+
+        def install(config, *, progress):
+            calls.append(config)
+            progress(10, 10)
+            return SimpleNamespace(
+                path=config.model_root / f"{config.model_name}.safetensors",
+                spec=SimpleNamespace(
+                    model_name=config.model_name,
+                    pretrained=config.pretrained,
+                ),
+                installed=True,
+                legacy_cache=False,
+            )
+
+        with patch("bildebank.cli.install_openclip_model", side_effect=install):
+            code, _stdout, stderr = capture_cli(["download-openclip-model"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0].model_name, "ViT-B-32")
 
     def test_debug_shows_traceback_for_unhandled_errors(self) -> None:
         with patch("bildebank.cli.run", side_effect=RuntimeError("boom")):

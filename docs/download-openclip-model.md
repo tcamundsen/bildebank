@@ -14,7 +14,7 @@ options:
 
 Kommandoen laster ned OpenCLIP-modellen som er valgt under `[image_search]` i
 `bildebank-config.toml`. Vanligvis trenger du ikke kjøre den selv:
-`install-openclip.ps1` installerer både OpenCLIP og de støttede modellene.
+Oppsett-fanen har en egen knapp som laster ned valgt modell.
 
 Bildebank kan automatisk laste ned disse kombinasjonene:
 
@@ -23,6 +23,9 @@ Bildebank kan automatisk laste ned disse kombinasjonene:
 
 Modellfilene har fast nedlastingsadresse, repository-revisjon, størrelse og
 SHA-256. En modell publiseres ikke i modellmappen før hele filen er kontrollert.
+Fremdrift vises i MB og prosent. Hvis nedlastingen avbrytes eller forbindelsen
+forsvinner, beholdes den nedlastede delen. Neste kjøring forsøker å fortsette
+fra samme sted.
 
 Eksempel:
 

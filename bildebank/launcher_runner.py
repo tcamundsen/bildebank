@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import locale
 import os
 import signal
 import subprocess
@@ -25,11 +24,19 @@ PROGRESS_LOG_LABELS = (
     "Face-scan",
     "Face-suggest",
     "Refresh-metadata",
+    "OpenCLIP-modell",
 )
 
 
 def subprocess_output_encoding() -> str:
-    return locale.getpreferredencoding(False) or "utf-8"
+    return "utf-8"
+
+
+def subprocess_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    environment["PYTHONIOENCODING"] = "utf-8"
+    environment["PYTHONUTF8"] = "1"
+    return environment
 
 
 def interruptible_command_creationflags() -> int:
@@ -122,6 +129,7 @@ class CommandRunner:
                     encoding=subprocess_output_encoding(),
                     errors="replace",
                     bufsize=1,
+                    env=subprocess_environment(),
                     creationflags=interruptible_command_creationflags() if cancellable else 0,
                 )
             except OSError as exc:

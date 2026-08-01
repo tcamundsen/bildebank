@@ -45,6 +45,7 @@ def bare_setup_tab() -> SetupTab:
     setup.install_insightface_button = None
     setup.install_openclip_button = None
     setup.download_face_model_button = None
+    setup.download_openclip_model_button = None
     setup.install_ffmpeg_button = None
     setup._log = lambda _message: None
     setup._on_status_changed = lambda: None
@@ -60,6 +61,7 @@ def test_setup_tab_builds_insightface_and_openclip_sections() -> None:
     assert 'ttk.Separator(self.frame, orient="horizontal")' in source
     assert "openclip_frame = ttk.Frame(self.frame)" in source
     assert 'text="Installer OpenCLIP"' in source
+    assert 'text="Last ned valgt modell"' in source
 
 
 def test_setup_status_refresh_starts_background_worker() -> None:
@@ -91,7 +93,7 @@ def test_status_finished_updates_values_and_logs_error_details() -> None:
 
     assert not setup.status_refreshing
     assert setup.insightface_status_value.value == "InsightFace: Feil"
-    assert setup.openclip_model_status_value.value == "AI-modell: Feil"
+    assert setup.openclip_model_status_value.value == "Valgt modell: ViT-B-32 (Feil)"
     assert setup.ffmpeg_status_value.value == "FFmpeg: Feil"
     assert logged == [
         "InsightFace-status feilet: runtime-feil",
@@ -180,6 +182,7 @@ def test_setup_buttons_are_disabled_while_status_refreshes() -> None:
     setup.install_insightface_button = FakeButton()
     setup.install_openclip_button = FakeButton()
     setup.download_face_model_button = FakeButton()
+    setup.download_openclip_model_button = FakeButton()
     setup.install_ffmpeg_button = FakeButton()
 
     with (
@@ -196,4 +199,17 @@ def test_setup_buttons_are_disabled_while_status_refreshes() -> None:
     assert setup.install_insightface_button.options["state"] == "disabled"
     assert setup.install_openclip_button.options["state"] == "disabled"
     assert setup.download_face_model_button.options["state"] == "disabled"
+    assert setup.download_openclip_model_button.options["state"] == "disabled"
     assert setup.install_ffmpeg_button.options["state"] == "disabled"
+
+
+def test_openclip_model_download_is_cancellable_and_uses_model_only_command() -> None:
+    setup = bare_setup_tab()
+    calls: list[tuple[list[str], dict[str, object]]] = []
+    setup._run_waiting_command = lambda command, **options: calls.append((command, options))
+
+    setup.run_openclip_model_download(on_success=lambda: None)
+
+    command, options = calls[0]
+    assert command[-1] == "download-openclip-model"
+    assert options["cancellable"] is True

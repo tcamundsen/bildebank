@@ -8,12 +8,20 @@ from bildebank.launcher_runner import (
     interrupt_process,
     interruptible_command_creationflags,
     progress_log_key,
+    subprocess_environment,
     subprocess_output_encoding,
 )
 
-def test_subprocess_output_encoding_uses_locale() -> None:
+def test_subprocess_output_encoding_is_utf8() -> None:
     with patch("locale.getpreferredencoding", return_value="cp1252"):
-        assert subprocess_output_encoding() == "cp1252"
+        assert subprocess_output_encoding() == "utf-8"
+
+
+def test_subprocess_environment_requests_utf8_from_python() -> None:
+    environment = subprocess_environment()
+
+    assert environment["PYTHONIOENCODING"] == "utf-8"
+    assert environment["PYTHONUTF8"] == "1"
 
 
 def test_interruptible_command_creationflags_are_zero_outside_windows() -> None:
@@ -69,6 +77,7 @@ def test_progress_log_key_recognizes_progress_updates_only() -> None:
     assert progress_log_key("Thumbnails: 84 filer skal kontrolleres.") is None
     assert progress_log_key("Thumbnails: ferdig kontrollert 84/84 filer.") is None
     assert progress_log_key("Import fullført.") is None
+    assert progress_log_key("OpenCLIP-modell: ViT-B-32 = 12.0 MB/577.1 MB (2 %)") == "OpenCLIP-modell"
 
 def test_command_runner_owns_cancellation_state() -> None:
     runner = CommandRunner(post_to_ui=lambda callback: True, on_output=lambda _message: None)

@@ -27,6 +27,7 @@ from bildebank.launcher_status import (
     load_launcher_config,
     migration_plan_needs_action,
     openclip_dependency_status,
+    openclip_model_download_button_state,
     openclip_model_status,
     registered_persons,
     registered_sources,
@@ -45,6 +46,23 @@ def test_ffmpeg_dependency_status_reports_ready_and_missing(tmp_path: Path) -> N
 
     with patch("bildebank.launcher_status.resolve_ffmpeg_tools", side_effect=FileNotFoundError("mangler")):
         assert ffmpeg_dependency_status() == FFmpegDependencyStatus("Mangler", "mangler")
+
+
+def test_openclip_model_download_button_requires_installed_dependency() -> None:
+    common = {
+        "enabled": True,
+        "migration_required": False,
+        "migration_status_error": None,
+    }
+
+    assert openclip_model_download_button_state(
+        **common,
+        openclip_status="Installert",
+    ) == "normal"
+    assert openclip_model_download_button_state(
+        **common,
+        openclip_status="Mangler",
+    ) == "disabled"
 
 def test_default_collection_path_uses_home_kode_bilde_samling() -> None:
     with patch("pathlib.Path.home", return_value=Path(r"C:\Users\tom")):
@@ -458,11 +476,24 @@ pretrained = "laion2b_s34b_b79k"
         encoding="utf-8",
     )
 
+    partial = (
+        tmp_path
+        / ".bildebank-openclip"
+        / "bildebank-models"
+        / ".downloads"
+        / "ViT-B-32--laion2b_s34b_b79k"
+        / "open_clip_model.safetensors.part"
+    )
+    partial.parent.mkdir(parents=True)
+    partial.write_bytes(b"partial")
+
     status = openclip_model_status(tmp_path)
 
     assert status.model_name == "ViT-B-32"
     assert status.pretrained == "laion2b_s34b_b79k"
     assert status.status == "Mangler"
+    assert status.partial_bytes == len(b"partial")
+    assert status.size_bytes == 605_143_316
 
 
 def test_insightface_model_status_reports_downloaded_selected_model(tmp_path: Path) -> None:

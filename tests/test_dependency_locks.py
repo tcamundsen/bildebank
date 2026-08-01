@@ -221,6 +221,8 @@ def test_windows_install_scripts_enforce_the_matching_hash_lock() -> None:
     assert '".[face]"' not in (root / "install-insightface.ps1").read_text(encoding="utf-8")
     openclip_script = (root / "install-openclip.ps1").read_text(encoding="utf-8")
     assert '".[openclip]"' not in openclip_script
-    assert '"download-openclip-model"' in openclip_script
-    assert "require_openclip_model_file" in openclip_script
+    assert '"download-openclip-model"' not in openclip_script
+    assert '"--all-supported"' not in openclip_script
+    assert "import open_clip" in openclip_script
+    assert "import torch" in openclip_script
     assert "cache_dir=" not in openclip_script

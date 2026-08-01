@@ -65,11 +65,11 @@ IMAGE_SCAN_TOOLTIP = (
     "Kommandoen må scanne nye bilder for at det kan søkes i dem."
 )
 IMAGE_SCAN_OPENCLIP_MISSING_TOOLTIP = (
-    "Trykk knappen 'Installer OpenCLIP' på Oppsett-fanen for å slå på bildesøk."
+    "Installer OpenCLIP og last ned valgt modell på Oppsett-fanen for å slå på bildesøk."
 )
 IMAGE_SCAN_SETUP_DOWNLOAD_MESSAGE = (
     "Bildesøk krever OpenCLIP og en lokal AI-modell. "
-    "Dette kan laste ned flere hundre MB.\n\n"
+    "Dette kan være en stor nedlasting.\n\n"
     "Vil du installere det som mangler, slå på bildesøk og klargjøre bildene nå?"
 )
 IMAGE_SCAN_ENABLE_MESSAGE = (
@@ -107,6 +107,8 @@ class ToolsSetup(Protocol):
     def run_face_model_download(self, *, on_success: Callable[[], None]) -> None: ...
 
     def run_openclip_install(self, *, on_success: Callable[[], None]) -> None: ...
+
+    def run_openclip_model_download(self, *, on_success: Callable[[], None]) -> None: ...
 
 
 class ToolsTab:
@@ -509,7 +511,7 @@ class ToolsTab:
             self._start_image_scan_command()
             return
 
-        if (openclip_missing or model_missing) and not openclip_install_supported():
+        if openclip_missing and not openclip_install_supported():
             messagebox.showerror(
                 "Bildesøk mangler",
                 "Bildesøk kan ikke klargjøres automatisk her. "
@@ -520,13 +522,21 @@ class ToolsTab:
             return
 
         question = IMAGE_SCAN_SETUP_DOWNLOAD_MESSAGE if openclip_missing or model_missing else IMAGE_SCAN_ENABLE_MESSAGE
+        if model_missing and self.setup.openclip_model_status.size_bytes:
+            question = question.replace(
+                "Dette kan være en stor nedlasting.",
+                "Valgt AI-modell er "
+                f"{format_bytes(self.setup.openclip_model_status.size_bytes)}.",
+            )
         if not messagebox.askyesno("Klargjør bildesøk?", question, parent=self.root):
             self._log("Bildesøk-scan avbrutt.")
             return
 
         steps: list[Callable[[Callable[[], None]], None]] = []
-        if openclip_missing or model_missing:
+        if openclip_missing:
             steps.append(self._run_image_scan_openclip_install_step)
+        if model_missing:
+            steps.append(self._run_image_scan_openclip_model_download_step)
         if image_search_disabled:
             steps.append(self._run_image_scan_enable_step)
         self._run_image_scan_setup_steps(steps)
@@ -560,6 +570,16 @@ class ToolsTab:
     def _run_image_scan_openclip_install_step(self, on_success: Callable[[], None]) -> None:
         self._log("Installerer OpenCLIP før bildesøk-scan ...")
         self.setup.run_openclip_install(on_success=on_success)
+
+    def _run_image_scan_openclip_model_download_step(
+        self,
+        on_success: Callable[[], None],
+    ) -> None:
+        self._log(
+            "Laster ned OpenCLIP-modell "
+            f"{self.setup.openclip_model_status.model_name} før bildesøk-scan ..."
+        )
+        self.setup.run_openclip_model_download(on_success=on_success)
 
     def _run_image_scan_enable_step(self, on_success: Callable[[], None]) -> None:
         try:

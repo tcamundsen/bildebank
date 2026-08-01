@@ -52,7 +52,11 @@ from .media import explain_date, inspect_metadata
 from .media_cache import MediaMetadataCache, cached_image_dimensions
 from .missing_file_repair import repair_missing_file
 from .openclip import openclip_db_path
-from .openclip_models import install_openclip_model, supported_openclip_configs
+from .openclip_models import (
+    install_openclip_model,
+    openclip_model_spec,
+    supported_openclip_configs,
+)
 from .platform_guard import validate_collection_platform
 from .pending_deletes import (
     cleanup_pending_deletes,
@@ -815,7 +819,7 @@ def build_parser() -> argparse.ArgumentParser:
         subparsers,
         "download-openclip-model",
         usage="bildebank download-openclip-model [valg]",
-        help="Last ned fastlåste OpenCLIP-modeller",
+        help="Last ned valgt OpenCLIP-modell",
         description=(
             "Last ned OpenCLIP-modellen som er valgt i bildebank-config.toml."
         ),
@@ -2365,7 +2369,28 @@ def run_download_openclip_model(
         else (config,)
     )
     for model_config in configs:
-        result = install_openclip_model(model_config)
+        spec = openclip_model_spec(model_config)
+        label = f"{model_config.model_name} ({model_config.pretrained})"
+        if spec is not None:
+            print(
+                f"Klargjør OpenCLIP-modell {label}, størrelse {format_bytes(spec.size_bytes)}.",
+                flush=True,
+            )
+        last_percent = -1
+
+        def report_progress(downloaded: int, total: int) -> None:
+            nonlocal last_percent
+            percent = 100 if total == 0 else min(100, downloaded * 100 // total)
+            if percent == last_percent and downloaded != total:
+                return
+            last_percent = percent
+            print(
+                f"OpenCLIP-modell: {label} = "
+                f"{format_bytes(downloaded)}/{format_bytes(total)} ({percent} %)",
+                flush=True,
+            )
+
+        result = install_openclip_model(model_config, progress=report_progress)
         label = f"{result.spec.model_name} ({result.spec.pretrained})"
         if result.installed:
             print(f"Lastet ned OpenCLIP-modell {label}: {result.path}")
