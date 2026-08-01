@@ -131,8 +131,10 @@ class PersonReferencesServerTests(unittest.TestCase):
                 shell_page_html=shell_page_html,
             )
 
-            self.assertIn('href="/people/Kari%20%2F%20%C3%85se/references"', people_body)
-            self.assertIn("Referansebilder (2)", people_body)
+            self.assertIn(
+                'href="/people/Kari%20%2F%20%C3%85se/references">2 bilder</a>',
+                people_body,
+            )
             self.assertEqual(reference_body.count('<article class="item">'), 2)
             self.assertIn('href="/person/Kari%20%2F%20%C3%85se/confirmed/item/1"', reference_body)
             self.assertIn(
