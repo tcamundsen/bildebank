@@ -902,10 +902,10 @@ class ServerSearchCliTests(unittest.TestCase):
         self.assertIn('action="/search/similar"', image_body)
         self.assertIn('name="file_id" value="1"', image_body)
         self.assertIn('name="limit" value="100"', image_body)
-        self.assertIn("Finn bilder som ligner dette", image_body)
-        self.assertNotIn("Finn bilder som ligner dette", disabled_body)
-        self.assertNotIn("Finn bilder som ligner dette", read_only_body)
-        self.assertNotIn("Finn bilder som ligner dette", video_body)
+        self.assertIn('aria-label="Finn lignende bilder">🔍≈</button>', image_body)
+        self.assertNotIn("🔍≈", disabled_body)
+        self.assertNotIn("🔍≈", read_only_body)
+        self.assertNotIn("🔍≈", video_body)
 
     def test_similar_search_get_does_not_run_search(self) -> None:
         class FakeHandler:

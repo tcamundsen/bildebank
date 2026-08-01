@@ -630,7 +630,8 @@ def similar_search_button_html(
         <form action="/search/similar" method="post" class="similar-search-form">
           <input type="hidden" name="file_id" value="{int(item['id'])}">
           <input type="hidden" name="limit" value="100">
-          <button class="nav-button" type="submit">Finn bilder som ligner dette</button>
+          <button class="nav-button" type="submit" title="Finn lignende bilder"
+                  aria-label="Finn lignende bilder">🔍≈</button>
         </form>
     """
 
