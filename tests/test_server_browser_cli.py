@@ -3785,6 +3785,78 @@ class ServerBrowserCliTests(unittest.TestCase):
             self.assertEqual(server._browser_navigation_cache_version, 2)
             clear_sidecars.assert_called_once_with()
 
+    def test_deleted_file_is_removed_from_reusable_navigation_caches(self) -> None:
+        server = object.__new__(BildebankServer)
+        server.target = Path("/tmp/nonexistent-bildebank-target")
+        server.config = AppConfig()
+        server._browser_navigation_cache_version = 4
+        server._browser_navigation_db_mtime_ns = None
+        server._browser_navigation_face_db_mtime_ns = None
+        server._browser_navigation_checked_at = 0.0
+        hidden_order = (4, [2, 3], {2: 0, 3: 1})
+        server._browser_item_ids = {
+            False: (4, [1, 2, 3], {1: 0, 2: 1, 3: 2}),
+            True: hidden_order,
+        }
+        server._browser_month_keys = {
+            False: (4, ["2024-01"]),
+            True: (4, ["2024-01"]),
+        }
+        server._browser_first_day_item_ids = {
+            False: (4, {"2024-01-01": 1}),
+            True: (4, {"2024-01-01": 2}),
+        }
+
+        ordinary_source = text_filter_browser_source("camera:Canon")
+        unrelated_source = text_filter_browser_source("camera:Nikon")
+        deleted_source = text_filter_browser_source("is:deleted")
+        person_source = text_filter_browser_source("person:Tom")
+        ordinary_key = (ordinary_source, False)
+        unrelated_key = (unrelated_source, False)
+        deleted_key = (deleted_source, False)
+        person_key = (person_source, False)
+        unrelated_order = (4, [2], {2: 0})
+        server._source_item_ids = {
+            ordinary_key: (4, [1, 3], {1: 0, 3: 1}),
+            unrelated_key: unrelated_order,
+            deleted_key: (4, [8], {8: 0}),
+            person_key: (4, [1, 2], {1: 0, 2: 1}),
+        }
+        server._source_month_keys = {
+            cache_key: (4, ["2024-01"])
+            for cache_key in server._source_item_ids
+        }
+        server._source_item_counts = {
+            cache_key: (4, len(cached[1]))
+            for cache_key, cached in server._source_item_ids.items()
+        }
+        server._source_first_day_item_ids = {
+            cache_key: (4, {"2024-01-01": cached[1][0]})
+            for cache_key, cached in server._source_item_ids.items()
+        }
+
+        with patch("bildebank.server_runtime.clear_sidecar_caches") as clear_sidecars:
+            server.note_file_deleted_navigation_change(1)
+
+        self.assertEqual(server._browser_item_ids[False][1:], ([2, 3], {2: 0, 3: 1}))
+        self.assertIs(server._browser_item_ids[True], hidden_order)
+        self.assertNotIn(False, server._browser_month_keys)
+        self.assertIn(True, server._browser_month_keys)
+        self.assertNotIn(False, server._browser_first_day_item_ids)
+        self.assertIn(True, server._browser_first_day_item_ids)
+
+        self.assertEqual(server._source_item_ids[ordinary_key][1:], ([3], {3: 0}))
+        self.assertEqual(server._source_item_counts[ordinary_key], (4, 1))
+        self.assertNotIn(ordinary_key, server._source_month_keys)
+        self.assertNotIn(ordinary_key, server._source_first_day_item_ids)
+        self.assertIs(server._source_item_ids[unrelated_key], unrelated_order)
+        self.assertIn(unrelated_key, server._source_month_keys)
+        self.assertIn(unrelated_key, server._source_first_day_item_ids)
+        self.assertNotIn(deleted_key, server._source_item_ids)
+        self.assertNotIn(person_key, server._source_item_ids)
+        self.assertEqual(server._browser_navigation_cache_version, 4)
+        clear_sidecars.assert_called_once_with()
+
     def test_run_server_out_of_focus_tag_change_clears_global_navigation_cache(
         self,
     ) -> None:
