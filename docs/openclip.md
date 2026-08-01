@@ -1,7 +1,8 @@
 # OpenCLIP
 
-OpenCLIP brukes til tekstbasert bildesøk. Søk kan nå gjøres i nettleseren
-etter at du har kjørt [`image-scan`](image-scan.md).
+OpenCLIP brukes til tekstbasert bildesøk og til å finne bilder som ligner på et
+bilde du allerede ser på. Begge søkemåtene kan brukes i nettleseren etter at
+du har kjørt [`image-scan`](image-scan.md).
 
 Dette dokumentet har en del teknisk informasjon, samt beskriver søk
 fra PowerShell.
@@ -23,7 +24,8 @@ Første versjon er avgrenset til:
 
 - bilder, ikke video
 - søk på hele bildet
-- tekstsøk, ikke objektdeteksjon
+- tekstsøk og søk etter bilder som ligner et referansebilde
+- ikke objektdeteksjon
 - modell valgt i config, som standard `ViT-B-32`
 - de 100 beste treffene som standard
 - resultatfilen `image-search.html`
@@ -141,6 +143,16 @@ Eksisterende OpenCLIP-database og embeddings slettes ikke.
 Når du åpner **Bildesøk** i `run-server`, begynner serveren å laste
 OpenCLIP-modellen i bakgrunnen. Første søk kan fortsatt måtte vente hvis
 modellen ikke er ferdig lastet.
+
+Når du viser et bilde i full størrelse i en skrivbar server, kan du trykke
+**Finn bilder som ligner dette**. Bildebank bruker da bildets embedding fra
+`image-scan` som referanse og viser opptil 100 andre bilder med beste match
+først. Referansebildet selv tas ikke med. Hvis innstillingen **Skjul ute av
+fokus** er slått på, tas heller ikke slike bilder med blant treffene.
+
+Knappen vises ikke for videoer, når bildesøk er slått av, eller når serveren
+kjører i read-only-modus. Hvis referansebildet mangler embedding for valgt
+modell, må du kjøre `bildebank image-scan` på nytt.
 
 ## CPU eller GPU
 

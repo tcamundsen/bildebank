@@ -35,6 +35,13 @@ class ServerSearchStats:
 
 
 @dataclass(frozen=True)
+class ServerSimilarSearchStats:
+    reference_file_id: int
+    reference_target_path: Path
+    results: tuple[ImageSearchResult, ...]
+
+
+@dataclass(frozen=True)
 class SearchEmbeddingCacheKey:
     model_name: str
     pretrained: str
@@ -110,38 +117,100 @@ class OpenClipSearchCache:
                 embeddings = self._cached_embeddings(conn)
                 if embeddings.matrix.size == 0:
                     raise ValueError("Fant ingen bilde-embeddings. Kjør bildebank image-scan først.")
-                scores = search_scores(embeddings.matrix, text_vector)
-                hidden_file_ids = hidden_file_ids or set()
-                top_indexes = top_score_indexes(scores, scores.shape[0] if hidden_file_ids else limit)
-                run_id = create_search_run(conn, query, self.config.openclip, limit)
-                results: list[ImageSearchResult] = []
-                for item_index in top_indexes:
-                    row = embeddings.rows[int(item_index)]
-                    if row.file_id in hidden_file_ids:
-                        continue
-                    score = float(scores[int(item_index)])
-                    rank = len(results) + 1
-                    conn.execute(
-                        """
-                        INSERT INTO image_search_results(run_id, file_id, target_path, target_path_key, similarity, rank)
-                        VALUES(?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            run_id,
-                            row.file_id,
-                            row.target_path.as_posix(),
-                            row.target_path_key,
-                            score,
-                            rank,
-                        ),
-                    )
-                    results.append(ImageSearchResult(rank, row.file_id, row.target_path, score))
-                    if len(results) >= limit:
-                        break
-                conn.commit()
-                return tuple(results)
+                return self._store_vector_search(
+                    conn,
+                    embeddings,
+                    query=query,
+                    limit=limit,
+                    search_vector=text_vector,
+                    excluded_file_ids=hidden_file_ids,
+                )
             finally:
                 conn.close()
+
+    def similar(
+        self,
+        target: Path,
+        reference_file_id: int,
+        limit: int = DEFAULT_SEARCH_LIMIT,
+        *,
+        hidden_file_ids: set[int] | None = None,
+    ) -> tuple[ImageSearchResult, ...]:
+        limit = min(max(1, limit), DEFAULT_SEARCH_LIMIT)
+        with self._lock:
+            conn = connect_openclip_db(target)
+            try:
+                attach_main_database(conn, target)
+                embeddings = self._cached_embeddings(conn)
+                reference_index = next(
+                    (
+                        index
+                        for index, row in enumerate(embeddings.rows)
+                        if row.file_id == reference_file_id
+                    ),
+                    None,
+                )
+                if reference_index is None:
+                    raise ValueError(
+                        "Fant ingen embedding for referansebildet med valgt "
+                        "OpenCLIP-modell. Kjør bildebank image-scan først."
+                    )
+                excluded_file_ids = set(hidden_file_ids or ())
+                excluded_file_ids.add(reference_file_id)
+                return self._store_vector_search(
+                    conn,
+                    embeddings,
+                    query=f"similar:file_id={reference_file_id}",
+                    limit=limit,
+                    search_vector=embeddings.matrix[reference_index, :],
+                    excluded_file_ids=excluded_file_ids,
+                )
+            finally:
+                conn.close()
+
+    def _store_vector_search(
+        self,
+        conn: sqlite3.Connection,
+        embeddings: SearchEmbeddingCache,
+        *,
+        query: str,
+        limit: int,
+        search_vector: Any,
+        excluded_file_ids: set[int] | None = None,
+    ) -> tuple[ImageSearchResult, ...]:
+        scores = search_scores(embeddings.matrix, search_vector)
+        excluded_file_ids = excluded_file_ids or set()
+        top_indexes = top_score_indexes(
+            scores,
+            scores.shape[0] if excluded_file_ids else limit,
+        )
+        run_id = create_search_run(conn, query, self.config.openclip, limit)
+        results: list[ImageSearchResult] = []
+        for item_index in top_indexes:
+            row = embeddings.rows[int(item_index)]
+            if row.file_id in excluded_file_ids:
+                continue
+            score = float(scores[int(item_index)])
+            rank = len(results) + 1
+            conn.execute(
+                """
+                INSERT INTO image_search_results(run_id, file_id, target_path, target_path_key, similarity, rank)
+                VALUES(?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    row.file_id,
+                    row.target_path.as_posix(),
+                    row.target_path_key,
+                    score,
+                    rank,
+                ),
+            )
+            results.append(ImageSearchResult(rank, row.file_id, row.target_path, score))
+            if len(results) >= limit:
+                break
+        conn.commit()
+        return tuple(results)
 
     def _cached_embeddings(self, conn: sqlite3.Connection) -> SearchEmbeddingCache:
         key = search_embedding_cache_key(conn, self.config.openclip.model_name, self.config.openclip.pretrained)
@@ -262,6 +331,37 @@ def search_server_images(server: Any, *, query: str, limit: int) -> ServerSearch
         return ServerSearchStats(clean_query, results)
 
 
+def search_server_similar_images(
+    server: Any,
+    *,
+    file_id: int,
+    limit: int = DEFAULT_SEARCH_LIMIT,
+) -> ServerSimilarSearchStats:
+    from .server_browser_queries import active_item_by_id_including_hidden, is_image_item
+
+    limit = min(max(1, limit), DEFAULT_SEARCH_LIMIT)
+    with TargetLock(server.target, command="image-similar-search-web"):
+        reference_item = active_item_by_id_including_hidden(server.target, file_id)
+        if reference_item is None or not is_image_item(reference_item):
+            raise ValueError("Filen finnes ikke som et aktivt bilde.")
+        hidden_file_ids = None
+        if server.config.browser.hide_out_of_focus:
+            from .server_browser_queries import out_of_focus_file_ids
+
+            hidden_file_ids = out_of_focus_file_ids(server.target)
+        results = server.search_cache.similar(
+            server.target,
+            file_id,
+            limit,
+            hidden_file_ids=hidden_file_ids,
+        )
+        return ServerSimilarSearchStats(
+            reference_file_id=file_id,
+            reference_target_path=Path(str(reference_item["target_path"])),
+            results=results,
+        )
+
+
 def search_start_html(
     openclip_config: OpenClipConfig,
     *,
@@ -296,21 +396,56 @@ def search_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
 ) -> str:
-    items_by_id = search_result_items_by_id(target, stats.results)
-    items = "\n".join(result_html(target, result, items_by_id.get(result.file_id)) for result in stats.results)
     return shell_page_html(
         f"Bildesøk: {stats.query}",
         f"""
         <h1>Bildesøk</h1>
         {search_form(stats.query, limit, model_loaded=model_loaded)}
         <p class="meta">{len(stats.results)} treff. Sortert med beste match først. Modell lastet: {'ja' if model_loaded else 'nei'}.</p>
-        <div class="grid">
-          {items}
-        </div>
+        {search_results_grid_html(target, stats.results)}
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
     )
+
+
+def similar_search_html(
+    target: Path,
+    stats: ServerSimilarSearchStats,
+    *,
+    shell_page_html: ShellPageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    reference_name = stats.reference_target_path.name
+    reference_url = source_item_url(all_browser_source(), stats.reference_file_id)
+    return shell_page_html(
+        f"Bilder som ligner på {reference_name}",
+        f"""
+        <h1>Bilder som ligner på {html.escape(reference_name)}</h1>
+        <p><a href="{html.escape(reference_url)}">Tilbake til referansebildet</a></p>
+        <p class="meta">{len(stats.results)} treff. Sortert med beste match først.</p>
+        {search_results_grid_html(target, stats.results)}
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def search_results_grid_html(
+    target: Path,
+    results: tuple[ImageSearchResult, ...],
+) -> str:
+    items_by_id = search_result_items_by_id(target, results)
+    items = "\n".join(
+        result_html(target, result, items_by_id.get(result.file_id))
+        for result in results
+    )
+    return f"""
+        <div class="grid">
+          {items}
+        </div>
+    """
 
 
 def message_html(message: str) -> str:

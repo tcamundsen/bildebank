@@ -48,6 +48,24 @@ Schema v1 har disse tabellene:
 - `image_search_runs`
 - `image_search_results`
 
+## Søk fra webserveren
+
+Tekstsøk og bildelikhetssøk lagres i de samme tabellene
+`image_search_runs` og `image_search_results`. Et bildelikhetssøk lagrer
+`image_search_runs.query` som `similar:file_id=<id>`. Det krever ingen ny
+tabell eller schemaendring.
+
+Likhetssøket bruker embedding-raden for valgt `file_id`, `model_name` og
+`pretrained` som søkevektor. Denne kobles til hoveddatabasen med
+`files.id = image_embeddings.file_id`; `file_sources` brukes ikke til
+rangeringen. Bare aktive `files`-rader sammenlignes. Referansebildet utelates
+alltid fra resultatene, og serverens filter for «ute av fokus» brukes når det
+er aktivert.
+
+Begge websøkemåtene er CSRF-beskyttede POST-operasjoner som holder target-lås
+mens søkekjøring og resultater skrives. Bildelikhetssøket bruker serverens
+eksisterende embedding-cache og laster ikke tekstmodellen.
+
 ## Kompatibilitet med uversjonerte databaser
 
 OpenCLIP-databaser fra før schema-versjonering kan mangle
