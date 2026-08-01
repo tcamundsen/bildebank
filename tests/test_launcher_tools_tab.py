@@ -237,6 +237,7 @@ def test_image_scan_preflight_installs_enables_and_scans(tmp_path: Path) -> None
     actions: list[str] = []
     tab._image_search_enabled = lambda: False
     tab._run_image_scan_openclip_install_step = lambda on_success: (actions.append("install"), on_success())
+    tab._run_image_scan_openclip_model_download_step = lambda on_success: (actions.append("download"), on_success())
     tab._run_image_scan_enable_step = lambda on_success: (actions.append("enable"), on_success())
     tab._start_image_scan_command = lambda: actions.append("scan")
     tab._log = actions.append
@@ -248,7 +249,7 @@ def test_image_scan_preflight_installs_enables_and_scans(tmp_path: Path) -> None
         tab._run_image_scan()
 
     askyesno.assert_called_once()
-    assert actions == ["install", "enable", "scan"]
+    assert actions == ["install", "download", "enable", "scan"]
 
 
 def test_image_scan_preflight_enables_disabled_config_before_scan(tmp_path: Path) -> None:
@@ -264,6 +265,32 @@ def test_image_scan_preflight_enables_disabled_config_before_scan(tmp_path: Path
 
     askyesno.assert_called_once()
     assert actions == ["enable", "scan"]
+
+
+def test_image_scan_preflight_downloads_only_model_when_dependency_is_ready(
+    tmp_path: Path,
+) -> None:
+    setup = ready_setup()
+    setup.openclip_model_status = OpenClipModelStatus(
+        "ViT-B-32",
+        "laion",
+        "Mangler",
+        size_bytes=605_143_316,
+    )
+    tab = bare_tools_tab(tmp_path, setup)
+    actions: list[str] = []
+    tab._image_search_enabled = lambda: True
+    tab._run_image_scan_openclip_install_step = lambda _on_success: actions.append("install")
+    tab._run_image_scan_openclip_model_download_step = lambda on_success: (
+        actions.append("download"),
+        on_success(),
+    )
+    tab._start_image_scan_command = lambda: actions.append("scan")
+
+    with patch("tkinter.messagebox.askyesno", return_value=True):
+        tab._run_image_scan()
+
+    assert actions == ["download", "scan"]
 
 
 def test_image_scan_enable_step_turns_on_image_search(tmp_path: Path) -> None:

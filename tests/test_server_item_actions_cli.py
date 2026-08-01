@@ -2254,6 +2254,7 @@ class ServerItemActionsCliTests(unittest.TestCase):
             deleted = target / "deleted" / "2024" / "01" / "IMG_20240102.png"
             original_bytes = original.read_bytes()
             data = json.dumps({"file_id": 1}).encode("utf-8")
+            navigation_changes: list[int] = []
 
             class FakeHandler:
                 headers = {
@@ -2266,6 +2267,7 @@ class ServerItemActionsCliTests(unittest.TestCase):
                     config=AppConfig(
                         face_recognition=FaceRecognitionConfig(enabled=True)
                     ),
+                    note_file_deleted_navigation_change=navigation_changes.append,
                 )
                 body: dict[str, object] | None = None
 
@@ -2302,6 +2304,7 @@ class ServerItemActionsCliTests(unittest.TestCase):
             )
             self.assertIsNotNone(row["deleted_at"])
             self.assertIsNone(browser_item_by_id(target, 1))
+            self.assertEqual(navigation_changes, [1])
 
     def test_run_server_delete_returns_conflict_when_target_is_locked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

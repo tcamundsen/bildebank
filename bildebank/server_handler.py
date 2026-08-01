@@ -27,6 +27,7 @@ from .server_pages import (
     people_page_html,
     removed_files_page_html,
     search_html,
+    similar_search_html,
     search_start_html,
     sources_page_html,
     tags_page_html,
@@ -47,6 +48,7 @@ from . import server_slideshow
 from .server_search import (
     DEFAULT_SEARCH_LIMIT,
     search_server_images,
+    search_server_similar_images,
 )
 from .target_lock import TargetLockError
 from .server_response import (
@@ -419,6 +421,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     )
                 )
                 return
+            if parsed.path == "/search/similar":
+                self.respond_text(
+                    "Endepunktet krever POST.",
+                    status=HTTPStatus.METHOD_NOT_ALLOWED,
+                )
+                return
             if parsed.path == "/api/item-info":
                 self.respond_item_info(parsed.query)
                 return
@@ -603,6 +611,64 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     )
                     return
                 self.respond_html(search_html(self.server, stats, limit))
+                return
+            if parsed.path == "/search/similar":
+                if not self.server.openclip_enabled:
+                    self.respond_text(
+                        "Bildelikhetssøk er av.",
+                        status=HTTPStatus.NOT_FOUND,
+                    )
+                    return
+                params = server_request.read_form_params(
+                    self.headers,
+                    self.rfile,
+                )
+                try:
+                    file_id = parse_file_id(first_param(params, "file_id"))
+                    limit = min(
+                        positive_int_param(
+                            params,
+                            "limit",
+                            DEFAULT_SEARCH_LIMIT,
+                        ),
+                        DEFAULT_SEARCH_LIMIT,
+                    )
+                    stats = search_server_similar_images(
+                        self.server,
+                        file_id=file_id,
+                        limit=limit,
+                    )
+                except TargetLockError as exc:
+                    self.respond_html(
+                        error_html(
+                            exc,
+                            face_enabled=self.server.face_enabled,
+                            openclip_enabled=self.server.openclip_enabled,
+                        ),
+                        status=HTTPStatus.CONFLICT,
+                    )
+                    return
+                except ValueError as exc:
+                    self.respond_html(
+                        error_html(
+                            exc,
+                            face_enabled=self.server.face_enabled,
+                            openclip_enabled=self.server.openclip_enabled,
+                        ),
+                        status=HTTPStatus.BAD_REQUEST,
+                    )
+                    return
+                except Exception as exc:  # noqa: BLE001 - form response should remain HTML
+                    self.respond_html(
+                        error_html(
+                            exc,
+                            face_enabled=self.server.face_enabled,
+                            openclip_enabled=self.server.openclip_enabled,
+                        ),
+                        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                    )
+                    return
+                self.respond_html(similar_search_html(self.server, stats))
                 return
             if parsed.path == "/api/search-preload":
                 self.respond_search_preload()

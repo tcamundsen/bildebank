@@ -5,6 +5,7 @@ import os
 import stat
 import urllib.request
 import zipfile
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
@@ -105,6 +106,128 @@ def download_https_file(
         if destination_created:
             destination.unlink(missing_ok=True)
         raise
+    finally:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
+
+
+def download_https_file_resumable(
+    url: str,
+    destination: Path,
+    *,
+    user_agent: str,
+    max_bytes: int,
+    expected_size: int,
+    timeout_seconds: float = 60,
+    progress: Callable[[int, int], None] | None = None,
+) -> int:
+    """Download a pinned file while preserving a safe partial file on failure."""
+    if urlsplit(url).scheme.lower() != "https":
+        raise RuntimeError(f"Nedlastingsadressen må bruke HTTPS: {url}")
+    if max_bytes <= 0:
+        raise ValueError("max_bytes må være større enn null")
+    if not 0 <= expected_size <= max_bytes:
+        raise ValueError("expected_size må være mellom null og max_bytes")
+
+    flags = (
+        os.O_WRONLY
+        | os.O_APPEND
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        existing_stat = validate_regular_file_without_links(
+            destination,
+            label="delvis nedlastingsfil",
+        )
+    except FileNotFoundError:
+        flags |= os.O_CREAT | os.O_EXCL
+        initial_size = 0
+    else:
+        initial_size = existing_stat.st_size
+        if initial_size > expected_size:
+            raise RuntimeError(
+                "Den delvise nedlastingen er større enn forventet størrelse: "
+                f"{initial_size} > {expected_size}: {destination}"
+            )
+
+    file_descriptor = os.open(destination, flags, 0o600)
+    try:
+        opened_stat = os.fstat(file_descriptor)
+        if (
+            not stat.S_ISREG(opened_stat.st_mode)
+            or is_reparse_stat(opened_stat)
+            or getattr(opened_stat, "st_nlink", 1) != 1
+            or opened_stat.st_size != initial_size
+        ):
+            raise RuntimeError(
+                f"Kunne ikke åpne en trygg delvis nedlastingsfil: {destination}"
+            )
+
+        if progress is not None:
+            progress(initial_size, expected_size)
+        if initial_size == expected_size:
+            return initial_size
+
+        headers = {"User-Agent": user_agent}
+        if initial_size:
+            headers["Range"] = f"bytes={initial_size}-"
+        request = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            final_url = response.geturl()
+            if urlsplit(final_url).scheme.lower() != "https":
+                raise RuntimeError(
+                    f"Nedlastingen ble omdirigert til en adresse uten HTTPS: {final_url}"
+                )
+
+            response_status = _response_status(response) if initial_size else 200
+            downloaded = initial_size
+            if initial_size and response_status == 206:
+                _validate_content_range(
+                    response,
+                    start=initial_size,
+                    expected_size=expected_size,
+                )
+            elif initial_size and response_status == 200:
+                os.ftruncate(file_descriptor, 0)
+                downloaded = 0
+                if progress is not None:
+                    progress(0, expected_size)
+            elif initial_size:
+                raise RuntimeError(
+                    "Kunne ikke fortsette den delvise nedlastingen: "
+                    f"serveren svarte med HTTP {response_status}."
+                )
+
+            content_length = _response_content_length(response)
+            remaining = expected_size - downloaded
+            if content_length is not None and content_length > remaining:
+                raise RuntimeError(
+                    "Nedlastingen er større enn gjenværende forventet størrelse."
+                )
+
+            with os.fdopen(file_descriptor, "ab", closefd=True) as output:
+                file_descriptor = -1
+                while True:
+                    chunk = response.read(DOWNLOAD_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    downloaded += len(chunk)
+                    if downloaded > max_bytes or downloaded > expected_size:
+                        raise RuntimeError(
+                            "Nedlastingen overskred forventet størrelse på "
+                            f"{expected_size} byte."
+                        )
+                    output.write(chunk)
+                    if progress is not None:
+                        progress(downloaded, expected_size)
+
+        if downloaded != expected_size:
+            raise RuntimeError(
+                "Nedlastingen har feil størrelse: "
+                f"forventet {expected_size}, fikk {downloaded}."
+            )
+        return downloaded
     finally:
         if file_descriptor >= 0:
             os.close(file_descriptor)
@@ -276,6 +399,39 @@ def _response_content_length(response: object) -> int | None:
     if length < 0:
         raise RuntimeError(f"Nedlastingen har ugyldig Content-Length: {value!r}")
     return length
+
+
+def _response_status(response: object) -> int:
+    status = getattr(response, "status", None)
+    if status is None:
+        getcode = getattr(response, "getcode", None)
+        status = getcode() if getcode is not None else None
+    if not isinstance(status, int):
+        raise RuntimeError("Nedlastingen mangler gyldig HTTP-status.")
+    return status
+
+
+def _validate_content_range(
+    response: object,
+    *,
+    start: int,
+    expected_size: int,
+) -> None:
+    headers = getattr(response, "headers", None)
+    value = headers.get("Content-Range") if headers is not None else None
+    expected = f"bytes {start}-{expected_size - 1}/{expected_size}"
+    if value != expected:
+        raise RuntimeError(
+            "Serveren svarte med ugyldig Content-Range for fortsettelse: "
+            f"forventet {expected!r}, fikk {value!r}."
+        )
+    content_length = _response_content_length(response)
+    remaining = expected_size - start
+    if content_length is not None and content_length != remaining:
+        raise RuntimeError(
+            "Serveren svarte med feil Content-Length for fortsettelse: "
+            f"forventet {remaining}, fikk {content_length}."
+        )
 
 
 def _require_regular_directory(

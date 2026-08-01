@@ -12,6 +12,7 @@ from bildebank.launcher_commands import (
     deep_doctor_command,
     doctor_command,
     download_face_model_command,
+    download_openclip_model_command,
     export_person_command,
     ffmpeg_install_command,
     face_scan_command,
@@ -234,6 +235,7 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "--dry-run",
     ]
     assert download_face_model_command()[-1:] == ["download-face-model"]
+    assert download_openclip_model_command()[-1:] == ["download-openclip-model"]
 
 
 def test_read_unimport_target_change_report_returns_changed_paths(tmp_path: Path) -> None:

@@ -507,6 +507,11 @@ def source_item_page_html(
         for button in (
             associated_file_buttons_html(motion_video, raw_sidecar),
             video_original_button_html(target, item),
+            similar_search_button_html(
+                item,
+                openclip_enabled=openclip_enabled,
+                read_only=read_only,
+            ),
         )
         if button
     )
@@ -611,6 +616,24 @@ def source_item_page_html(
     if timing_callback is not None:
         timing_callback("html_page", start)
     return result
+
+
+def similar_search_button_html(
+    item: Any,
+    *,
+    openclip_enabled: bool,
+    read_only: bool,
+) -> str:
+    if not openclip_enabled or read_only or not is_image_item(item):
+        return ""
+    return f"""
+        <form action="/search/similar" method="post" class="similar-search-form">
+          <input type="hidden" name="file_id" value="{int(item['id'])}">
+          <input type="hidden" name="limit" value="100">
+          <button class="nav-button" type="submit" title="Finn lignende bilder"
+                  aria-label="Finn lignende bilder">🔍≈</button>
+        </form>
+    """
 
 
 def associated_files_for_item(

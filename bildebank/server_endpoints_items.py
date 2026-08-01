@@ -41,6 +41,14 @@ def clear_file_navigation_cache(server: Any) -> None:
     clear_browser_navigation_cache(server)
 
 
+def note_file_deleted_navigation_change(server: Any, file_id: int) -> None:
+    note_change = getattr(server, "note_file_deleted_navigation_change", None)
+    if note_change is not None:
+        note_change(file_id)
+        return
+    clear_file_navigation_cache(server)
+
+
 def note_navigation_change(server: Any, method_name: str) -> None:
     note_change = getattr(server, method_name, None)
     if note_change is not None:
@@ -615,7 +623,7 @@ def respond_delete_item(handler: BildebankRequestHandler) -> None:
     except ValueError as exc:
         handler.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
         return
-    clear_file_navigation_cache(handler.server)
+    note_file_deleted_navigation_change(handler.server, file_id)
     handler.respond_json({"ok": True, "file_id": file_id, "deleted_path": deleted_path.as_posix()})
 
 

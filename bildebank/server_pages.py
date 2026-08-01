@@ -31,7 +31,7 @@ from . import server_geo
 from .server_geo import DEFAULT_GEO_LIMIT, DEFAULT_GEO_MIN_COUNT, DEFAULT_GEO_RESOLUTION
 from . import server_markdown
 from . import server_search
-from .server_search import ServerSearchStats
+from .server_search import ServerSearchStats, ServerSimilarSearchStats
 from .server_assets import page_html
 from . import server_shell
 
@@ -90,6 +90,16 @@ def search_html(server: Any, stats: ServerSearchStats, limit: int) -> str:
         limit,
         shell_page_html=shell_page_html,
         model_loaded=server.search_cache.loaded,
+        face_enabled=server.face_enabled,
+        openclip_enabled=server.openclip_enabled,
+    )
+
+
+def similar_search_html(server: Any, stats: ServerSimilarSearchStats) -> str:
+    return server_search.similar_search_html(
+        server.target,
+        stats,
+        shell_page_html=shell_page_html,
         face_enabled=server.face_enabled,
         openclip_enabled=server.openclip_enabled,
     )

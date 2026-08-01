@@ -1,7 +1,8 @@
 # OpenCLIP
 
-OpenCLIP brukes til tekstbasert bildesøk. Søk kan nå gjøres i nettleseren
-etter at du har kjørt [`image-scan`](image-scan.md).
+OpenCLIP brukes til tekstbasert bildesøk og til å finne bilder som ligner på et
+bilde du allerede ser på. Begge søkemåtene kan brukes i nettleseren etter at
+du har kjørt [`image-scan`](image-scan.md).
 
 Dette dokumentet har en del teknisk informasjon, samt beskriver søk
 fra PowerShell.
@@ -23,7 +24,8 @@ Første versjon er avgrenset til:
 
 - bilder, ikke video
 - søk på hele bildet
-- tekstsøk, ikke objektdeteksjon
+- tekstsøk og søk etter bilder som ligner et referansebilde
+- ikke objektdeteksjon
 - modell valgt i config, som standard `ViT-B-32`
 - de 100 beste treffene som standard
 - resultatfilen `image-search.html`
@@ -32,23 +34,29 @@ Denne siden skal oppdateres etter hvert som OpenCLIP-funksjonen bygges videre.
 
 ## Installer OpenCLIP
 
-Kjør dette fra programmappen:
+Åpne fanen **Oppsett** i Bildebank-vinduet. Gjør deretter dette i rekkefølge:
+
+1. Trykk **Installer OpenCLIP**.
+2. Trykk **Last ned valgt modell**.
+
+Den første knappen installerer programdelene som OpenCLIP trenger. Den andre
+knappen laster bare ned modellen som er valgt i innstillingene.
+
+En erfaren bruker kan installere programdelene fra programmappen med:
 
 ```powershell
 .\install-openclip.ps1
 ```
 
-Scriptet installerer OpenCLIP i Bildebanks lokale Python-miljø. Deretter laster
-Bildebank ned, kontrollerer og tester modellene:
+Scriptet installerer OpenCLIP i Bildebanks lokale Python-miljø, men laster ikke
+ned en modell. Standardmodellen er:
 
 ```text
-ViT-B-32 (laion2b_s34b_b79k)
-ViT-L-14 (laion2b_s32b_b82k)
+ViT-B-32 (laion2b_s34b_b79k), omtrent 577 MB
 ```
 
-Foreløpig lastes to modeller, selv om vi bare trenger én.
-Dette fikses etter hvert når jeg vet hvilken som fungerer best.
-Søk er tilgjengelig i bildebrowseren. I dette dokumentet vises
+Den større `ViT-L-14`-modellen er omtrent 1,6 GB. Den lastes bare ned hvis den
+er valgt. Søk er tilgjengelig i bildebrowseren. I dette dokumentet vises også
 de underliggende kommandoene.
 
 Slå på tekstbasert bildesøk:
@@ -67,6 +75,11 @@ Bildebank bruker faste repository-revisjoner, filstørrelser og SHA-256 for de
 to modellfilene. En tidligere OpenCLIP-cache gjenbrukes bare hvis modellfilen
 stemmer med den fastlåste modellen. Ukjente eller endrede filer overskrives
 ikke.
+
+Under nedlastingen viser Bildebank mengde og prosent. Du kan bruke **Avbryt
+jobb** hvis forbindelsen er dårlig. Den nedlastede delen beholdes, og neste
+forsøk fortsetter der det forrige stoppet. Modellen tas ikke i bruk før hele
+filen har riktig størrelse og SHA-256.
 
 Nett brukes bare av den eksplisitte installasjonen eller kommandoen
 [`download-openclip-model`](download-openclip-model.md). `image-scan`,
@@ -130,6 +143,16 @@ Eksisterende OpenCLIP-database og embeddings slettes ikke.
 Når du åpner **Bildesøk** i `run-server`, begynner serveren å laste
 OpenCLIP-modellen i bakgrunnen. Første søk kan fortsatt måtte vente hvis
 modellen ikke er ferdig lastet.
+
+Når du viser et bilde i full størrelse i en skrivbar server, kan du trykke
+**Finn bilder som ligner dette**. Bildebank bruker da bildets embedding fra
+`image-scan` som referanse og viser opptil 100 andre bilder med beste match
+først. Referansebildet selv tas ikke med. Hvis innstillingen **Skjul ute av
+fokus** er slått på, tas heller ikke slike bilder med blant treffene.
+
+Knappen vises ikke for videoer, når bildesøk er slått av, eller når serveren
+kjører i read-only-modus. Hvis referansebildet mangler embedding for valgt
+modell, må du kjøre `bildebank image-scan` på nytt.
 
 ## CPU eller GPU
 

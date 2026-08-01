@@ -1,4 +1,10 @@
 $ErrorActionPreference = "Stop"
+$Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = $Utf8NoBom
+[Console]::OutputEncoding = $Utf8NoBom
+$OutputEncoding = $Utf8NoBom
+$env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUTF8 = "1"
 
 function Invoke-Native {
     param(
@@ -13,19 +19,14 @@ function Invoke-Native {
 
 $RepoDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $VenvPython = Join-Path $RepoDir ".venv\Scripts\python.exe"
-$ModelRoot = Join-Path $RepoDir ".bildebank-openclip"
-$Models = @(
-    @{ ModelName = "ViT-B-32"; Pretrained = "laion2b_s34b_b79k" },
-    @{ ModelName = "ViT-L-14"; Pretrained = "laion2b_s32b_b82k" }
-)
 
 if (-not (Test-Path -LiteralPath $VenvPython)) {
-    throw "Fant ikke Python i .venv. Installer Bildebank forst."
+    throw "Fant ikke Python i .venv. Installer Bildebank først."
 }
 
 Push-Location $RepoDir
 try {
-    Write-Host "Installerer valgfri OpenCLIP-stotte i Bildebanks lokale Python-miljo"
+    Write-Host "Installerer valgfri OpenCLIP-støtte i Bildebanks lokale Python-miljø"
     $DependencyLock = Join-Path $RepoDir "requirements\windows-py313-openclip.lock"
     if (-not (Test-Path -LiteralPath $DependencyLock)) {
         throw "Installasjonen mangler dependency-lockfilen: $DependencyLock"
@@ -40,64 +41,16 @@ try {
         $DependencyLock
     )
 
-    Write-Host "Laster ned og kontrollerer fastlåste OpenCLIP-modeller"
-    Invoke-Native -FilePath $VenvPython -ArgumentList @(
-        "-m",
-        "bildebank",
-        "download-openclip-model",
-        "--all-supported"
-    )
-
-    $SmokeTest = New-TemporaryFile
-    Set-Content -LiteralPath $SmokeTest -Encoding UTF8 -Value @'
-import sys
-from pathlib import Path
-
+    Write-Host "Kontrollerer OpenCLIP-avhengighetene"
+    $SmokeTest = @'
 import open_clip
-from bildebank.config import OpenClipConfig
-from bildebank.openclip_models import require_openclip_model_file
-
-model_root = Path(sys.argv[1])
-model_name = sys.argv[2]
-pretrained = sys.argv[3]
-
-model_root.mkdir(parents=True, exist_ok=True)
-config = OpenClipConfig(
-    model_root=model_root,
-    model_name=model_name,
-    pretrained=pretrained,
-)
-model_file = require_openclip_model_file(config)
-open_clip.create_model_and_transforms(
-    model_name,
-    pretrained=str(model_file),
-    device="cpu",
-)
-open_clip.get_tokenizer(model_name)
-print(f"OpenCLIP klar: {model_name} ({pretrained})")
+import torch
+from importlib.metadata import version
+print(f"OpenCLIP klar: open_clip_torch={version('open_clip_torch')}, torch={torch.__version__}")
 '@
-
-    try {
-        Write-Host "Modellmappe:"
-        Write-Host "  $ModelRoot"
-        foreach ($Model in $Models) {
-            Write-Host "Laster ned og tester OpenCLIP-modell:"
-            Write-Host "  $($Model.ModelName) ($($Model.Pretrained))"
-            Invoke-Native -FilePath $VenvPython -ArgumentList @(
-                $SmokeTest.FullName,
-                $ModelRoot,
-                $Model.ModelName,
-                $Model.Pretrained
-            )
-        }
-    } finally {
-        Remove-Item -LiteralPath $SmokeTest -Force -ErrorAction SilentlyContinue
-    }
-
-    Write-Host "Ferdig. OpenCLIP er installert med modeller:"
-    foreach ($Model in $Models) {
-        Write-Host "  $($Model.ModelName) ($($Model.Pretrained))"
-    }
+    Invoke-Native -FilePath $VenvPython -ArgumentList @("-c", $SmokeTest)
+    Write-Host "Ferdig. OpenCLIP-avhengighetene er installert."
+    Write-Host "Last ned valgt modell separat fra Oppsett-fanen."
 } finally {
     Pop-Location
 }

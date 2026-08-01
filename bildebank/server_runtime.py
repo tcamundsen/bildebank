@@ -26,6 +26,7 @@ from .server_browser_queries import (
 from .server_browser_sidecars import clear_sidecar_data_caches
 from .server_browser_sources import (
     BrowserSource,
+    source_includes_deleted,
 )
 from .server_faces import (
     current_face_db_path,
@@ -315,6 +316,97 @@ class BildebankServer(ThreadingHTTPServer):
     def note_manual_date_navigation_change(self) -> None:
         # A manual date can change the order and month of the item in every source.
         self.clear_browser_navigation_cache()
+
+    def note_file_deleted_navigation_change(self, file_id: int) -> None:
+        """Remove one active file without discarding reusable item-order caches."""
+        version = getattr(self, "_browser_navigation_cache_version", 0)
+
+        def updated_order(
+            cached: tuple[int, list[int], dict[int, int]],
+        ) -> tuple[int, list[int], dict[int, int]] | None:
+            cached_version, item_ids, item_positions = cached
+            if cached_version != version or file_id not in item_positions:
+                return None
+            remaining_ids = [item_id for item_id in item_ids if item_id != file_id]
+            return (
+                cached_version,
+                remaining_ids,
+                {
+                    remaining_id: index
+                    for index, remaining_id in enumerate(remaining_ids)
+                },
+            )
+
+        affected_browser_keys: set[bool] = set()
+        current_browser_keys: set[bool] = set()
+        for browser_key, browser_cached in list(self._browser_item_ids.items()):
+            if browser_cached[0] == version:
+                current_browser_keys.add(browser_key)
+            replacement = updated_order(browser_cached)
+            if replacement is not None:
+                self._browser_item_ids[browser_key] = replacement
+                affected_browser_keys.add(browser_key)
+
+        for browser_key in list(self._browser_month_keys):
+            if (
+                browser_key in affected_browser_keys
+                or browser_key not in current_browser_keys
+            ):
+                del self._browser_month_keys[browser_key]
+        for browser_key in list(getattr(self, "_browser_first_day_item_ids", {})):
+            if (
+                browser_key in affected_browser_keys
+                or browser_key not in current_browser_keys
+            ):
+                del self._browser_first_day_item_ids[browser_key]
+
+        def source_requires_rebuild(source: BrowserSource) -> bool:
+            # These sources can gain the deleted file or lose other files when
+            # the file's face data is removed, so removing one ID is insufficient.
+            text_filter = source.text_filter
+            return bool(
+                source_includes_deleted(source)
+                or source.person_name is not None
+                or source.reference_suggestions_person_name is not None
+                or source.missing_face_suggestions
+                or (
+                    text_filter is not None
+                    and getattr(text_filter, "persons", ())
+                )
+            )
+
+        self._clear_source_navigation_caches(source_requires_rebuild)
+        affected_source_keys: set[tuple[BrowserSource, bool]] = set()
+        current_source_keys: set[tuple[BrowserSource, bool]] = set()
+        for source_key, source_cached in list(self._source_item_ids.items()):
+            if source_cached[0] == version:
+                current_source_keys.add(source_key)
+            replacement = updated_order(source_cached)
+            if replacement is not None:
+                self._source_item_ids[source_key] = replacement
+                affected_source_keys.add(source_key)
+
+        for cache_name in ("_source_month_keys", "_source_first_day_item_ids"):
+            cache = getattr(self, cache_name, {})
+            for source_key in list(cache):
+                if (
+                    source_key in affected_source_keys
+                    or source_key not in current_source_keys
+                ):
+                    del cache[source_key]
+
+        for source_key, count_cached in list(self._source_item_counts.items()):
+            cached_version, count = count_cached
+            if source_key in affected_source_keys and cached_version == version:
+                self._source_item_counts[source_key] = (
+                    cached_version,
+                    max(0, count - 1),
+                )
+            elif source_key not in current_source_keys:
+                del self._source_item_counts[source_key]
+
+        clear_sidecar_caches()
+        self._refresh_browser_navigation_mtimes()
 
     def _clear_source_navigation_cache_for_tag(self, tag_key: str) -> None:
         def source_matches(source: BrowserSource) -> bool:

@@ -11,7 +11,11 @@ from . import db
 from .config import load_config, load_launcher_collection_path, set_launcher_collection_path
 from .ffmpeg_tools import resolve_ffmpeg_tools
 from .insightface_models import insightface_model_files_exist
-from .openclip_models import openclip_model_file_available
+from .openclip_models import (
+    openclip_model_file_available,
+    openclip_model_partial_size,
+    openclip_model_spec,
+)
 
 
 INSIGHTFACE_RUNTIME_PROBE = (
@@ -59,6 +63,8 @@ class OpenClipModelStatus:
     pretrained: str
     status: str
     detail: str = ""
+    partial_bytes: int = 0
+    size_bytes: int = 0
 
 
 @dataclass(frozen=True)
@@ -202,6 +208,23 @@ def face_model_download_button_state(
     return "disabled"
 
 
+def openclip_model_download_button_state(
+    *,
+    enabled: bool,
+    migration_required: bool,
+    migration_status_error: str | None,
+    openclip_status: str,
+) -> str:
+    if (
+        enabled
+        and not migration_required
+        and migration_status_error is None
+        and openclip_status == "Installert"
+    ):
+        return "normal"
+    return "disabled"
+
+
 def openclip_dependency_status() -> str:
     if importlib.util.find_spec("open_clip") is not None:
         return "Installert"
@@ -210,9 +233,24 @@ def openclip_dependency_status() -> str:
 
 def openclip_model_status(repo_root: Path | None = None) -> OpenClipModelStatus:
     config = load_config(repo_root or program_repo_root()).openclip
+    spec = openclip_model_spec(config)
+    size_bytes = spec.size_bytes if spec is not None else 0
     if openclip_model_file_available(config):
-        return OpenClipModelStatus(config.model_name, config.pretrained, "Tilgjengelig", str(config.model_root))
-    return OpenClipModelStatus(config.model_name, config.pretrained, "Mangler", str(config.model_root))
+        return OpenClipModelStatus(
+            config.model_name,
+            config.pretrained,
+            "Tilgjengelig",
+            str(config.model_root),
+            size_bytes=size_bytes,
+        )
+    return OpenClipModelStatus(
+        config.model_name,
+        config.pretrained,
+        "Mangler",
+        str(config.model_root),
+        partial_bytes=openclip_model_partial_size(config),
+        size_bytes=size_bytes,
+    )
 
 
 def insightface_dependency_status() -> InsightFaceDependencyStatus:

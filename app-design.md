@@ -190,7 +190,14 @@ manuell avklaring før en annen modell installeres under samme navn.
 
 De to OpenCLIP-modellene som Bildebank tilbyr automatisk, skal på samme måte ha
 fast repository, eksakt repository-revisjon, filnavn, størrelse og SHA-256.
-Nedlastingen skal publiseres fra staging etter kontroll. En tidligere
+Bare modellen som er valgt i config skal lastes ned automatisk; begge modellene
+kan lastes ned med et eksplisitt kommandolinjevalg. En avbrutt nedlasting kan
+beholdes i en modellspesifikk, kontrollert delmappe og fortsettes med HTTP Range.
+Deldata skal kontrolleres som en vanlig fil uten lenker, være begrenset av den
+fastlåste størrelsen og aldri brukes som en aktiv modell. En ferdig delnedlasting
+skal fortsatt valideres med størrelse og SHA-256 og publiseres fra unik staging.
+Ugyldige ferdige deldata kan fjernes fordi de er regenererbare og aldri har vært
+publisert som modell. En tidligere
 OpenCLIP/Hugging Face-cache kan brukes uten kopiering når den svarer til den
 samme fastlåste filen og ligger inne i den konfigurerte modellroten.
 
@@ -620,6 +627,13 @@ OpenCLIP-søk laster en kostbar modell og registrerer søkekjøring og resultate
 i OpenCLIP-databasen. Selve søket og eksplisitt forhåndslasting av modellen
 skal derfor bare kunne startes med CSRF-beskyttet POST. GET `/search` skal
 bare vise søkeskjemaet, også når en gammel URL inneholder søkeparametre.
+Fra full bildevisning kan en skrivbar server også starte bildelikhetssøk med
+POST `/search/similar`. Søket bruker referansebildets eksisterende embedding
+for valgt OpenCLIP-modell, rangerer bare andre aktive bilder, følger filteret
+for «ute av fokus» og lagres i dagens søketabeller som
+`similar:file_id=<id>`. Referansebildet skal aldri være blant treffene. Denne
+flyten skal ikke laste tekstmodellen, og knappen skal ikke vises for videoer,
+når OpenCLIP er deaktivert eller i read-only-modus.
 Eksplisitt telling av thumbnails skal av samme grunn bruke beskyttet POST.
 Automatisk vedlikeholdsstatus kan forbli GET fordi den bare gjør read-only
 databaseoppslag og også skal fungere i read-only-modus.

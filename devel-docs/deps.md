@@ -137,17 +137,20 @@ Scriptet installerer den komplette OpenCLIP-låsen:
 Denne pakken trekker inn større ML-avhengigheter, blant annet PyTorch. Koden
 sjekker også eksplisitt etter `torch`.
 
-`install-openclip.ps1` laster ned og tester disse modellene til
-`.bildebank-openclip`:
+`install-openclip.ps1` installerer og importtester bare avhengighetene.
+`bildebank download-openclip-model` laster ned modellen som er valgt i config
+til `.bildebank-openclip`. Det eksplisitte valget `--all-supported` laster ned
+begge støttede modeller:
 
 - `ViT-B-32` med `laion2b_s34b_b79k`
 - `ViT-L-14` med `laion2b_s32b_b82k`
 
 Begge modellene er safetensors-filer med fast Hugging Face-repository,
 repository-revisjon, filnavn, størrelse og SHA-256 i
-`bildebank/openclip_models.py`. Nedlasting skjer til en unik stagingmappe med
-størrelsesgrense og eksklusiv filoppretting. Modellen publiseres først etter
-størrelse- og hashkontroll.
+`bildebank/openclip_models.py`. Ufullstendige nedlastinger ligger modellspesifikt
+under `bildebank-models/.downloads`, valideres som vanlige filer uten lenker og
+fortsettes med en kontrollert HTTP Range-forespørsel. Modellen flyttes til unik
+staging og publiseres først etter størrelse- og hashkontroll.
 
 En eksisterende cache fra OpenCLIP/Hugging Face brukes direkte når den ligger
 under modellroten og svarer til eksakt fastlåst revisjon, filnavn, størrelse og

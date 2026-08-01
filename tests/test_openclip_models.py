@@ -83,7 +83,7 @@ def test_install_downloads_validates_and_publishes_pinned_model(
         ),
         patch.object(
             openclip_models,
-            "download_https_file",
+            "download_https_file_resumable",
             side_effect=download,
         ),
     ):
@@ -92,6 +92,82 @@ def test_install_downloads_validates_and_publishes_pinned_model(
     assert result.installed
     assert result.path.read_bytes() == content
     assert openclip_models.OPENCLIP_MANAGED_DIRNAME in result.path.parts
+
+
+def test_interrupted_install_keeps_partial_file_for_next_attempt(
+    tmp_path: Path,
+) -> None:
+    content = b"model-data"
+    spec = make_test_spec(content)
+    config = config_for(tmp_path, spec)
+    seen_existing: list[bytes] = []
+
+    def interrupted_download(_url: str, destination: Path, **_kwargs: object) -> None:
+        destination.write_bytes(content[:5])
+        raise OSError("mobilforbindelsen forsvant")
+
+    def resumed_download(_url: str, destination: Path, **_kwargs: object) -> None:
+        seen_existing.append(destination.read_bytes())
+        with destination.open("ab") as stream:
+            stream.write(content[5:])
+
+    specs = {(spec.model_name, spec.pretrained): spec}
+    with (
+        patch.object(openclip_models, "OPENCLIP_MODEL_SPECS", specs),
+        patch.object(
+            openclip_models,
+            "download_https_file_resumable",
+            side_effect=interrupted_download,
+        ),
+        pytest.raises(OSError, match="mobilforbindelsen"),
+    ):
+        openclip_models.install_openclip_model(config)
+
+    partial = openclip_models.partial_openclip_model_path(config, spec)
+    assert partial.read_bytes() == content[:5]
+    assert not openclip_models.managed_openclip_model_path(config, spec).exists()
+
+    with (
+        patch.object(openclip_models, "OPENCLIP_MODEL_SPECS", specs),
+        patch.object(
+            openclip_models,
+            "download_https_file_resumable",
+            side_effect=resumed_download,
+        ),
+    ):
+        result = openclip_models.install_openclip_model(config)
+
+    assert seen_existing == [content[:5]]
+    assert result.path.read_bytes() == content
+    assert not partial.exists()
+
+
+def test_invalid_completed_partial_download_is_removed(
+    tmp_path: Path,
+) -> None:
+    spec = make_test_spec(b"expected")
+    config = config_for(tmp_path, spec)
+
+    def bad_download(_url: str, destination: Path, **_kwargs: object) -> None:
+        destination.write_bytes(b"changed!")
+
+    with (
+        patch.object(
+            openclip_models,
+            "OPENCLIP_MODEL_SPECS",
+            {(spec.model_name, spec.pretrained): spec},
+        ),
+        patch.object(
+            openclip_models,
+            "download_https_file_resumable",
+            side_effect=bad_download,
+        ),
+        pytest.raises(ValueError, match="ugyldige delnedlastingen ble fjernet"),
+    ):
+        openclip_models.install_openclip_model(config)
+
+    assert not openclip_models.partial_openclip_model_path(config, spec).exists()
+    assert not openclip_models.managed_openclip_model_path(config, spec).exists()
 
 
 def test_install_preserves_existing_model_with_wrong_hash(
@@ -109,7 +185,7 @@ def test_install_preserves_existing_model_with_wrong_hash(
             "OPENCLIP_MODEL_SPECS",
             {(spec.model_name, spec.pretrained): spec},
         ),
-        patch.object(openclip_models, "download_https_file") as download,
+        patch.object(openclip_models, "download_https_file_resumable") as download,
         pytest.raises(ValueError, match="beholdes uendret"),
     ):
         openclip_models.install_openclip_model(config)
@@ -134,7 +210,7 @@ def test_existing_pinned_huggingface_cache_is_reused_without_copy(
             "OPENCLIP_MODEL_SPECS",
             {(spec.model_name, spec.pretrained): spec},
         ),
-        patch.object(openclip_models, "download_https_file") as download,
+        patch.object(openclip_models, "download_https_file_resumable") as download,
     ):
         result = openclip_models.install_openclip_model(config)
 
@@ -191,7 +267,7 @@ def test_unknown_model_is_never_downloaded_automatically(
         pretrained="remote-tag",
     )
     with (
-        patch.object(openclip_models, "download_https_file") as download,
+        patch.object(openclip_models, "download_https_file_resumable") as download,
         pytest.raises(ValueError, match="ukjent OpenCLIP-modell"),
     ):
         openclip_models.install_openclip_model(config)

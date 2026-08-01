@@ -13,14 +13,17 @@ from bildebank import db
 from bildebank.config import AppConfig, BrowserConfig, OpenClipConfig
 from bildebank.db import init_database
 from bildebank.openclip import ImageSearchResult, connect_openclip_db, embedding_blob, openclip_db_path
+from bildebank.server_browser_queries import item_by_id
 from bildebank.server_handler import BildebankRequestHandler
-from bildebank.server_pages import search_html, search_start_html
+from bildebank.server_pages import item_page_html, search_html, search_start_html, similar_search_html
 from bildebank.server_search import (
     DEFAULT_SEARCH_LIMIT,
     OpenClipSearchCache,
     ServerSearchStats,
+    ServerSimilarSearchStats,
     load_search_embedding_cache,
     search_server_images,
+    search_server_similar_images,
 )
 from bildebank.target_lock import LOCK_FILENAME, TargetLockError
 from tests.cli_helpers import run_cli
@@ -29,6 +32,38 @@ from tests.test_media import minimal_png
 
 
 class ServerSearchCliTests(unittest.TestCase):
+    def insert_embeddings(
+        self,
+        target: Path,
+        config: OpenClipConfig,
+        rows: list[tuple[int, str, str, list[float]]],
+    ) -> None:
+        conn = connect_openclip_db(target)
+        try:
+            conn.executemany(
+                """
+                INSERT INTO image_embeddings(
+                    file_id, target_path, target_path_key, sha256,
+                    model_name, pretrained, embedding
+                ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        file_id,
+                        target_path,
+                        target_path.casefold(),
+                        sha256,
+                        config.model_name,
+                        config.pretrained,
+                        embedding_blob(vector),
+                    )
+                    for file_id, target_path, sha256, vector in rows
+                ],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def test_run_server_search_page_warns_when_model_is_not_loaded(self) -> None:
         server = SimpleNamespace(
             config=AppConfig(openclip=OpenClipConfig(enabled=True)),
@@ -562,3 +597,472 @@ class ServerSearchCliTests(unittest.TestCase):
         self.assertIn('class="media-link quarter-turn"', body)
         self.assertIn('data-view-rotation="90"', body)
         self.assertIn("transform: rotate(90deg)", body)
+
+    def test_similar_search_ranks_by_cosine_excludes_reference_and_caps_at_100(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            config = OpenClipConfig()
+            reference_id = insert_test_file(
+                target,
+                "2024/01/reference.png",
+                sha256="sha-reference",
+            )
+            embedding_rows = [
+                (
+                    reference_id,
+                    "2024/01/reference.png",
+                    "sha-reference",
+                    [1.0, 0.0],
+                )
+            ]
+            candidate_ids: list[int] = []
+            for index in range(101):
+                relative_path = f"2024/02/candidate-{index:03d}.png"
+                file_id = insert_test_file(
+                    target,
+                    relative_path,
+                    sha256=f"sha-{index}",
+                )
+                candidate_ids.append(file_id)
+                embedding_rows.append(
+                    (
+                        file_id,
+                        relative_path,
+                        f"sha-{index}",
+                        [1.0, index / 100.0],
+                    )
+                )
+            self.insert_embeddings(target, config, embedding_rows)
+            app_config = AppConfig(openclip=config)
+            cache = OpenClipSearchCache(app_config)
+            server = SimpleNamespace(
+                target=target,
+                config=app_config,
+                search_cache=cache,
+            )
+
+            with patch(
+                "bildebank.server_search.load_text_model",
+                side_effect=AssertionError("Likhetssøk skal ikke laste tekstmodellen"),
+            ):
+                stats = search_server_similar_images(
+                    server,
+                    file_id=reference_id,
+                    limit=500,
+                )
+
+            self.assertFalse(cache.loaded)
+            self.assertEqual(len(stats.results), 100)
+            self.assertNotIn(reference_id, [result.file_id for result in stats.results])
+            self.assertEqual(stats.results[0].file_id, candidate_ids[0])
+            self.assertGreater(
+                stats.results[0].similarity,
+                stats.results[-1].similarity,
+            )
+            conn = sqlite3.connect(openclip_db_path(target))
+            try:
+                run = conn.execute(
+                    "SELECT id, query, result_limit FROM image_search_runs"
+                ).fetchone()
+                stored_results = conn.execute(
+                    """
+                    SELECT file_id, target_path, rank
+                    FROM image_search_results
+                    WHERE run_id = ?
+                    ORDER BY rank
+                    """,
+                    (run[0],),
+                ).fetchall()
+            finally:
+                conn.close()
+
+        self.assertEqual(run[1:], (f"similar:file_id={reference_id}", 100))
+        self.assertEqual(len(stored_results), 100)
+        self.assertEqual(stored_results[0], (candidate_ids[0], "2024/02/candidate-000.png", 1))
+        self.assertEqual([row[2] for row in stored_results], list(range(1, 101)))
+
+    def test_similar_search_filters_deleted_orphaned_and_out_of_focus_images(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            config = OpenClipConfig()
+            reference_id = insert_test_file(target, "2024/01/reference.png", sha256="sha-reference")
+            visible_id = insert_test_file(target, "2024/01/visible.png", sha256="sha-visible")
+            hidden_id = insert_test_file(target, "2024/01/hidden.png", sha256="sha-hidden")
+            deleted_id = insert_test_file(
+                target,
+                "deleted/2024/01/deleted.png",
+                sha256="sha-deleted",
+                deleted=True,
+            )
+            orphan_id = deleted_id + 1000
+            conn = db.connect(target)
+            try:
+                db.tag_file(conn, file_id=hidden_id, tag_name=db.SYSTEM_TAG_OUT_OF_FOCUS)
+                conn.commit()
+            finally:
+                conn.close()
+            self.insert_embeddings(
+                target,
+                config,
+                [
+                    (reference_id, "2024/01/reference.png", "sha-reference", [1.0, 0.0]),
+                    (visible_id, "2024/01/visible.png", "sha-visible", [0.7, 0.3]),
+                    (hidden_id, "2024/01/hidden.png", "sha-hidden", [1.0, 0.0]),
+                    (deleted_id, "deleted/2024/01/deleted.png", "sha-deleted", [1.0, 0.0]),
+                    (orphan_id, "2024/01/orphan.png", "sha-orphan", [1.0, 0.0]),
+                ],
+            )
+            app_config = AppConfig(
+                openclip=config,
+                browser=BrowserConfig(hide_out_of_focus=True),
+            )
+            server = SimpleNamespace(
+                target=target,
+                config=app_config,
+                search_cache=OpenClipSearchCache(app_config),
+            )
+
+            stats = search_server_similar_images(
+                server,
+                file_id=reference_id,
+                limit=100,
+            )
+
+        self.assertEqual([result.file_id for result in stats.results], [visible_id])
+
+    def test_similar_search_reuses_embedding_cache_and_detects_new_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            config = OpenClipConfig()
+            reference_id = insert_test_file(target, "2024/01/reference.png", sha256="sha-reference")
+            old_id = insert_test_file(target, "2024/01/old.png", sha256="sha-old")
+            self.insert_embeddings(
+                target,
+                config,
+                [
+                    (reference_id, "2024/01/reference.png", "sha-reference", [1.0, 0.0]),
+                    (old_id, "2024/01/old.png", "sha-old", [0.0, 1.0]),
+                ],
+            )
+            app_config = AppConfig(openclip=config)
+            cache = OpenClipSearchCache(app_config)
+            server = SimpleNamespace(target=target, config=app_config, search_cache=cache)
+
+            with (
+                patch(
+                    "bildebank.server_search.load_text_model",
+                    side_effect=AssertionError("Likhetssøk skal ikke laste tekstmodellen"),
+                ),
+                patch(
+                    "bildebank.server_search.load_search_embedding_cache",
+                    wraps=load_search_embedding_cache,
+                ) as load_cache,
+            ):
+                first = search_server_similar_images(server, file_id=reference_id)
+                second = search_server_similar_images(server, file_id=reference_id)
+                new_id = insert_test_file(target, "2024/01/new.png", sha256="sha-new")
+                self.insert_embeddings(
+                    target,
+                    config,
+                    [(new_id, "2024/01/new.png", "sha-new", [0.9, 0.1])],
+                )
+                third = search_server_similar_images(server, file_id=reference_id)
+
+        self.assertEqual(load_cache.call_count, 2)
+        self.assertEqual([result.file_id for result in first.results], [old_id])
+        self.assertEqual([result.file_id for result in second.results], [old_id])
+        self.assertEqual([result.file_id for result in third.results], [new_id, old_id])
+        self.assertFalse(cache.loaded)
+
+    def test_similar_search_rejects_invalid_inactive_non_image_and_missing_embedding(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            config = OpenClipConfig()
+            reference_id = insert_test_file(target, "2024/01/reference.png", sha256="sha-reference")
+            embedded_id = insert_test_file(target, "2024/01/embedded.png", sha256="sha-embedded")
+            deleted_id = insert_test_file(
+                target,
+                "deleted/2024/01/deleted.png",
+                sha256="sha-deleted",
+                deleted=True,
+            )
+            video_id = insert_test_file(target, "2024/01/video.mp4", sha256="sha-video")
+            self.insert_embeddings(
+                target,
+                config,
+                [(embedded_id, "2024/01/embedded.png", "sha-embedded", [1.0, 0.0])],
+            )
+            app_config = AppConfig(openclip=config)
+            server = SimpleNamespace(
+                target=target,
+                config=app_config,
+                search_cache=OpenClipSearchCache(app_config),
+            )
+
+            for invalid_id in (99999, deleted_id, video_id):
+                with self.subTest(file_id=invalid_id), self.assertRaisesRegex(
+                    ValueError,
+                    "aktivt bilde",
+                ):
+                    search_server_similar_images(server, file_id=invalid_id)
+            with self.assertRaisesRegex(ValueError, "image-scan"):
+                search_server_similar_images(server, file_id=reference_id)
+
+    def test_similar_search_refuses_to_run_while_target_is_locked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            reference_id = insert_test_file(target, "2024/01/reference.png")
+            app_config = AppConfig(openclip=OpenClipConfig())
+            server = SimpleNamespace(
+                target=target,
+                config=app_config,
+                search_cache=OpenClipSearchCache(app_config),
+            )
+            (target / LOCK_FILENAME).write_text("command=image-scan\n", encoding="utf-8")
+
+            with self.assertRaises(TargetLockError):
+                search_server_similar_images(server, file_id=reference_id)
+
+    def test_similar_search_page_reuses_result_cards_rotation_and_item_links(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            reference_id = insert_test_file(target, "2024/01/reference & one.png")
+            result_id = insert_test_file(target, "2024/01/result.png")
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    "UPDATE files SET view_rotation_degrees = 90 WHERE id = ?",
+                    (result_id,),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            server = SimpleNamespace(
+                target=target,
+                face_enabled=False,
+                openclip_enabled=True,
+            )
+            stats = ServerSimilarSearchStats(
+                reference_file_id=reference_id,
+                reference_target_path=Path("2024/01/reference & one.png"),
+                results=(
+                    ImageSearchResult(1, result_id, Path("2024/01/result.png"), 0.75),
+                ),
+            )
+
+            body = similar_search_html(server, stats)
+
+        self.assertIn("Bilder som ligner på reference &amp; one.png", body)
+        self.assertIn(f'href="/item/{reference_id}"', body)
+        self.assertIn(f'href="/item/{result_id}"', body)
+        self.assertIn(f'src="/file/{result_id}"', body)
+        self.assertIn('class="media-link quarter-turn"', body)
+        self.assertIn('data-view-rotation="90"', body)
+        self.assertIn("score=0.750", body)
+
+    def test_similar_search_button_only_appears_for_writable_openclip_images(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            image_id = insert_test_file(target, "2024/01/image.png")
+            video_id = insert_test_file(target, "2024/01/video.mp4")
+            image = item_by_id(target, image_id)
+            video = item_by_id(target, video_id)
+            month_nav = {
+                "previous_year": None,
+                "next_year": None,
+                "previous_month": None,
+                "next_month": None,
+            }
+            image_body = item_page_html(target, image, None, None, month_nav)
+            disabled_body = item_page_html(
+                target,
+                image,
+                None,
+                None,
+                month_nav,
+                openclip_enabled=False,
+            )
+            read_only_body = item_page_html(
+                target,
+                image,
+                None,
+                None,
+                month_nav,
+                read_only=True,
+            )
+            video_body = item_page_html(target, video, None, None, month_nav)
+
+        self.assertIn('action="/search/similar"', image_body)
+        self.assertIn('name="file_id" value="1"', image_body)
+        self.assertIn('name="limit" value="100"', image_body)
+        self.assertIn('aria-label="Finn lignende bilder">🔍≈</button>', image_body)
+        self.assertNotIn("🔍≈", disabled_body)
+        self.assertNotIn("🔍≈", read_only_body)
+        self.assertNotIn("🔍≈", video_body)
+
+    def test_similar_search_get_does_not_run_search(self) -> None:
+        class FakeHandler:
+            path = "/search/similar?file_id=1"
+            server = SimpleNamespace(read_only=False, slideshow=None)
+            response: tuple[str, HTTPStatus] | None = None
+
+            def respond_text(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                self.response = (content, status)
+
+        handler = FakeHandler()
+        with patch(
+            "bildebank.server_handler.search_server_similar_images",
+            side_effect=AssertionError("GET skal ikke kjøre likhetssøk"),
+        ):
+            BildebankRequestHandler.do_GET(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.response, ("Endepunktet krever POST.", HTTPStatus.METHOD_NOT_ALLOWED))
+
+    def test_similar_search_post_requires_csrf_and_is_blocked_in_read_only_mode(self) -> None:
+        class FakeHandler:
+            path = "/search/similar"
+            headers = {"Content-Length": "0"}
+            rfile = BytesIO()
+            server = SimpleNamespace(read_only=False, slideshow=None, csrf_token="token")
+            response: tuple[object, HTTPStatus] | None = None
+
+            def respond_json(self, content: object, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                self.response = (content, status)
+
+            def respond_text(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                self.response = (content, status)
+
+            def respond_read_only_forbidden(self, path: str) -> None:
+                BildebankRequestHandler.respond_read_only_forbidden(self, path)  # type: ignore[arg-type]
+
+        handler = FakeHandler()
+        BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
+        self.assertEqual(handler.response[1], HTTPStatus.FORBIDDEN)
+        self.assertIn("CSRF", handler.response[0]["error"])
+
+        handler.server.read_only = True
+        handler.response = None
+        BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
+        self.assertEqual(handler.response[1], HTTPStatus.FORBIDDEN)
+        self.assertIn("read-only", handler.response[0])
+
+    def test_similar_search_post_rejects_disabled_openclip_and_invalid_file_id(self) -> None:
+        def make_handler(*, enabled: bool, body: bytes) -> object:
+            class FakeHandler:
+                path = "/search/similar"
+                headers = {
+                    "Content-Length": str(len(body)),
+                    "Content-Type": "application/x-www-form-urlencoded",
+                }
+                rfile = BytesIO(body)
+                server = SimpleNamespace(
+                    read_only=False,
+                    slideshow=None,
+                    csrf_token="token",
+                    openclip_enabled=enabled,
+                    face_enabled=False,
+                )
+                response: tuple[str, HTTPStatus] | None = None
+
+                def respond_text(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.response = (content, status)
+
+                def respond_html(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.response = (content, status)
+
+            return FakeHandler()
+
+        disabled_body = b"file_id=1&csrf_token=token"
+        disabled = make_handler(enabled=False, body=disabled_body)
+        BildebankRequestHandler.do_POST(disabled)  # type: ignore[arg-type]
+        self.assertEqual(disabled.response, ("Bildelikhetssøk er av.", HTTPStatus.NOT_FOUND))
+
+        invalid_body = b"file_id=nope&csrf_token=token"
+        invalid = make_handler(enabled=True, body=invalid_body)
+        BildebankRequestHandler.do_POST(invalid)  # type: ignore[arg-type]
+        self.assertEqual(invalid.response[1], HTTPStatus.BAD_REQUEST)
+        self.assertIn("Ugyldig file_id", invalid.response[0])
+
+    def test_similar_search_post_renders_results_and_caps_hidden_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            encoded = b"file_id=7&limit=999&csrf_token=token"
+
+            class FakeHandler:
+                path = "/search/similar"
+                headers = {
+                    "Content-Length": str(len(encoded)),
+                    "Content-Type": "application/x-www-form-urlencoded",
+                }
+                rfile = BytesIO(encoded)
+                server = SimpleNamespace(
+                    target=target,
+                    read_only=False,
+                    slideshow=None,
+                    csrf_token="token",
+                    openclip_enabled=True,
+                    face_enabled=False,
+                )
+                response: tuple[str, HTTPStatus] | None = None
+
+                def respond_html(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.response = (content, status)
+
+            stats = ServerSimilarSearchStats(
+                reference_file_id=7,
+                reference_target_path=Path("2024/01/reference.png"),
+                results=(),
+            )
+            handler = FakeHandler()
+            with patch(
+                "bildebank.server_handler.search_server_similar_images",
+                return_value=stats,
+            ) as similar_search:
+                BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
+
+        similar_search.assert_called_once_with(handler.server, file_id=7, limit=100)
+        self.assertEqual(handler.response[1], HTTPStatus.OK)
+        self.assertIn("Bilder som ligner på reference.png", handler.response[0])
+
+    def test_similar_search_post_reports_target_lock_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            (target / LOCK_FILENAME).write_text("command=image-scan\n", encoding="utf-8")
+            encoded = b"file_id=1&limit=100&csrf_token=token"
+
+            class FakeHandler:
+                path = "/search/similar"
+                headers = {
+                    "Content-Length": str(len(encoded)),
+                    "Content-Type": "application/x-www-form-urlencoded",
+                }
+                rfile = BytesIO(encoded)
+                server = SimpleNamespace(
+                    target=target,
+                    config=AppConfig(openclip=OpenClipConfig()),
+                    search_cache=OpenClipSearchCache(AppConfig(openclip=OpenClipConfig())),
+                    read_only=False,
+                    slideshow=None,
+                    csrf_token="token",
+                    openclip_enabled=True,
+                    face_enabled=False,
+                )
+                response: tuple[str, HTTPStatus] | None = None
+
+                def respond_html(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.response = (content, status)
+
+            handler = FakeHandler()
+            BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.response[1], HTTPStatus.CONFLICT)
+        self.assertIn("Bildesamlingen er låst", handler.response[0])

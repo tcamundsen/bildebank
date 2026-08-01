@@ -206,3 +206,7 @@ def openclip_install_command(repo_root: Path | None = None) -> list[str]:
 
 def download_face_model_command() -> list[str]:
     return bildebank_command("download-face-model")
+
+
+def download_openclip_model_command() -> list[str]:
+    return bildebank_command("download-openclip-model")
