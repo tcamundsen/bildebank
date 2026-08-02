@@ -218,6 +218,52 @@ def test_post_to_tk_ignores_callbacks_after_close_started() -> None:
     assert not app._post_to_tk(lambda: None)
 
 
+def test_launcher_updates_clustering_elapsed_time_independently_of_worker() -> None:
+    app = LauncherApp.__new__(LauncherApp)
+    scheduled: list[object] = []
+    logged: list[tuple[str, str | None]] = []
+
+    class Root:
+        def after(self, delay: int, callback: object) -> None:
+            assert delay == 1_000
+            scheduled.append(callback)
+
+    app.root = Root()
+    app.image_clustering_started_at = None
+    app.image_clustering_heartbeat_generation = 0
+    app._log = lambda message, *, progress_key=None: logged.append(
+        (message, progress_key)
+    )
+
+    with patch("bildebank.launcher_app.time.monotonic", side_effect=(100.0, 102.0)):
+        app._log_process_output(
+            "Image-clustering: Grupperer bilder ... forløpt=0s"
+        )
+        heartbeat = scheduled.pop(0)
+        heartbeat()  # type: ignore[operator]
+        app._log_process_output(
+            "Image-clustering: storage: actual_cluster_count=12"
+        )
+        stale_heartbeat = scheduled.pop(0)
+        stale_heartbeat()  # type: ignore[operator]
+
+    assert logged == [
+        (
+            "Image-clustering: Grupperer bilder ... forløpt=0s",
+            "Image-clustering",
+        ),
+        (
+            "Image-clustering: Grupperer bilder ... forløpt=2s",
+            "Image-clustering",
+        ),
+        (
+            "Image-clustering: storage: actual_cluster_count=12",
+            "Image-clustering",
+        ),
+    ]
+    assert app.image_clustering_started_at is None
+
+
 def test_close_stops_server_owned_by_main_tab() -> None:
     app = LauncherApp.__new__(LauncherApp)
     actions: list[str] = []

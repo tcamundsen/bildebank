@@ -595,10 +595,12 @@ Under kjøringen skal launcherloggen vise:
 
 MiniBatchKMeans og HDBSCAN gir ikke nyttig kontinuerlig prosentprogresjon. I
 algoritmefasen viser workerprosessen derfor teksten «Grupperer bilder …» og
-forløpt tid omtrent hvert femte sekund. Heartbeaten kjører i en sovende
-daemontråd, flusher hver linje og stoppes før lagringssteget. Launcherloggen
-erstatter samme progresjonslinje. Det skal ikke oppgis en misvisende prosent
-eller beregnet gjenstående tid.
+forsøker å skrive forløpt tid omtrent hvert femte sekund. Heartbeaten kjører i
+en sovende daemontråd, flusher hver linje og stoppes før lagringssteget. Native
+algoritmekode kan holde workerens Python-tråder bundet. Launcheren driver derfor
+i tillegg sin egen sekundviser når startlinjen er mottatt, og erstatter samme
+progresjonslinje hvert sekund til neste workerlinje eller prosessavslutning. Det
+skal ikke oppgis en misvisende prosent eller beregnet gjenstående tid.
 
 ### Intern prosessgrense
 

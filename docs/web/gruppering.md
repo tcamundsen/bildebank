@@ -26,9 +26,11 @@ av som standard. Jobben bruker embeddings som allerede er laget av
 **Klargjør bildesøk**. Bilder uten en gyldig embedding hoppes over og telles i
 resultatet.
 
-Mens algoritmen arbeider, oppdateres én linje i launcherloggen omtrent hvert
-femte sekund med forløpt tid. HDBSCAN kan ikke gi en pålitelig prosent eller
-beregnet gjenstående tid, så loggen viser bare at prosessen fortsatt arbeider.
+Mens algoritmen arbeider, oppdateres én linje i launcherloggen hvert sekund med
+forløpt tid. Oppdateringen drives av launcheren og fortsetter selv når
+selve beregningen ikke kan rapportere fremdrift. HDBSCAN kan ikke gi en
+pålitelig prosent eller beregnet gjenstående tid, så loggen viser bare at
+prosessen fortsatt arbeider.
 
 ## Se eller slett resultatet
 

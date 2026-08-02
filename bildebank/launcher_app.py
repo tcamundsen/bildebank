@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -87,6 +88,8 @@ class LauncherApp:
         self.tooltips: list[Tooltip] = []
         self.active_progress_log_key: str | None = None
         self.active_progress_log_range: tuple[str, str] | None = None
+        self.image_clustering_started_at: float | None = None
+        self.image_clustering_heartbeat_generation = 0
         self.command_runner = CommandRunner(
             post_to_ui=self._post_to_tk,
             on_output=self._log_process_output,
@@ -486,6 +489,7 @@ class LauncherApp:
     ) -> None:
         def on_start() -> None:
             self._set_busy(True, running_message)
+            self._stop_image_clustering_heartbeat()
             self._clear_active_progress_log()
             self._log("$ " + " ".join(command))
 
@@ -562,6 +566,7 @@ class LauncherApp:
         from tkinter import messagebox
 
         self._set_busy(False)
+        self._stop_image_clustering_heartbeat()
         self._clear_active_progress_log()
         self._log(f"{failure_message} {exc}")
         messagebox.showerror("Feil", failure_message)
@@ -578,6 +583,7 @@ class LauncherApp:
         from tkinter import messagebox
 
         self._set_busy(False)
+        self._stop_image_clustering_heartbeat()
         self._clear_active_progress_log()
         if return_code == 0:
             self._log(success_message)
@@ -597,7 +603,47 @@ class LauncherApp:
         self._log(f"{message} {exc}")
 
     def _log_process_output(self, message: str) -> None:
+        if message.startswith("Image-clustering: Grupperer bilder ..."):
+            self._start_image_clustering_heartbeat()
+        elif (
+            self.image_clustering_started_at is not None
+            and message.startswith("Image-clustering:")
+        ):
+            self._stop_image_clustering_heartbeat()
         self._log(message, progress_key=progress_log_key(message))
+
+    def _start_image_clustering_heartbeat(self) -> None:
+        if self.image_clustering_started_at is not None:
+            return
+        self.image_clustering_started_at = time.monotonic()
+        self.image_clustering_heartbeat_generation += 1
+        generation = self.image_clustering_heartbeat_generation
+        self.root.after(
+            1_000,
+            lambda: self._update_image_clustering_heartbeat(generation),
+        )
+
+    def _update_image_clustering_heartbeat(self, generation: int) -> None:
+        started_at = self.image_clustering_started_at
+        if (
+            started_at is None
+            or generation != self.image_clustering_heartbeat_generation
+        ):
+            return
+        elapsed_seconds = max(0, int(time.monotonic() - started_at))
+        message = (
+            "Image-clustering: Grupperer bilder ... "
+            f"forløpt={elapsed_seconds}s"
+        )
+        self._log(message, progress_key="Image-clustering")
+        self.root.after(
+            1_000,
+            lambda: self._update_image_clustering_heartbeat(generation),
+        )
+
+    def _stop_image_clustering_heartbeat(self) -> None:
+        self.image_clustering_started_at = None
+        self.image_clustering_heartbeat_generation += 1
 
     def _clear_active_progress_log(self) -> None:
         self.active_progress_log_key = None
