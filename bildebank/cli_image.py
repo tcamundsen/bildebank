@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import threading
+import time
 import webbrowser
+from collections.abc import Callable
 from pathlib import Path
 
 from .config import CONFIG_FILENAME, load_config
@@ -23,6 +26,62 @@ from .target_lock import TargetLock
 
 IMAGE_SCAN_PROGRESS: ProgressMeter | None = None
 IMAGE_SEARCH_PROGRESS: ProgressMeter | None = None
+IMAGE_CLUSTERING_HEARTBEAT_SECONDS = 5.0
+
+
+class ImageClusteringProgressPrinter:
+    def __init__(
+        self,
+        *,
+        interval_seconds: float = IMAGE_CLUSTERING_HEARTBEAT_SECONDS,
+        output: Callable[[str], None] | None = None,
+    ) -> None:
+        self.interval_seconds = interval_seconds
+        self.output = output or (lambda message: print(message, flush=True))
+        self._stop_event: threading.Event | None = None
+        self._thread: threading.Thread | None = None
+        self._started_at = 0.0
+
+    def __call__(self, stage: str, values: dict[str, object]) -> None:
+        self.close()
+        details = ", ".join(
+            f"{key}={value}"
+            for key, value in values.items()
+        )
+        if stage == "algorithm":
+            self.output("Image-clustering: Grupperer bilder ... forløpt=0s")
+            self._start_heartbeat()
+        elif details:
+            self.output(f"Image-clustering: {stage}: {details}")
+        else:
+            self.output(f"Image-clustering: {stage}")
+
+    def _start_heartbeat(self) -> None:
+        stop_event = threading.Event()
+        self._stop_event = stop_event
+        self._started_at = time.monotonic()
+
+        def heartbeat() -> None:
+            while not stop_event.wait(self.interval_seconds):
+                elapsed_seconds = max(0, int(time.monotonic() - self._started_at))
+                self.output(
+                    "Image-clustering: Grupperer bilder ... "
+                    f"forløpt={elapsed_seconds}s"
+                )
+
+        thread = threading.Thread(target=heartbeat, daemon=True)
+        self._thread = thread
+        thread.start()
+
+    def close(self) -> None:
+        stop_event = self._stop_event
+        thread = self._thread
+        self._stop_event = None
+        self._thread = None
+        if stop_event is not None:
+            stop_event.set()
+        if thread is not None:
+            thread.join()
 
 
 def run_image_command(args: argparse.Namespace, target: Path, *, repo_root: Path) -> int:
@@ -81,16 +140,21 @@ def run_image_clustering_worker(
     print(
         "Image-clustering: starter "
         f"algorithm={parameters.algorithm}, "
-        f"parameters={parameters.as_dict()}"
+        f"parameters={parameters.as_dict()}",
+        flush=True,
     )
-    result = run_image_clustering(
-        target,
-        config,
-        query=query,
-        hide_out_of_focus=hide_out_of_focus,
-        parameters=parameters,
-        progress=print_image_clustering_progress,
-    )
+    progress = ImageClusteringProgressPrinter()
+    try:
+        result = run_image_clustering(
+            target,
+            config,
+            query=query,
+            hide_out_of_focus=hide_out_of_focus,
+            parameters=parameters,
+            progress=progress,
+        )
+    finally:
+        progress.close()
     print(
         "Image-clustering: "
         f"run_id={result.run_id}, status={result.status}, "
@@ -99,34 +163,20 @@ def run_image_clustering_worker(
         f"mangler={result.missing_embedding_count}, "
         f"ugyldige={result.invalid_embedding_count}, "
         f"gruppert={result.clustered_file_count}, "
-        f"grupper={result.actual_cluster_count}"
+        f"grupper={result.actual_cluster_count}",
+        flush=True,
     )
     if result.warning_message:
-        print(f"Image-clustering: advarsel={result.warning_message}")
+        print(f"Image-clustering: advarsel={result.warning_message}", flush=True)
     if result.status != "completed":
-        print(f"Image-clustering: feil={result.error_message}")
+        print(f"Image-clustering: feil={result.error_message}", flush=True)
         return 2
     print(
         "Image-clustering: ferdig. Resultatet finnes under Gruppering "
-        "i webgrensesnittet."
+        "i webgrensesnittet.",
+        flush=True,
     )
     return 0
-
-
-def print_image_clustering_progress(
-    stage: str,
-    values: dict[str, object],
-) -> None:
-    details = ", ".join(
-        f"{key}={value}"
-        for key, value in values.items()
-    )
-    if stage == "algorithm":
-        print("Image-clustering: Grupperer bilder ...")
-    elif details:
-        print(f"Image-clustering: {stage}: {details}")
-    else:
-        print(f"Image-clustering: {stage}")
 
 
 def run_image_scan(target: Path, *, repo_root: Path, limit: int | None) -> int:

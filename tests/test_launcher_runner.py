@@ -78,6 +78,9 @@ def test_progress_log_key_recognizes_progress_updates_only() -> None:
     assert progress_log_key("Thumbnails: ferdig kontrollert 84/84 filer.") is None
     assert progress_log_key("Import fullført.") is None
     assert progress_log_key("OpenCLIP-modell: ViT-B-32 = 12.0 MB/577.1 MB (2 %)") == "OpenCLIP-modell"
+    assert progress_log_key(
+        "Image-clustering: Grupperer bilder ... forløpt=15s"
+    ) == "Image-clustering"
 
 def test_command_runner_owns_cancellation_state() -> None:
     runner = CommandRunner(post_to_ui=lambda callback: True, on_output=lambda _message: None)

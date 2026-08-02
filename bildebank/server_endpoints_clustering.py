@@ -362,11 +362,7 @@ def grouping_run_page_html(server: Any, run_id: int) -> str | None:
         cluster_html = "<p>Ingen aktive grupper i denne kjøringen.</p>"
     selection_text = _run_selection_text(row)
     algorithm = str(row["algorithm"])
-    algorithm_text = (
-        "MiniBatchKMeans"
-        if algorithm == "minibatch_kmeans"
-        else "HDBSCAN" if algorithm == "hdbscan" else algorithm
-    )
+    algorithm_text = _run_algorithm_text(row)
     seed_html = (
         f'<div><dt>Seed</dt><dd>{int(row["random_seed"])}</dd></div>'
         if algorithm == "minibatch_kmeans"
@@ -489,6 +485,44 @@ def _run_selection_text(row: Any) -> str:
     )
 
 
+def _run_algorithm_text(row: Any) -> str:
+    algorithm = str(row["algorithm"])
+    if algorithm == "minibatch_kmeans":
+        return "MiniBatchKMeans"
+    if algorithm == "hdbscan":
+        return "HDBSCAN"
+    return algorithm
+
+
+def _run_parameters_text(row: Any) -> str:
+    raw_parameters = str(row["parameters_json"])
+    try:
+        parameters = json.loads(raw_parameters)
+    except (TypeError, ValueError):
+        return raw_parameters
+    if not isinstance(parameters, dict):
+        return raw_parameters
+
+    algorithm = str(row["algorithm"])
+    if algorithm == "minibatch_kmeans":
+        group_count = parameters.get("n_clusters", "-")
+        seed = parameters.get("random_state", row["random_seed"])
+        return f"Ønskede grupper: {group_count} · Seed: {seed}"
+    if algorithm == "hdbscan":
+        minimum_size = parameters.get("min_cluster_size", "-")
+        minimum_samples = parameters.get("min_samples")
+        minimum_samples_text = (
+            "samme som minste gruppestørrelse"
+            if minimum_samples is None
+            else str(minimum_samples)
+        )
+        return (
+            f"Minste gruppestørrelse: {minimum_size} · "
+            f"Min samples: {minimum_samples_text}"
+        )
+    return raw_parameters
+
+
 def _delete_run_form_html(
     server: Any,
     row: Any,
@@ -519,12 +553,8 @@ def _delete_run_form_html(
 def _run_card_html(server: Any, row: Any) -> str:
     run_id = int(row["id"])
     selection_text = _run_selection_text(row)
-    algorithm = str(row["algorithm"])
-    algorithm_text = (
-        "MiniBatchKMeans"
-        if algorithm == "minibatch_kmeans"
-        else "HDBSCAN" if algorithm == "hdbscan" else algorithm
-    )
+    algorithm_text = _run_algorithm_text(row)
+    parameters_text = _run_parameters_text(row)
     delete_form = _delete_run_form_html(
         server,
         row,
@@ -543,7 +573,8 @@ def _run_card_html(server: Any, row: Any) -> str:
          {html.escape(algorithm_text)} ·
          {int(row["actual_cluster_count"])} grupper ·
          {int(row["clustered_file_count"])} bilder</p>
-      <p class="meta">{html.escape(selection_text)}</p>
+      <p class="meta">Parametere: {html.escape(parameters_text)}</p>
+      <p class="meta">Utvalg: {html.escape(selection_text)}</p>
       {error_html}
       {delete_form}
     </article>

@@ -593,9 +593,12 @@ Under kjøringen skal launcherloggen vise:
 - algoritme og alle effektive algoritmeparametere
 - størrelsen på de største gruppene ved fullføring
 
-`MiniBatchKMeans.fit()` gir ikke nyttig kontinuerlig prosentprogresjon. I
-algoritmefasen kan launcheren derfor vise aktiv, ubestemt progresjon og teksten
-«Grupperer bilder …». Det skal ikke oppgis en misvisende prosent.
+MiniBatchKMeans og HDBSCAN gir ikke nyttig kontinuerlig prosentprogresjon. I
+algoritmefasen viser workerprosessen derfor teksten «Grupperer bilder …» og
+forløpt tid omtrent hvert femte sekund. Heartbeaten kjører i en sovende
+daemontråd, flusher hver linje og stoppes før lagringssteget. Launcherloggen
+erstatter samme progresjonslinje. Det skal ikke oppgis en misvisende prosent
+eller beregnet gjenstående tid.
 
 ### Intern prosessgrense
 

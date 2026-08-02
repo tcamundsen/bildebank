@@ -26,11 +26,16 @@ av som standard. Jobben bruker embeddings som allerede er laget av
 **Klargjør bildesøk**. Bilder uten en gyldig embedding hoppes over og telles i
 resultatet.
 
+Mens algoritmen arbeider, oppdateres én linje i launcherloggen omtrent hvert
+femte sekund med forløpt tid. HDBSCAN kan ikke gi en pålitelig prosent eller
+beregnet gjenstående tid, så loggen viser bare at prosessen fortsatt arbeider.
+
 ## Se eller slett resultatet
 
-Åpne **Gruppering** i bildebrowseren. Der ser du kjøringer, status og
-gruppene i hver kjøring. **Vis alle bildene** åpner den vanlige
-bildebrowseren for gruppen.
+Åpne **Gruppering** i bildebrowseren. Panelet for hver kjøring viser status,
+algoritme, de viktigste innstillingene og hvilket utvalg som ble brukt. Åpne
+en kjøring for å se alle lagrede parametere og gruppene i kjøringen. **Vis alle
+bildene** åpner den vanlige bildebrowseren for gruppen.
 
 En kjøring kan slettes fra oversikten eller kjøringssiden etter bekreftelse.
 Bare selve gruppeforslaget slettes. Bilder, metadata og bildesøkdata beholdes.

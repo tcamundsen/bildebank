@@ -125,6 +125,9 @@ def test_grouping_pages_render_runs_and_active_cluster_members(
     assert '>Slett</button>' in list_html
     assert "Slette run #" in list_html
     assert 'value="token"' in list_html
+    assert "MiniBatchKMeans" in list_html
+    assert "Parametere: Ønskede grupper: 1 · Seed: 0" in list_html
+    assert "Utvalg: year=2024" in list_html
     assert run_html is not None
     assert "Gruppe 1" in run_html
     assert "2 aktive bilder" in run_html
@@ -226,7 +229,7 @@ def test_hdbscan_run_renders_noise_as_ungrouped_images(tmp_path: Path) -> None:
             """
             UPDATE image_clustering_runs
             SET algorithm = 'hdbscan',
-                parameters_json = '{"min_cluster_size":5}',
+                parameters_json = '{"min_cluster_size":5,"min_samples":2}',
                 actual_cluster_count = 0
             WHERE id = ?
             """,
@@ -251,9 +254,15 @@ def test_hdbscan_run_renders_noise_as_ungrouped_images(tmp_path: Path) -> None:
         read_only=True,
     )
 
+    list_html = grouping_page_html(server)
     run_html = grouping_run_page_html(server, run_id)
 
     assert run_html is not None
+    assert "HDBSCAN" in list_html
+    assert (
+        "Parametere: Minste gruppestørrelse: 5 · Min samples: 2"
+        in list_html
+    )
     assert "HDBSCAN" in run_html
     assert "Ugrupperte bilder" in run_html
     assert "<dt>Seed</dt>" not in run_html

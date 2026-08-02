@@ -645,6 +645,8 @@ avledede data i OpenCLIP-databasen; funksjonen endrer ikke `files`,
 MiniBatchKMeans bruker et eksplisitt antall grupper. HDBSCAN velger antallet
 automatisk og lagrer støy som en egen gruppe som vises som «Ugrupperte
 bilder»; algoritmens effektive parametere og medlemsstyrke lagres med run-et.
+Oversikten viser algoritmen og de viktigste brukerinnstillingene på hvert
+run-panel; detaljsiden viser hele den lagrede parameter-JSON-en.
 Grupperingssider er ikke tilgjengelige ved LAN-deling.
 Eksplisitt telling av thumbnails skal av samme grunn bruke beskyttet POST.
 Automatisk vedlikeholdsstatus kan forbli GET fordi den bare gjør read-only

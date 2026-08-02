@@ -7,7 +7,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from bildebank import db
+from bildebank import cli_image, db
 from bildebank.config import OpenClipConfig
 from bildebank.embedding_vectors import (
     load_validated_embedding_matrix,
@@ -195,6 +195,60 @@ def test_hdbscan_groups_dense_points_and_keeps_noise_separate() -> None:
     assert result.clusters[-1].members[0].file_id == 99
     assert result.clusters[-1].members[0].distance_to_center is None
     assert result.clusters[-1].members[0].membership_score == 0.0
+
+
+def test_clustering_progress_printer_emits_and_stops_elapsed_heartbeat() -> None:
+    output: list[str] = []
+
+    class FakeEvent:
+        waits = 0
+        stopped = False
+
+        def wait(self, timeout: float) -> bool:
+            assert timeout == 5.0
+            self.waits += 1
+            return self.waits > 1
+
+        def set(self) -> None:
+            self.stopped = True
+
+    class FakeThread:
+        joined = False
+
+        def __init__(self, *, target: object, daemon: bool) -> None:
+            assert daemon is True
+            self.target = target
+
+        def start(self) -> None:
+            self.target()  # type: ignore[operator]
+
+        def join(self) -> None:
+            self.joined = True
+
+    event = FakeEvent()
+    threads: list[FakeThread] = []
+
+    def make_thread(*, target: object, daemon: bool) -> FakeThread:
+        thread = FakeThread(target=target, daemon=daemon)
+        threads.append(thread)
+        return thread
+
+    with (
+        patch("bildebank.cli_image.threading.Event", return_value=event),
+        patch("bildebank.cli_image.threading.Thread", side_effect=make_thread),
+        patch("bildebank.cli_image.time.monotonic", side_effect=(100.0, 107.0)),
+    ):
+        progress = cli_image.ImageClusteringProgressPrinter(output=output.append)
+        progress("algorithm", {"algorithm": "hdbscan"})
+        progress("storage", {"actual_cluster_count": 2})
+
+    assert output == [
+        "Image-clustering: Grupperer bilder ... forløpt=0s",
+        "Image-clustering: Grupperer bilder ... forløpt=7s",
+        "Image-clustering: storage: actual_cluster_count=2",
+    ]
+    assert event.stopped
+    assert threads[0].joined
 
 
 def test_selection_canonicalizes_filter_and_rejects_deleted(
