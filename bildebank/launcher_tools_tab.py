@@ -613,12 +613,11 @@ class ToolsTab:
         if values is None:
             self._log("Bildegruppering avbrutt.")
             return
-        n_clusters, query, random_seed, hide_out_of_focus = values
         try:
             selection = parse_clustering_selection(
                 self.collection_path,
-                query,
-                hide_out_of_focus=hide_out_of_focus,
+                values.query,
+                hide_out_of_focus=values.hide_out_of_focus,
             )
         except ValueError as exc:
             messagebox.showerror(
@@ -632,9 +631,12 @@ class ToolsTab:
             image_clustering_command(
                 self.collection_path,
                 filter_query=selection.query or "",
-                n_clusters=n_clusters,
-                random_seed=random_seed,
-                hide_out_of_focus=hide_out_of_focus,
+                algorithm=values.algorithm,
+                n_clusters=values.n_clusters,
+                random_seed=values.random_seed,
+                min_cluster_size=values.min_cluster_size,
+                min_samples=values.min_samples,
+                hide_out_of_focus=values.hide_out_of_focus,
             ),
             running_message="Grupperer bilder ...",
             success_message=(

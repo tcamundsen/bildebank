@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 from bildebank.launcher_commands import (
     check_source_command,
     cleanup_pending_deletes_apply_command,
@@ -119,16 +121,44 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         random_seed=7,
         hide_out_of_focus=True,
     )
-    assert clustering[-8:] == [
+    assert clustering[-10:] == [
         "_image-clustering-worker",
+        "--algorithm",
+        "minibatch_kmeans",
+        "--filter",
+        "year=1999 tag:Ferie",
         "--clusters",
         "12",
         "--seed",
         "7",
-        "--filter",
-        "year=1999 tag:Ferie",
         "--hide-out-of-focus",
     ]
+    hdbscan_clustering = image_clustering_command(
+        collection,
+        filter_query="",
+        algorithm="hdbscan",
+        min_cluster_size=8,
+        min_samples=4,
+        hide_out_of_focus=False,
+    )
+    assert hdbscan_clustering[-9:] == [
+        "_image-clustering-worker",
+        "--algorithm",
+        "hdbscan",
+        "--filter",
+        "",
+        "--min-cluster-size",
+        "8",
+        "--min-samples",
+        "4",
+    ]
+    with pytest.raises(ValueError, match="Ukjent grupperingsalgoritme"):
+        image_clustering_command(
+            collection,
+            filter_query="",
+            algorithm="ukjent",
+            hide_out_of_focus=False,
+        )
     assert make_thumbnails_command(collection)[-3:] == [
         "--target",
         str(collection),

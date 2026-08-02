@@ -18,6 +18,7 @@ from bildebank.image_clustering import (
     ClusterResult,
     ClusteringParameters,
     ClusteringResult,
+    HdbscanParameters,
     cluster_embedding_matrix,
     parse_clustering_selection,
     run_image_clustering,
@@ -161,6 +162,41 @@ def test_algorithm_rejects_fewer_embeddings_than_clusters() -> None:
         )
 
 
+def test_hdbscan_groups_dense_points_and_keeps_noise_separate() -> None:
+    matrix = np.asarray(
+        [
+            [0.0, 0.0],
+            [0.01, 0.0],
+            [0.0, 0.01],
+            [10.0, 10.0],
+            [10.01, 10.0],
+            [10.0, 10.01],
+            [50.0, 0.0],
+        ],
+        dtype=np.float32,
+    )
+
+    result = cluster_embedding_matrix(
+        matrix,
+        (10, 11, 12, 20, 21, 22, 99),
+        HdbscanParameters(min_cluster_size=3, min_samples=2),
+    )
+
+    assert result.requested_cluster_count is None
+    assert result.actual_cluster_count == 2
+    assert [cluster.kind for cluster in result.clusters] == [
+        "cluster",
+        "cluster",
+        "noise",
+    ]
+    assert [len(cluster.members) for cluster in result.clusters] == [3, 3, 1]
+    assert result.clusters[-1].algorithm_label == -1
+    assert result.clusters[-1].center_embedding is None
+    assert result.clusters[-1].members[0].file_id == 99
+    assert result.clusters[-1].members[0].distance_to_center is None
+    assert result.clusters[-1].members[0].membership_score == 0.0
+
+
 def test_selection_canonicalizes_filter_and_rejects_deleted(
     tmp_path: Path,
 ) -> None:
@@ -234,6 +270,97 @@ def test_run_service_persists_atomic_completed_result(tmp_path: Path) -> None:
             "WHERE run_id = ?",
             (result.run_id,),
         ).fetchone()[0] == 4
+    finally:
+        conn.close()
+
+
+def test_run_service_persists_hdbscan_noise_and_membership_scores(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    target.mkdir()
+    db.init_database(target)
+    vectors = (
+        [1.0, 0.0, 0.0],
+        [0.999, 0.01, 0.0],
+        [0.999, -0.01, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.01, 0.999, 0.0],
+        [-0.01, 0.999, 0.0],
+        [0.0, 0.0, 1.0],
+    )
+    file_ids = [
+        insert_test_file(target, f"2024/01/{index}.png", sha256=f"sha-{index}")
+        for index in range(len(vectors))
+    ]
+    conn = connect_openclip_db(target)
+    try:
+        for index, (file_id, vector) in enumerate(
+            zip(file_ids, vectors, strict=True)
+        ):
+            conn.execute(
+                """
+                INSERT INTO image_embeddings(
+                    file_id, target_path, target_path_key, sha256,
+                    model_name, pretrained, embedding
+                ) VALUES(?, ?, ?, ?, 'model', 'weights', ?)
+                """,
+                (
+                    file_id,
+                    f"2024/01/{index}.png",
+                    f"2024/01/{index}.png",
+                    f"sha-{index}",
+                    embedding_blob(vector),
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = run_image_clustering(
+        target,
+        OpenClipConfig(
+            enabled=True,
+            model_name="model",
+            pretrained="weights",
+        ),
+        parameters=HdbscanParameters(min_cluster_size=3, min_samples=2),
+    )
+
+    assert result.status == "completed"
+    assert result.clustered_file_count == 6
+    assert result.actual_cluster_count == 2
+    conn = connect_openclip_db(target)
+    try:
+        run_row = conn.execute(
+            "SELECT algorithm, parameters_json FROM image_clustering_runs "
+            "WHERE id = ?",
+            (result.run_id,),
+        ).fetchone()
+        assert run_row["algorithm"] == "hdbscan"
+        assert '"min_cluster_size":3' in run_row["parameters_json"]
+        cluster_rows = conn.execute(
+            "SELECT kind, center_embedding FROM image_clusters "
+            "WHERE run_id = ? ORDER BY display_order",
+            (result.run_id,),
+        ).fetchall()
+        assert [row["kind"] for row in cluster_rows] == [
+            "cluster",
+            "cluster",
+            "noise",
+        ]
+        assert cluster_rows[-1]["center_embedding"] is None
+        noise_member = conn.execute(
+            """
+            SELECT distance_to_center, membership_score
+            FROM image_cluster_members
+            JOIN image_clusters ON image_clusters.id = image_cluster_members.cluster_id
+            WHERE image_cluster_members.run_id = ? AND image_clusters.kind = 'noise'
+            """,
+            (result.run_id,),
+        ).fetchone()
+        assert noise_member["distance_to_center"] is None
+        assert noise_member["membership_score"] == 0.0
     finally:
         conn.close()
 

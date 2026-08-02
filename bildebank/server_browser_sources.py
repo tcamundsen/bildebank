@@ -141,10 +141,12 @@ def cluster_browser_source(
     run_id: int,
     cluster_id: int,
     display_order: int,
+    *,
+    kind: str = "cluster",
 ) -> BrowserSource:
     root_url = f"/grouping/runs/{run_id}/clusters/{cluster_id}"
     return BrowserSource(
-        f"Gruppe {display_order}",
+        "Ugrupperte bilder" if kind == "noise" else f"Gruppe {display_order}",
         root_url,
         cluster_run_id=run_id,
         cluster_id=cluster_id,

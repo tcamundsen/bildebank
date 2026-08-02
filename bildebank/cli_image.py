@@ -7,6 +7,7 @@ from pathlib import Path
 from .config import CONFIG_FILENAME, load_config
 from .image_clustering import (
     ClusteringParameters,
+    HdbscanParameters,
     run_image_clustering,
 )
 from .openclip import (
@@ -36,8 +37,11 @@ def run_image_command(args: argparse.Namespace, target: Path, *, repo_root: Path
             repo_root=repo_root,
             query=args.filter,
             hide_out_of_focus=args.hide_out_of_focus,
+            algorithm=args.algorithm,
             n_clusters=args.clusters,
             random_seed=args.seed,
+            min_cluster_size=args.min_cluster_size,
+            min_samples=args.min_samples,
         )
     if args.command == "image-scan":
         return run_image_scan(target, repo_root=repo_root, limit=args.limit)
@@ -56,20 +60,28 @@ def run_image_clustering_worker(
     repo_root: Path,
     query: str,
     hide_out_of_focus: bool,
+    algorithm: str,
     n_clusters: int,
     random_seed: int,
+    min_cluster_size: int,
+    min_samples: int | None,
 ) -> int:
     config = load_config(repo_root).openclip
-    parameters = ClusteringParameters(
-        n_clusters=n_clusters,
-        random_seed=random_seed,
-    )
+    parameters: ClusteringParameters | HdbscanParameters
+    if algorithm == "hdbscan":
+        parameters = HdbscanParameters(
+            min_cluster_size=min_cluster_size,
+            min_samples=min_samples,
+        )
+    else:
+        parameters = ClusteringParameters(
+            n_clusters=n_clusters,
+            random_seed=random_seed,
+        )
     print(
         "Image-clustering: starter "
-        f"clusters={n_clusters}, seed={random_seed}, "
-        f"batch_size={parameters.batch_size}, n_init={parameters.n_init}, "
-        f"max_iter={parameters.max_iter}, "
-        f"reassignment_ratio={parameters.reassignment_ratio}"
+        f"algorithm={parameters.algorithm}, "
+        f"parameters={parameters.as_dict()}"
     )
     result = run_image_clustering(
         target,

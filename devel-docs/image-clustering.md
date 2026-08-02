@@ -551,9 +551,12 @@ definisjon av «sted» bare for grupperingen.
 **Verktøy**-fanen får en knapp, for eksempel **Grupper bilder …**, som åpner
 en liten dialog med:
 
-- `Antall grupper`, positivt heltall med standard 20
+- `Algoritme`, MiniBatchKMeans som standard eller HDBSCAN
+- for MiniBatchKMeans: `Antall grupper`, positivt heltall med standard 20
+- for MiniBatchKMeans: `Random seed`, standard 0
+- for HDBSCAN: `Minste gruppestørrelse`, minst 2 og standard 5
+- for HDBSCAN: valgfri `Min samples`; tomt bruker minste gruppestørrelse
 - `Filter`, valgfritt; tomt betyr alle aktive bilder
-- `Random seed`, standard 0
 - `Skjul ute av fokus`, eksplisitt av/på og avslått som standard
 
 `batch_size`, `n_init`, `max_iter` og `reassignment_ratio` skal bruke
@@ -565,7 +568,7 @@ Før oppstart skal launcheren kontrollere at:
 
 - en samling er valgt
 - filteret kan parses
-- antall grupper og seed er gyldige heltall
+- parameterne for valgt algoritme er gyldige heltall
 
 OpenCLIP-oppsettet skal bruke den eksisterende automatiske installasjonsflyten.
 En lett importkontroll skal verifisere at både `open_clip` og `sklearn` er
@@ -575,7 +578,8 @@ ufullstendig, skal launcheren tilby å kjøre den eksisterende
 skal aldri ha en egen installasjonskommando eller en egen, ulåst versjon.
 
 Selve jobben kontrollerer at det finnes embeddings for den konfigurerte
-modellnøkkelen, og at antallet gyldige embeddings er minst `n_clusters`.
+modellnøkkelen, og at antallet gyldige embeddings er tilstrekkelig for valgt
+algoritme og parametere.
 OpenCLIP-modellfilen trenger ikke lastes inn for gruppering av allerede lagrede
 vektorer.
 
@@ -586,7 +590,7 @@ Under kjøringen skal launcherloggen vise:
 - antall valgt, uten embedding, ugyldig og gruppert
 - ønsket og faktisk antall grupper
 - stadium for utvalg, innlasting, algoritme og lagring
-- seed og effektive algoritmeparametere
+- algoritme og alle effektive algoritmeparametere
 - størrelsen på de største gruppene ved fullføring
 
 `MiniBatchKMeans.fit()` gir ikke nyttig kontinuerlig prosentprogresjon. I
@@ -703,7 +707,7 @@ Et hardt avsluttet launcher- eller workerprosess kan fortsatt etterlate en
 `running`-rad. Recovery-regelen i run-livssyklusen gjelder derfor uavhengig av
 launcherens in-memory-tilstand.
 
-## HDBSCAN senere
+## HDBSCAN
 
 Run-tabellen er algoritmeuavhengig. En algoritmeadapter bør returnere:
 
@@ -713,7 +717,7 @@ Run-tabellen er algoritmeuavhengig. En algoritmeadapter bør returnere:
 - medlems-score der algoritmen tilbyr det
 - eksplisitte støy-/outlier-medlemmer
 
-En senere HDBSCAN-implementasjon kan bruke:
+HDBSCAN-implementasjonen bruker:
 
 - `algorithm=hdbscan`
 - `min_cluster_size`
@@ -721,9 +725,15 @@ En senere HDBSCAN-implementasjon kan bruke:
 - valgt metrikk
 - eventuelt `cluster_selection_method`
 
-HDBSCAN velger antall grupper selv og kan merke bilder som støy. Støy kan
-lagres som en `image_clusters`-rad med `kind='noise'`, nullable sentroid og
-nullable `distance_to_center`, og vises separat som «Ugrupperte bilder».
+HDBSCAN velger antall grupper selv og kan merke bilder som støy. Støy lagres
+som en `image_clusters`-rad med `kind='noise'`, nullable sentroid og nullable
+`distance_to_center`, og vises separat som «Ugrupperte bilder».
+
+Første implementasjon bruker scikit-learns HDBSCAN med euklidsk avstand på de
+L2-normaliserte embeddingene, `cluster_selection_method='eom'`, én jobb og
+lagret medoid. `probabilities_` lagres som `membership_score`. Normalgrupper
+rangeres etter avstand til medoid; støy rangeres deterministisk etter
+`file_id`.
 
 For normaliserte embeddings må euklidsk kontra cosinusmetrisk vurderes og
 benchmarkes. HDBSCAN på 20 000 vektorer med 512 eller 768 dimensjoner kan ha
@@ -797,10 +807,12 @@ lagres som del av run-parametrene.
 
 ### Launcher
 
-- Kommandobyggeren sender filter, antall grupper, seed og
+- Kommandobyggeren sender algoritme, filter, relevante algoritmeparametere og
   `hide_out_of_focus` som separate, eksakte argumenter.
 - Tomt filter blir eksplisitt tolket som alle aktive bilder.
-- Dialogen starter med 20 grupper, seed 0 og «Skjul ute av fokus» avslått.
+- Dialogen starter med MiniBatchKMeans, 20 grupper, seed 0 og «Skjul ute av
+  fokus» avslått. HDBSCAN starter med minste gruppestørrelse 5 og tom
+  `min_samples`.
 - Avanserte MiniBatchKMeans-parametere vises ikke i dialogen.
 - Ugyldig filter og ugyldige tall avvises før workerprosessen startes.
 - Grupperingsknappen er utilgjengelig uten valgt samling eller nødvendig
@@ -985,13 +997,13 @@ Leveranse: ferdige launcher-runs kan brukes og slettes i webgrensesnittet.
 
 Leveranse: dokumentert og verifisert første versjon.
 
-### Senere trinn: HDBSCAN og eventuell raskere avbryting
+### Senere trinn: benchmark og eventuell raskere avbryting
 
 - [ ] Benchmark MiniBatchKMeans på støttet Windows-installasjon.
 - [ ] Vurder `partial_fit` bare dersom rask avbryting under algoritmen blir et
   eksplisitt krav.
-- [ ] Implementer algoritmeadapter for HDBSCAN.
-- [ ] Vis støybilder separat.
+- [x] Implementer algoritmeadapter for HDBSCAN.
+- [x] Vis støybilder separat.
 - [ ] Benchmark tid/minne og vurder eventuell dimensjonsreduksjon.
 
 ## Sannsynlige filer
@@ -1068,8 +1080,9 @@ Følgende er besluttet for første versjon:
    eller åpner ikke webserveren automatisk.
 9. Gruppeoppsummeringen bruker yttergrensene for usikre manuelle datoer og
    teller ukjente datoer separat.
-10. Bare antall grupper og seed er redigerbare algoritmevalg i launcheren.
-    Andre MiniBatchKMeans-parametere låses og dokumenteres internt.
+10. Launcheren viser antall grupper og seed for MiniBatchKMeans, eller minste
+    gruppestørrelse og valgfri `min_samples` for HDBSCAN. Andre parametere
+    låses og dokumenteres internt.
 11. Feilede og avbrutte runs beholdes og vises med status og kort feilmelding
     til brukeren sletter dem.
 12. Bekreftet sletting fjerner run-, cluster- og medlemsradene permanent fra

@@ -28,7 +28,9 @@ DEFAULT_BATCH_SIZE = 1024
 DEFAULT_N_INIT = 10
 DEFAULT_MAX_ITER = 100
 DEFAULT_REASSIGNMENT_RATIO = 0.01
-CLUSTERING_ALGORITHM = "minibatch_kmeans"
+DEFAULT_HDBSCAN_MIN_CLUSTER_SIZE = 5
+MINIBATCH_KMEANS_ALGORITHM = "minibatch_kmeans"
+HDBSCAN_ALGORITHM = "hdbscan"
 
 
 @dataclass(frozen=True)
@@ -58,26 +60,87 @@ class ClusteringParameters:
             "reassignment_ratio": self.reassignment_ratio,
         }
 
+    @property
+    def algorithm(self) -> str:
+        return MINIBATCH_KMEANS_ALGORITHM
+
+
+@dataclass(frozen=True)
+class HdbscanParameters:
+    min_cluster_size: int = DEFAULT_HDBSCAN_MIN_CLUSTER_SIZE
+    min_samples: int | None = None
+    metric: str = "euclidean"
+    cluster_selection_method: str = "eom"
+    cluster_selection_epsilon: float = 0.0
+    alpha: float = 1.0
+    leaf_size: int = 40
+    allow_single_cluster: bool = False
+
+    def __post_init__(self) -> None:
+        if self.min_cluster_size < 2:
+            raise ValueError("Minste gruppestørrelse må være minst 2.")
+        if self.min_samples is not None and self.min_samples < 1:
+            raise ValueError("Min samples må være minst 1.")
+        if self.metric != "euclidean":
+            raise ValueError("HDBSCAN støtter foreløpig bare euklidsk avstand.")
+        if self.cluster_selection_method not in {"eom", "leaf"}:
+            raise ValueError("Ugyldig cluster selection method.")
+        if self.cluster_selection_epsilon < 0.0 or self.alpha <= 0.0:
+            raise ValueError("Interne HDBSCAN-parametere er ugyldige.")
+        if self.leaf_size < 1:
+            raise ValueError("HDBSCAN leaf size må være positiv.")
+
+    @property
+    def algorithm(self) -> str:
+        return HDBSCAN_ALGORITHM
+
+    @property
+    def random_seed(self) -> int:
+        # HDBSCAN is deterministic and does not use a random seed. The run
+        # schema keeps this field non-null for compatibility with older runs.
+        return 0
+
+    def as_dict(self) -> dict[str, int | float | str | bool | None]:
+        return {
+            "min_cluster_size": self.min_cluster_size,
+            "min_samples": self.min_samples,
+            "metric": self.metric,
+            "cluster_selection_method": self.cluster_selection_method,
+            "cluster_selection_epsilon": self.cluster_selection_epsilon,
+            "alpha": self.alpha,
+            "leaf_size": self.leaf_size,
+            "allow_single_cluster": self.allow_single_cluster,
+            "algorithm": "auto",
+            "n_jobs": 1,
+            "store_centers": "medoid",
+            "copy": True,
+        }
+
+
+ClusteringAlgorithmParameters = ClusteringParameters | HdbscanParameters
+
 
 @dataclass(frozen=True)
 class ClusterMemberResult:
     file_id: int
-    distance_to_center: float
+    distance_to_center: float | None
     center_rank: int
+    membership_score: float | None = None
 
 
 @dataclass(frozen=True)
 class ClusterResult:
     algorithm_label: int
     display_order: int
-    center_embedding: bytes
+    center_embedding: bytes | None
     members: tuple[ClusterMemberResult, ...]
+    kind: str = "cluster"
 
 
 @dataclass(frozen=True)
 class ClusteringResult:
     clusters: tuple[ClusterResult, ...]
-    requested_cluster_count: int
+    requested_cluster_count: int | None
     actual_cluster_count: int
     warning_message: str | None = None
 
@@ -145,20 +208,30 @@ def parse_clustering_selection(
 def cluster_embedding_matrix(
     matrix: Any,
     file_ids: tuple[int, ...],
-    parameters: ClusteringParameters,
+    parameters: ClusteringAlgorithmParameters,
 ) -> ClusteringResult:
     array = np.asarray(matrix, dtype=np.float32)
     if array.ndim != 2 or array.shape[0] != len(file_ids):
         raise ValueError(
             "Embeddingmatrisen og file_id-listen stemmer ikke overens."
         )
+    if tuple(sorted(file_ids)) != file_ids or len(set(file_ids)) != len(file_ids):
+        raise ValueError("file_id-er må være unike og sortert.")
+    if isinstance(parameters, HdbscanParameters):
+        return _cluster_embedding_matrix_hdbscan(array, file_ids, parameters)
+    return _cluster_embedding_matrix_minibatch_kmeans(array, file_ids, parameters)
+
+
+def _cluster_embedding_matrix_minibatch_kmeans(
+    array: Any,
+    file_ids: tuple[int, ...],
+    parameters: ClusteringParameters,
+) -> ClusteringResult:
     if array.shape[0] < parameters.n_clusters:
         raise ValueError(
             f"Fant bare {array.shape[0]} gyldige embeddings, men antall "
             f"grupper er {parameters.n_clusters}."
         )
-    if tuple(sorted(file_ids)) != file_ids or len(set(file_ids)) != len(file_ids):
-        raise ValueError("file_id-er må være unike og sortert.")
 
     # Lazy import keeps sklearn and SciPy out of launcher and server processes.
     from sklearn.cluster import MiniBatchKMeans
@@ -216,13 +289,110 @@ def cluster_embedding_matrix(
     )
 
 
+def _cluster_embedding_matrix_hdbscan(
+    array: Any,
+    file_ids: tuple[int, ...],
+    parameters: HdbscanParameters,
+) -> ClusteringResult:
+    effective_min_samples = parameters.min_samples or parameters.min_cluster_size
+    if array.shape[0] < effective_min_samples:
+        raise ValueError(
+            f"Fant bare {array.shape[0]} gyldige embeddings, men HDBSCAN "
+            f"krever minst {effective_min_samples} med valgte parametere."
+        )
+
+    # Lazy import keeps sklearn and SciPy out of launcher and server processes.
+    from sklearn.cluster import HDBSCAN
+
+    estimator = HDBSCAN(
+        min_cluster_size=parameters.min_cluster_size,
+        min_samples=parameters.min_samples,
+        metric=parameters.metric,
+        cluster_selection_epsilon=parameters.cluster_selection_epsilon,
+        alpha=parameters.alpha,
+        algorithm="auto",
+        leaf_size=parameters.leaf_size,
+        n_jobs=1,
+        cluster_selection_method=parameters.cluster_selection_method,
+        allow_single_cluster=parameters.allow_single_cluster,
+        store_centers="medoid",
+        copy=True,
+    )
+    labels = np.asarray(estimator.fit_predict(array), dtype=np.int64)
+    medoids = np.asarray(estimator.medoids_, dtype=np.float32)
+    probabilities = np.asarray(estimator.probabilities_, dtype=np.float64)
+    grouped: list[tuple[int, bytes, tuple[ClusterMemberResult, ...]]] = []
+    for label in sorted({int(value) for value in labels.tolist() if int(value) >= 0}):
+        indexes = np.flatnonzero(labels == label)
+        ranked = sorted(
+            (
+                (
+                    float(np.linalg.norm(array[int(index)] - medoids[label])),
+                    int(file_ids[int(index)]),
+                    float(probabilities[int(index)]),
+                )
+                for index in indexes
+            ),
+            key=lambda item: (item[0], item[1]),
+        )
+        members = tuple(
+            ClusterMemberResult(file_id, distance, rank, membership_score)
+            for rank, (distance, file_id, membership_score) in enumerate(
+                ranked,
+                start=1,
+            )
+        )
+        grouped.append((label, medoids[label].tobytes(), members))
+    grouped.sort(key=lambda item: (-len(item[2]), item[2][0].file_id))
+    clusters: list[ClusterResult] = [
+        ClusterResult(label, display_order, center, members)
+        for display_order, (label, center, members) in enumerate(
+            grouped,
+            start=1,
+        )
+    ]
+    noise_indexes = np.flatnonzero(labels == -1)
+    if noise_indexes.size:
+        noise_members = tuple(
+            ClusterMemberResult(
+                int(file_ids[int(index)]),
+                None,
+                rank,
+                float(probabilities[int(index)]),
+            )
+            for rank, index in enumerate(
+                sorted(noise_indexes.tolist(), key=lambda value: file_ids[int(value)]),
+                start=1,
+            )
+        )
+        clusters.append(
+            ClusterResult(
+                -1,
+                len(clusters) + 1,
+                None,
+                noise_members,
+                kind="noise",
+            )
+        )
+    actual_count = len(grouped)
+    warning = None
+    if actual_count == 0:
+        warning = "HDBSCAN fant ingen grupper; alle bildene ble ugrupperte."
+    return ClusteringResult(
+        tuple(clusters),
+        None,
+        actual_count,
+        warning,
+    )
+
+
 def run_image_clustering(
     target: Path,
     config: OpenClipConfig,
     *,
     query: str = "",
     hide_out_of_focus: bool = False,
-    parameters: ClusteringParameters,
+    parameters: ClusteringAlgorithmParameters,
     progress: ClusteringProgress | None = None,
 ) -> ClusteringRunResult:
     selection = parse_clustering_selection(
@@ -286,7 +456,7 @@ def run_image_clustering(
             _progress(
                 progress,
                 "algorithm",
-                n_clusters=parameters.n_clusters,
+                algorithm=parameters.algorithm,
                 parameters=parameters.as_dict(),
             )
             clustering = cluster_embedding_matrix(
@@ -302,17 +472,27 @@ def run_image_clustering(
             _store_completed_run(
                 openclip_conn,
                 run_id,
-                embeddings,
                 clustering,
+            )
+            normal_clusters = tuple(
+                cluster
+                for cluster in clustering.clusters
+                if cluster.kind == "cluster"
+            )
+            noise_file_count = sum(
+                len(cluster.members)
+                for cluster in clustering.clusters
+                if cluster.kind == "noise"
             )
             _progress(
                 progress,
                 "completed",
                 run_id=run_id,
                 actual_cluster_count=clustering.actual_cluster_count,
+                ungrouped_file_count=noise_file_count,
                 largest_groups=[
                     len(cluster.members)
-                    for cluster in clustering.clusters[:10]
+                    for cluster in normal_clusters[:10]
                 ],
             )
             return _run_result(openclip_conn, run_id)
@@ -417,7 +597,7 @@ def _create_run(
     conn: sqlite3.Connection,
     selection: ClusteringSelection,
     config: OpenClipConfig,
-    parameters: ClusteringParameters,
+    parameters: ClusteringAlgorithmParameters,
 ) -> int:
     cursor = conn.execute(
         """
@@ -431,7 +611,7 @@ def _create_run(
             selection.json_value,
             config.model_name,
             config.pretrained,
-            CLUSTERING_ALGORITHM,
+            parameters.algorithm,
             json.dumps(
                 parameters.as_dict(),
                 sort_keys=True,
@@ -496,7 +676,6 @@ def _update_run_counts(
 def _store_completed_run(
     conn: sqlite3.Connection,
     run_id: int,
-    embeddings: ValidatedEmbeddingMatrix,
     result: ClusteringResult,
 ) -> None:
     conn.execute("BEGIN IMMEDIATE")
@@ -507,12 +686,13 @@ def _store_completed_run(
                 INSERT INTO image_clusters(
                     run_id, algorithm_label, display_order, kind,
                     center_embedding
-                ) VALUES(?, ?, ?, 'cluster', ?)
+                ) VALUES(?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
                     cluster.algorithm_label,
                     cluster.display_order,
+                    cluster.kind,
                     cluster.center_embedding,
                 ),
             )
@@ -523,8 +703,8 @@ def _store_completed_run(
                 """
                 INSERT INTO image_cluster_members(
                     run_id, cluster_id, file_id, distance_to_center,
-                    center_rank
-                ) VALUES(?, ?, ?, ?, ?)
+                    center_rank, membership_score
+                ) VALUES(?, ?, ?, ?, ?, ?)
                 """,
                 (
                     (
@@ -533,6 +713,7 @@ def _store_completed_run(
                         member.file_id,
                         member.distance_to_center,
                         member.center_rank,
+                        member.membership_score,
                     )
                     for member in cluster.members
                 ),
@@ -549,7 +730,11 @@ def _store_completed_run(
             WHERE id = ?
             """,
             (
-                embeddings.valid_count,
+                sum(
+                    len(cluster.members)
+                    for cluster in result.clusters
+                    if cluster.kind == "cluster"
+                ),
                 result.actual_cluster_count,
                 result.warning_message,
                 run_id,

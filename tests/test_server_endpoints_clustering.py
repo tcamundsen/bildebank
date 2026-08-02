@@ -215,6 +215,56 @@ def test_grouping_run_batches_card_metadata_without_per_cluster_connections(
     assert openclip_connect.call_count == 2
 
 
+def test_hdbscan_run_renders_noise_as_ungrouped_images(tmp_path: Path) -> None:
+    target = tmp_path / "collection"
+    db.init_database(target)
+    file_id = insert_test_file(target, "2024/01/noise.png", sha256="sha-1")
+    run_id, cluster_id = insert_completed_run(target, (file_id,))
+    conn = connect_openclip_db(target)
+    try:
+        conn.execute(
+            """
+            UPDATE image_clustering_runs
+            SET algorithm = 'hdbscan',
+                parameters_json = '{"min_cluster_size":5}',
+                actual_cluster_count = 0
+            WHERE id = ?
+            """,
+            (run_id,),
+        )
+        conn.execute(
+            """
+            UPDATE image_clusters
+            SET algorithm_label = -1, kind = 'noise'
+            WHERE id = ?
+            """,
+            (cluster_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    server = SimpleNamespace(
+        target=target,
+        config=AppConfig(),
+        face_enabled=False,
+        openclip_enabled=True,
+        read_only=True,
+    )
+
+    run_html = grouping_run_page_html(server, run_id)
+
+    assert run_html is not None
+    assert "HDBSCAN" in run_html
+    assert "Ugrupperte bilder" in run_html
+    assert "<dt>Seed</dt>" not in run_html
+    assert cluster_browser_source(
+        run_id,
+        cluster_id,
+        1,
+        kind="noise",
+    ).title == "Ugrupperte bilder"
+
+
 def test_delete_run_cascades_only_grouping_data(tmp_path: Path) -> None:
     target = tmp_path / "collection"
     db.init_database(target)

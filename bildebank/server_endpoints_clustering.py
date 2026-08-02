@@ -30,6 +30,7 @@ class GroupingClusterCard:
     id: int
     run_id: int
     display_order: int
+    kind: str
     active_member_count: int
     date_from: str | None
     date_to: str | None
@@ -86,24 +87,28 @@ def grouping_run(target: Path, run_id: int) -> Any | None:
         conn.close()
 
 
-def grouping_cluster_display_order(
+def grouping_cluster_display_order_and_kind(
     target: Path,
     run_id: int,
     cluster_id: int,
-) -> int | None:
+) -> tuple[int, str] | None:
     if not regular_database_file_exists(openclip_db_path(target)):
         return None
     conn = connect_openclip_db_read_only(target)
     try:
         row = conn.execute(
             """
-            SELECT display_order
+            SELECT display_order, kind
             FROM image_clusters
             WHERE id = ? AND run_id = ?
             """,
             (cluster_id, run_id),
         ).fetchone()
-        return None if row is None else int(row["display_order"])
+        return (
+            None
+            if row is None
+            else (int(row["display_order"]), str(row["kind"]))
+        )
     finally:
         conn.close()
 
@@ -129,6 +134,7 @@ def grouping_cluster_cards(
                     image_clusters.id,
                     image_clusters.run_id,
                     image_clusters.display_order,
+                    image_clusters.kind,
                     COUNT(files.id) AS active_member_count,
                     MIN(COALESCE(files.manual_date_from, files.taken_date))
                         AS date_from,
@@ -226,6 +232,7 @@ def grouping_cluster_cards(
                     id=cluster_id,
                     run_id=int(summary["run_id"]),
                     display_order=int(summary["display_order"]),
+                    kind=str(summary["kind"]),
                     active_member_count=int(summary["active_member_count"]),
                     date_from=(
                         None
@@ -327,7 +334,9 @@ def grouping_page_html(server: Any) -> str:
         <h1>Gruppering</h1>
         <p class="meta">
           Kjøringene er reversible forslag. De endrer ikke bilder,
-          tagger eller annen metadata.
+          tagger eller annen metadata. Hvis du klikker "Slett" på en gruppering nedenfor
+          så slettes ingen biler, bare selve grupperingen av bilder.
+          <a href="/help/web/gruppering.md">Les mer her.</a>
         </p>
         <div class="grouping-run-list">{cards}</div>
         """,
@@ -352,6 +361,17 @@ def grouping_run_page_html(server: Any, run_id: int) -> str | None:
     if not cluster_html:
         cluster_html = "<p>Ingen aktive grupper i denne kjøringen.</p>"
     selection_text = _run_selection_text(row)
+    algorithm = str(row["algorithm"])
+    algorithm_text = (
+        "MiniBatchKMeans"
+        if algorithm == "minibatch_kmeans"
+        else "HDBSCAN" if algorithm == "hdbscan" else algorithm
+    )
+    seed_html = (
+        f'<div><dt>Seed</dt><dd>{int(row["random_seed"])}</dd></div>'
+        if algorithm == "minibatch_kmeans"
+        else ""
+    )
     delete_form = _delete_run_form_html(
         server,
         row,
@@ -379,7 +399,8 @@ def grouping_run_page_html(server: Any, run_id: int) -> str | None:
           <div><dt>Modell</dt><dd>{html.escape(str(row["model_name"]))} /
               {html.escape(str(row["pretrained"]))}</dd></div>
           <div><dt>Dimensjon</dt><dd>{row["embedding_dimension"] or "-"}</dd></div>
-          <div><dt>Seed</dt><dd>{int(row["random_seed"])}</dd></div>
+          <div><dt>Algoritme</dt><dd>{html.escape(algorithm_text)}</dd></div>
+          {seed_html}
           <div><dt>Parametere</dt><dd><code>{html.escape(str(row["parameters_json"]))}</code></dd></div>
           <div><dt>Opprettet</dt><dd>{html.escape(str(row["created_at"]))}</dd></div>
           <div><dt>Startet</dt><dd>{html.escape(str(row["started_at"] or "-"))}</dd></div>
@@ -412,18 +433,20 @@ def respond_grouping_cluster(handler: Any, raw_path: str) -> None:
     except ValueError:
         handler.respond_text("Ugyldig gruppe-ID.", status=HTTPStatus.BAD_REQUEST)
         return
-    display_order = grouping_cluster_display_order(
+    cluster_identity = grouping_cluster_display_order_and_kind(
         handler.server.target,
         run_id,
         cluster_id,
     )
-    if display_order is None:
+    if cluster_identity is None:
         handler.respond_text("Fant ikke gruppen.", status=HTTPStatus.NOT_FOUND)
         return
+    display_order, kind = cluster_identity
     source = cluster_browser_source(
         run_id,
         cluster_id,
         display_order,
+        kind=kind,
     )
     remainder = parts[2] if len(parts) == 3 else ""
     _source_part, page_mode, raw_value = parse_source_path(
@@ -496,6 +519,12 @@ def _delete_run_form_html(
 def _run_card_html(server: Any, row: Any) -> str:
     run_id = int(row["id"])
     selection_text = _run_selection_text(row)
+    algorithm = str(row["algorithm"])
+    algorithm_text = (
+        "MiniBatchKMeans"
+        if algorithm == "minibatch_kmeans"
+        else "HDBSCAN" if algorithm == "hdbscan" else algorithm
+    )
     delete_form = _delete_run_form_html(
         server,
         row,
@@ -511,6 +540,7 @@ def _run_card_html(server: Any, row: Any) -> str:
     <article class="grouping-run-card">
       <h2><a href="/grouping/runs/{run_id}">Kjøring #{run_id}</a></h2>
       <p>{html.escape(str(row["status"]))} ·
+         {html.escape(algorithm_text)} ·
          {int(row["actual_cluster_count"])} grupper ·
          {int(row["clustered_file_count"])} bilder</p>
       <p class="meta">{html.escape(selection_text)}</p>
@@ -542,9 +572,14 @@ def _cluster_card_html(card: GroupingClusterCard) -> str:
     )
     if card.unknown_date_count:
         date_text += f" · {card.unknown_date_count} uten kjent dato"
+    heading = (
+        "Ugrupperte bilder"
+        if card.kind == "noise"
+        else f"Gruppe {card.display_order}"
+    )
     return f"""
     <article class="grouping-cluster-card">
-      <h2>Gruppe {card.display_order}</h2>
+      <h2>{heading}</h2>
       <div class="grouping-previews">{preview_html}</div>
       <p>{card.active_member_count} aktive bilder</p>
       <p class="meta">{html.escape(date_text)}</p>

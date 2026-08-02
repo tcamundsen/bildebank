@@ -642,6 +642,9 @@ som en avbrytbar underprosess. Webserveren viser og kan eksplisitt slette
 resultater, men starter ingen grupperingsjobb. Runs, grupper og medlemskap er
 avledede data i OpenCLIP-databasen; funksjonen endrer ikke `files`,
 `file_sources`, bildefiler, tagger, personer, steder eller kommentarer.
+MiniBatchKMeans bruker et eksplisitt antall grupper. HDBSCAN velger antallet
+automatisk og lagrer støy som en egen gruppe som vises som «Ugrupperte
+bilder»; algoritmens effektive parametere og medlemsstyrke lagres med run-et.
 Grupperingssider er ikke tilgjengelige ved LAN-deling.
 Eksplisitt telling av thumbnails skal av samme grunn bruke beskyttet POST.
 Automatisk vedlikeholdsstatus kan forbli GET fordi den bare gjør read-only

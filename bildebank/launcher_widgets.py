@@ -1,10 +1,22 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from . import db
 from .launcher_status import RegisteredPerson
+
+
+@dataclass(frozen=True)
+class ImageClusteringDialogValues:
+    algorithm: str
+    query: str
+    hide_out_of_focus: bool
+    n_clusters: int | None = None
+    random_seed: int = 0
+    min_cluster_size: int | None = None
+    min_samples: int | None = None
 
 
 class Tooltip:
@@ -120,7 +132,7 @@ def image_clustering_dialog(
     ttk: Any,
     root: Any,
     button: Callable[..., Any],
-) -> tuple[int, str, int, bool] | None:
+) -> ImageClusteringDialogValues | None:
     dialog = tk.Toplevel(root)
     dialog.title("Grupper bilder")
     dialog.transient(root)
@@ -138,20 +150,34 @@ def image_clustering_dialog(
         justify="left",
     ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 12))
 
+    algorithm = tk.StringVar(value="MiniBatchKMeans")
     clusters = tk.StringVar(value="20")
+    min_cluster_size = tk.StringVar(value="5")
+    min_samples = tk.StringVar(value="")
     query = tk.StringVar(value="")
     seed = tk.StringVar(value="0")
     hide_out_of_focus = tk.BooleanVar(value=False)
     error = tk.StringVar(value="")
-    fields = (
-        ("Antall grupper:", clusters),
-        ("Filter (tomt betyr alle):", query),
-        ("Random seed:", seed),
+    ttk.Label(frame, text="Algoritme:").grid(
+        row=1,
+        column=0,
+        sticky="w",
+        padx=(0, 10),
+        pady=4,
     )
-    entries: list[Any] = []
-    for row_index, (label, variable) in enumerate(fields, start=1):
-        ttk.Label(frame, text=label).grid(
-            row=row_index,
+    algorithm_entry = ttk.Combobox(
+        frame,
+        textvariable=algorithm,
+        values=("MiniBatchKMeans", "HDBSCAN"),
+        state="readonly",
+        width=24,
+    )
+    algorithm_entry.grid(row=1, column=1, sticky="w", pady=4)
+
+    def entry_row(row: int, label: str, variable: Any, *, width: int = 16) -> tuple[Any, Any]:
+        label_widget = ttk.Label(frame, text=label)
+        label_widget.grid(
+            row=row,
             column=0,
             sticky="w",
             padx=(0, 10),
@@ -160,40 +186,94 @@ def image_clustering_dialog(
         entry = ttk.Entry(
             frame,
             textvariable=variable,
-            width=48 if row_index == 2 else 16,
+            width=width,
         )
-        entry.grid(row=row_index, column=1, sticky="ew", pady=4)
-        entries.append(entry)
+        entry.grid(row=row, column=1, sticky="ew" if width > 20 else "w", pady=4)
+        return label_widget, entry
+
+    clusters_widgets = entry_row(2, "Antall grupper:", clusters)
+    min_cluster_size_widgets = entry_row(
+        3,
+        "Minste gruppestørrelse:",
+        min_cluster_size,
+    )
+    min_samples_widgets = entry_row(
+        4,
+        "Min samples (tomt = gruppestørrelse):",
+        min_samples,
+    )
+    _query_label, query_entry = entry_row(
+        5,
+        "Filter (tomt betyr alle):",
+        query,
+        width=48,
+    )
+    seed_widgets = entry_row(6, "Random seed:", seed)
+
+    def update_algorithm_fields(_event: Any = None) -> None:
+        hdbscan = algorithm.get() == "HDBSCAN"
+        for widget in clusters_widgets + seed_widgets:
+            (widget.grid_remove if hdbscan else widget.grid)()
+        for widget in min_cluster_size_widgets + min_samples_widgets:
+            (widget.grid if hdbscan else widget.grid_remove)()
+        error.set("")
+
+    algorithm_entry.bind("<<ComboboxSelected>>", update_algorithm_fields)
+    update_algorithm_fields()
     ttk.Checkbutton(
         frame,
         text='Skjul "Ute av fokus"',
         variable=hide_out_of_focus,
-    ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 4))
+    ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 4))
     ttk.Label(
         frame,
         textvariable=error,
         foreground="#a40000",
         wraplength=500,
-    ).grid(row=5, column=0, columnspan=2, sticky="w")
-    result: tuple[int, str, int, bool] | None = None
+    ).grid(row=8, column=0, columnspan=2, sticky="w")
+    result: ImageClusteringDialogValues | None = None
 
     def accept() -> None:
         nonlocal result
-        try:
-            cluster_count = int(clusters.get())
-            random_seed = int(seed.get())
-        except ValueError:
-            error.set("Antall grupper og random seed må være heltall.")
-            return
-        if cluster_count < 1:
-            error.set("Antall grupper må være minst 1.")
-            return
-        result = (
-            cluster_count,
-            query.get(),
-            random_seed,
-            bool(hide_out_of_focus.get()),
-        )
+        if algorithm.get() == "HDBSCAN":
+            try:
+                minimum_size = int(min_cluster_size.get())
+                minimum_samples = (
+                    None if not min_samples.get().strip() else int(min_samples.get())
+                )
+            except ValueError:
+                error.set("Minste gruppestørrelse og min samples må være heltall.")
+                return
+            if minimum_size < 2:
+                error.set("Minste gruppestørrelse må være minst 2.")
+                return
+            if minimum_samples is not None and minimum_samples < 1:
+                error.set("Min samples må være minst 1.")
+                return
+            result = ImageClusteringDialogValues(
+                algorithm="hdbscan",
+                query=query.get(),
+                hide_out_of_focus=bool(hide_out_of_focus.get()),
+                min_cluster_size=minimum_size,
+                min_samples=minimum_samples,
+            )
+        else:
+            try:
+                cluster_count = int(clusters.get())
+                random_seed = int(seed.get())
+            except ValueError:
+                error.set("Antall grupper og random seed må være heltall.")
+                return
+            if cluster_count < 1:
+                error.set("Antall grupper må være minst 1.")
+                return
+            result = ImageClusteringDialogValues(
+                algorithm="minibatch_kmeans",
+                query=query.get(),
+                hide_out_of_focus=bool(hide_out_of_focus.get()),
+                n_clusters=cluster_count,
+                random_seed=random_seed,
+            )
         dialog.destroy()
 
     def cancel() -> None:
@@ -201,7 +281,7 @@ def image_clustering_dialog(
 
     button_frame = ttk.Frame(frame)
     button_frame.grid(
-        row=6,
+        row=9,
         column=0,
         columnspan=2,
         sticky="e",
@@ -216,8 +296,8 @@ def image_clustering_dialog(
         row=0,
         column=1,
     )
-    entries[0].focus_set()
-    entries[0].selection_range(0, tk.END)
+    clusters_widgets[1].focus_set()
+    clusters_widgets[1].selection_range(0, tk.END)
     dialog.bind("<Return>", lambda _event: accept())
     dialog.bind("<Escape>", lambda _event: cancel())
     dialog.protocol("WM_DELETE_WINDOW", cancel)

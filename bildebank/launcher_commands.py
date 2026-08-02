@@ -81,21 +81,36 @@ def image_clustering_command(
     collection_path: Path,
     *,
     filter_query: str,
-    n_clusters: int,
-    random_seed: int,
     hide_out_of_focus: bool,
+    algorithm: str = "minibatch_kmeans",
+    n_clusters: int | None = None,
+    random_seed: int = 0,
+    min_cluster_size: int | None = None,
+    min_samples: int | None = None,
 ) -> list[str]:
+    if algorithm not in {"minibatch_kmeans", "hdbscan"}:
+        raise ValueError(f"Ukjent grupperingsalgoritme: {algorithm}")
     command = bildebank_command(
         "--target",
         collection_path,
         "_image-clustering-worker",
-        "--clusters",
-        str(n_clusters),
-        "--seed",
-        str(random_seed),
+        "--algorithm",
+        algorithm,
         "--filter",
         filter_query,
     )
+    if algorithm == "hdbscan":
+        if min_cluster_size is None:
+            raise ValueError("HDBSCAN krever minste gruppestørrelse.")
+        command.extend(["--min-cluster-size", str(min_cluster_size)])
+        if min_samples is not None:
+            command.extend(["--min-samples", str(min_samples)])
+    else:
+        if n_clusters is None:
+            raise ValueError("MiniBatchKMeans krever antall grupper.")
+        command.extend(
+            ["--clusters", str(n_clusters), "--seed", str(random_seed)]
+        )
     if hide_out_of_focus:
         command.append("--hide-out-of-focus")
     return command

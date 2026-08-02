@@ -842,15 +842,32 @@ def build_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     image_clustering_worker.add_argument(
+        "--algorithm",
+        choices=("minibatch_kmeans", "hdbscan"),
+        default="minibatch_kmeans",
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
         "--clusters",
         type=positive_int_arg,
-        required=True,
+        default=20,
         help=argparse.SUPPRESS,
     )
     image_clustering_worker.add_argument(
         "--seed",
         type=int,
-        required=True,
+        default=0,
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--min-cluster-size",
+        type=positive_int_arg,
+        default=5,
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--min-samples",
+        type=positive_int_arg,
         help=argparse.SUPPRESS,
     )
     image_clustering_worker.add_argument(
