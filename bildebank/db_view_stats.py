@@ -4,9 +4,11 @@ import math
 import random
 import sqlite3
 from collections.abc import Callable, Collection, Sequence
-from pathlib import Path
 
-from .media import media_kind
+from .media import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+
+
+RANDOM_VIEW_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 
 
 def record_file_view(
@@ -75,13 +77,15 @@ def eligible_view_candidates(
         LEFT JOIN file_view_stats ON file_view_stats.file_id = files.id
         WHERE files.deleted_at IS NULL
         """
-    ).fetchall()
-    candidates = [
-        (int(row["id"]), row["last_viewed_at"])
-        for row in rows
-        if (
-            (browser_file_id_set is None or int(row["id"]) in browser_file_id_set)
-            and media_kind(Path(str(row["target_path"]))) in {"image", "video"}
-        )
-    ]
+    )
+    candidates: list[tuple[int, str | None]] = []
+    for row in rows:
+        file_id = int(row["id"])
+        if browser_file_id_set is not None and file_id not in browser_file_id_set:
+            continue
+        filename = str(row["target_path"]).rsplit("/", 1)[-1]
+        dot_index = filename.rfind(".")
+        suffix = filename[dot_index:].lower() if dot_index > 0 else ""
+        if suffix in RANDOM_VIEW_EXTENSIONS:
+            candidates.append((file_id, row["last_viewed_at"]))
     return candidates

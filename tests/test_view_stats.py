@@ -125,12 +125,14 @@ def test_random_view_candidate_prefers_unseen_media_and_excludes_deleted(tmp_pat
     seen_id = insert_test_file(target, "2024/01/seen.png")
     unseen_video_id = insert_test_file(target, "2024/01/unseen.mp4")
     insert_test_file(target, "2024/01/raw.nef")
+    insert_test_file(target, "2024/01/.jpg")
     insert_test_file(target, "deleted/2024/01/deleted.png", deleted=True)
     conn = db.connect(target)
     try:
         db.record_file_view(conn, file_id=seen_id, viewed_at="2026-07-01 10:00:00")
         conn.commit()
         assert db.random_view_candidate_file_id(conn, choose=lambda ids: ids[0]) == unseen_video_id
+        assert db.view_registration_counts(conn) == (1, 2)
     finally:
         conn.close()
 
@@ -182,6 +184,35 @@ def test_random_endpoint_excludes_hidden_motion_video(tmp_path: Path) -> None:
     server_endpoints_browser.respond_random_item(handler)  # type: ignore[arg-type]
 
     assert response["location"] == f"/item/{image_id}"
+
+
+def test_random_endpoint_reuses_browser_connection(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    db.init_database(target)
+    file_id = insert_test_file(target, "2025/03/image.jpg")
+    visible_ids = browser_item_ids(target)
+    conn = db.connect_read_only(target)
+    response: dict[str, object] = {}
+    handler = SimpleNamespace(
+        server=SimpleNamespace(
+            target=target,
+            hide_out_of_focus=False,
+            browser_item_ids=lambda *, hide_out_of_focus: visible_ids,
+        ),
+        browser_db_connection=lambda: (conn, False),
+        redirect=lambda location: response.update(location=location),
+        respond_text=lambda content, *, status: response.update(
+            content=content,
+            status=status,
+        ),
+    )
+    try:
+        server_endpoints_browser.respond_random_item(handler)  # type: ignore[arg-type]
+        assert conn.execute("SELECT 1").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+    assert response["location"] == f"/item/{file_id}"
 
 
 def test_random_candidate_uses_jpg_partners_instead_of_nef_and_psd(tmp_path: Path) -> None:

@@ -326,7 +326,16 @@ def raw_sidecar_groups(conn: sqlite3.Connection) -> dict[tuple[int, str, str, st
         """
     ):
         original_filename = str(row["original_filename"])
-        suffix = Path(original_filename).suffix.casefold()
+        folded_filename = original_filename.casefold()
+        suffix = next(
+            (
+                candidate
+                for candidate in RAW_SIDECAR_GROUP_EXTENSIONS
+                if len(folded_filename) > len(candidate)
+                and folded_filename.endswith(candidate)
+            ),
+            "",
+        )
         if suffix not in RAW_SIDECAR_GROUP_EXTENSIONS:
             continue
         for key in raw_sidecar_group_keys(row, original_filename, suffix):
@@ -339,10 +348,11 @@ def raw_sidecar_groups(conn: sqlite3.Connection) -> dict[tuple[int, str, str, st
 
 
 def raw_sidecar_group_keys(row: Any, original_filename: str, suffix: str) -> tuple[tuple[int, str, str, str], ...]:
+    stem = original_filename[:-len(suffix)] if suffix else original_filename
     base_key = (
         int(row["source_id"]),
         source_parent_path_key(str(row["source_path_key"])),
-        Path(original_filename).stem.casefold(),
+        stem.casefold(),
     )
     keys: list[tuple[int, str, str, str]] = []
     metadata_datetime = row["metadata_datetime"]

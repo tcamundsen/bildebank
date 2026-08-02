@@ -62,14 +62,20 @@ def respond_random_item(handler: BildebankRequestHandler) -> None:
     browser_file_ids = handler.server.browser_item_ids(
         hide_out_of_focus=handler.server.hide_out_of_focus
     )
-    conn = db.connect_read_only(handler.server.target)
+    browser_db_connection = getattr(handler, "browser_db_connection", None)
+    conn, close_conn = (
+        browser_db_connection()
+        if browser_db_connection is not None
+        else (db.connect_read_only(handler.server.target), True)
+    )
     try:
         file_id = db.random_view_candidate_file_id(
             conn,
             browser_file_ids=browser_file_ids,
         )
     finally:
-        conn.close()
+        if close_conn:
+            conn.close()
     if file_id is None:
         handler.respond_text(
             "Fant ingen aktive bilder eller videoer i bildesamlingen.",
