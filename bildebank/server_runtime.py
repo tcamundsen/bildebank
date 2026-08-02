@@ -317,6 +317,11 @@ class BildebankServer(ThreadingHTTPServer):
         # A manual date can change the order and month of the item in every source.
         self.clear_browser_navigation_cache()
 
+    def note_file_view_navigation_change(self) -> None:
+        # View statistics do not affect browser membership or ordering. Rebase
+        # the database mtime so this write does not discard reusable navigation.
+        self._refresh_browser_navigation_mtimes()
+
     def note_file_deleted_navigation_change(self, file_id: int) -> None:
         """Remove one active file without discarding reusable item-order caches."""
         version = getattr(self, "_browser_navigation_cache_version", 0)

@@ -7,6 +7,7 @@ from http import HTTPStatus
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 from bildebank import db, server_endpoints_browser, server_endpoints_items
 from bildebank.server_assets import SERVER_JS
@@ -27,7 +28,10 @@ class ViewEndpointHandler:
             "Content-Type": "application/json",
         }
         self.rfile = BytesIO(data)
-        self.server = SimpleNamespace(target=target)
+        self.server = SimpleNamespace(
+            target=target,
+            note_file_view_navigation_change=Mock(),
+        )
         self.status: HTTPStatus | None = None
         self.body: dict[str, object] | None = None
 
@@ -266,6 +270,7 @@ def test_item_viewed_endpoint_records_a_view_and_hides_busy_database(tmp_path: P
     server_endpoints_items.respond_item_viewed(handler)  # type: ignore[arg-type]
     assert handler.status == HTTPStatus.OK
     assert handler.body == {"recorded": True}
+    handler.server.note_file_view_navigation_change.assert_called_once_with()
     conn = db.connect(target)
     try:
         assert conn.execute("SELECT view_count FROM file_view_stats").fetchone()["view_count"] == 1

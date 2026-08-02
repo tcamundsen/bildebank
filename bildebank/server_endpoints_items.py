@@ -57,6 +57,12 @@ def note_navigation_change(server: Any, method_name: str) -> None:
     clear_browser_navigation_cache(server)
 
 
+def note_file_view_navigation_change(server: Any) -> None:
+    note_change = getattr(server, "note_file_view_navigation_change", None)
+    if note_change is not None:
+        note_change()
+
+
 def server_face_config(server: Any) -> FaceRecognitionConfig | None:
     config = getattr(server, "config", None)
     return getattr(config, "face_recognition", None)
@@ -105,6 +111,7 @@ def respond_item_viewed(handler: BildebankRequestHandler) -> None:
         if conn is not None:
             conn.close()
     if recorded:
+        note_file_view_navigation_change(handler.server)
         handler.respond_json({"recorded": True})
         return
     handler.respond_empty()

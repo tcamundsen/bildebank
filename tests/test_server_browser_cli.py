@@ -77,6 +77,7 @@ from bildebank.server_pages import (
 )
 from bildebank.target_lock import LOCK_FILENAME
 from tests.cli_helpers import run_cli
+from tests.db_test_helpers import insert_test_file
 from tests.test_media import (
     jpeg_with_exif_camera,
     jpeg_with_exif_datetime,
@@ -3701,6 +3702,48 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertNotIn((tag_source, False), server._source_item_ids)
         self.assertNotIn((tag_filter_source, False), server._source_item_ids)
         self.assertIn((other_tag_source, False), server._source_item_ids)
+
+    def test_file_view_change_preserves_navigation_caches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id = insert_test_file(target, "2024/01/viewed.jpg")
+
+            server = object.__new__(BildebankServer)
+            server.target = target
+            server.config = AppConfig()
+            server._browser_navigation_cache_version = 0
+            server._browser_navigation_db_mtime_ns = (
+                db.db_path_for_target(target).stat().st_mtime_ns
+            )
+            server._browser_navigation_face_db_mtime_ns = None
+            server._browser_navigation_checked_at = time.monotonic()
+            browser_order = (0, [file_id], {file_id: 0})
+            server._browser_item_ids = {False: browser_order}
+            server._browser_month_keys = {False: (0, ["2024-01"])}
+            server._source_item_ids = {}
+            server._source_month_keys = {}
+            server._source_item_counts = {}
+            server._browser_first_day_item_ids = {}
+            server._source_first_day_item_ids = {}
+
+            conn = db.connect(target)
+            try:
+                db.record_file_view(
+                    conn,
+                    file_id=file_id,
+                    viewed_at="2026-08-02 10:00:00",
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            server.note_file_view_navigation_change()
+            server._browser_navigation_checked_at = 0.0
+
+            self.assertEqual(server.browser_navigation_cache_version(), 0)
+            self.assertIs(server._browser_item_ids[False], browser_order)
+            self.assertIn(False, server._browser_month_keys)
 
     def test_metadata_changes_only_clear_relevant_navigation_caches(self) -> None:
         server = object.__new__(BildebankServer)
