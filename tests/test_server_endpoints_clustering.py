@@ -20,6 +20,7 @@ from bildebank.openclip import (
 from bildebank.server_browser_queries import (
     source_item_ids,
     source_month_keys,
+    source_year_cards,
     source_year_month_cards,
 )
 from bildebank.server_browser_sources import cluster_browser_source
@@ -284,6 +285,38 @@ def test_cluster_year_page_fetches_all_month_cards_once(tmp_path: Path) -> None:
     assert "2024-01" in body
     assert "2024-02" in body
     assert month_cards.call_count == 1
+
+
+def test_cluster_year_page_does_not_scan_collection_sidecars(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    db.init_database(target)
+    file_id = insert_test_file(
+        target,
+        "2024/01/image.png",
+        sha256="sha-1",
+    )
+    run_id, cluster_id = insert_completed_run(target, (file_id,))
+    source = cluster_browser_source(run_id, cluster_id, 1)
+
+    with (
+        patch.object(
+            server_browser_queries,
+            "motion_video_file_ids",
+            side_effect=AssertionError("scanned motion videos"),
+        ),
+        patch.object(
+            server_browser_queries,
+            "raw_sidecar_file_ids",
+            side_effect=AssertionError("scanned RAW sidecars"),
+        ),
+    ):
+        cards = source_year_cards(target, source)
+
+    assert [(card["year"], card["item_count"]) for card in cards] == [
+        ("2024", 1),
+    ]
 
 
 def test_cluster_year_and_month_requests_validate_openclip_once_each(

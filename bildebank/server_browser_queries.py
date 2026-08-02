@@ -523,6 +523,11 @@ def hidden_sidecar_id_filter_sql(
 
 
 def source_shows_motion_videos(source: BrowserSource) -> bool:
+    # Clustering only stores members with suffixes from IMAGE_EXTENSIONS, so a
+    # valid cluster cannot contain motion videos or RAW sidecar files.  Avoid
+    # the collection-wide sidecar scan for these browser sources.
+    if source.cluster_id is not None:
+        return True
     if source.text_filter is None:
         return False
     from .server_filter import text_filter_shows_motion_videos, text_filter_shows_sidecar_files
