@@ -4,8 +4,10 @@ from io import BytesIO
 from http import HTTPStatus
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from bildebank import db
+from bildebank import server_endpoints_clustering as clustering_endpoints
 from bildebank.config import AppConfig
 from bildebank.image_clustering import delete_clustering_run
 from bildebank.openclip import connect_openclip_db, embedding_blob
@@ -17,7 +19,7 @@ from bildebank.server_endpoints_clustering import (
     grouping_run_page_html,
 )
 from bildebank.server_handler import BildebankRequestHandler
-from tests.db_test_helpers import insert_test_file
+from tests.db_test_helpers import insert_basic_item_sidecar_fixture, insert_test_file
 
 
 def insert_completed_run(
@@ -142,6 +144,61 @@ def test_grouping_pages_render_runs_and_active_cluster_members(
     finally:
         conn.close()
     assert source_item_ids(target, source) == [second]
+
+
+def test_grouping_run_batches_card_metadata_without_per_cluster_connections(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    db.init_database(target)
+    first = insert_test_file(target, "2024/01/first.png", sha256="sha-1")
+    second = insert_test_file(target, "2024/01/second.png", sha256="sha-2")
+    run_id, _cluster_id = insert_completed_run(target, (first, second))
+    main_conn = db.connect(target)
+    try:
+        db.tag_file(main_conn, file_id=first, tag_name="Ferie")
+        db.tag_file(main_conn, file_id=second, tag_name="Ferie")
+        db.tag_file(main_conn, file_id=first, tag_name="Familie")
+        main_conn.commit()
+    finally:
+        main_conn.close()
+    face_config = AppConfig().face_recognition
+    insert_basic_item_sidecar_fixture(
+        target,
+        file_id=first,
+        target_path="2024/01/first.png",
+        sha256="sha-1",
+        face_configs=(face_config,),
+    )
+    server = SimpleNamespace(
+        target=target,
+        config=AppConfig(),
+        face_enabled=True,
+        openclip_enabled=True,
+        read_only=True,
+    )
+    original_main_connect = db.connect_read_only
+    original_openclip_connect = (
+        clustering_endpoints.connect_openclip_db_read_only
+    )
+
+    with patch.object(
+        clustering_endpoints.db,
+        "connect_read_only",
+        wraps=original_main_connect,
+    ) as main_connect, patch.object(
+        clustering_endpoints,
+        "connect_openclip_db_read_only",
+        wraps=original_openclip_connect,
+    ) as openclip_connect:
+        body = grouping_run_page_html(server, run_id)
+
+    assert body is not None
+    assert "Ferie (2)" in body
+    assert "Familie (1)" in body
+    assert "Kari (1)" in body
+    assert main_connect.call_count == 1
+    assert openclip_connect.call_count == 2
 
 
 def test_delete_run_cascades_only_grouping_data(tmp_path: Path) -> None:

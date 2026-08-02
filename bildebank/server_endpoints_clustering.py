@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import html
 import json
+import sqlite3
+from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
@@ -21,6 +23,20 @@ from .server_endpoints_browser import respond_browser_source
 from .server_pages import shell_page_html
 from .sidecar_paths import regular_database_file_exists
 from .target_lock import TargetLockError
+
+
+@dataclass(frozen=True)
+class GroupingClusterCard:
+    id: int
+    run_id: int
+    display_order: int
+    active_member_count: int
+    date_from: str | None
+    date_to: str | None
+    unknown_date_count: int
+    preview_file_ids: tuple[int, ...]
+    tags: tuple[tuple[str, int], ...]
+    people: tuple[tuple[str, int], ...]
 
 
 def grouping_runs(target: Path) -> tuple[Any, ...]:
@@ -70,10 +86,34 @@ def grouping_run(target: Path, run_id: int) -> Any | None:
         conn.close()
 
 
+def grouping_cluster_display_order(
+    target: Path,
+    run_id: int,
+    cluster_id: int,
+) -> int | None:
+    if not regular_database_file_exists(openclip_db_path(target)):
+        return None
+    conn = connect_openclip_db_read_only(target)
+    try:
+        row = conn.execute(
+            """
+            SELECT display_order
+            FROM image_clusters
+            WHERE id = ? AND run_id = ?
+            """,
+            (cluster_id, run_id),
+        ).fetchone()
+        return None if row is None else int(row["display_order"])
+    finally:
+        conn.close()
+
+
 def grouping_cluster_cards(
     target: Path,
     run_id: int,
-) -> tuple[Any, ...]:
+    *,
+    face_config: FaceRecognitionConfig | None = None,
+) -> tuple[GroupingClusterCard, ...]:
     if not regular_database_file_exists(openclip_db_path(target)):
         return ()
     validation_conn = connect_openclip_db_read_only(target)
@@ -82,7 +122,7 @@ def grouping_cluster_cards(
     try:
         uri = f"{openclip_db_path(target).resolve().as_uri()}?mode=ro"
         conn.execute("ATTACH DATABASE ? AS openclip_db", (uri,))
-        return tuple(
+        summaries = tuple(
             conn.execute(
                 """
                 SELECT
@@ -101,17 +141,7 @@ def grouping_cluster_cards(
                              AND files.taken_date IS NULL
                             THEN 1 ELSE 0
                         END
-                    ) AS unknown_date_count,
-                    (
-                        SELECT members.file_id
-                        FROM openclip_db.image_cluster_members AS members
-                        JOIN files AS representative
-                          ON representative.id = members.file_id
-                         AND representative.deleted_at IS NULL
-                        WHERE members.cluster_id = image_clusters.id
-                        ORDER BY members.center_rank, members.file_id
-                        LIMIT 1
-                    ) AS representative_file_id
+                    ) AS unknown_date_count
                 FROM openclip_db.image_clusters AS image_clusters
                 LEFT JOIN openclip_db.image_cluster_members AS members
                   ON members.cluster_id = image_clusters.id
@@ -125,71 +155,162 @@ def grouping_cluster_cards(
                 (run_id,),
             )
         )
+        previews: dict[int, list[int]] = {}
+        for preview_row in conn.execute(
+            """
+            WITH ranked_previews AS (
+                SELECT
+                    members.cluster_id,
+                    members.file_id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY members.cluster_id
+                        ORDER BY members.center_rank, members.file_id
+                    ) AS preview_rank
+                FROM openclip_db.image_cluster_members AS members
+                JOIN files ON files.id = members.file_id
+                          AND files.deleted_at IS NULL
+                WHERE members.run_id = ?
+            )
+            SELECT cluster_id, file_id
+            FROM ranked_previews
+            WHERE preview_rank <= 5
+            ORDER BY cluster_id, preview_rank
+            """,
+            (run_id,),
+        ):
+            previews.setdefault(int(preview_row["cluster_id"]), []).append(
+                int(preview_row["file_id"])
+            )
+
+        tags: dict[int, list[tuple[str, int, str]]] = {}
+        for tag_row in conn.execute(
+            """
+            SELECT
+                members.cluster_id,
+                tags.name,
+                tags.name_key,
+                COUNT(DISTINCT files.id) AS file_count
+            FROM openclip_db.image_cluster_members AS members
+            JOIN files ON files.id = members.file_id
+                      AND files.deleted_at IS NULL
+            JOIN file_tags ON file_tags.file_id = files.id
+            JOIN tags ON tags.id = file_tags.tag_id
+            WHERE members.run_id = ?
+            GROUP BY members.cluster_id, tags.id
+            """,
+            (run_id,),
+        ):
+            tags.setdefault(int(tag_row["cluster_id"]), []).append(
+                (
+                    str(tag_row["name"]),
+                    int(tag_row["file_count"]),
+                    str(tag_row["name_key"]),
+                )
+            )
+
+        people = _grouping_people_by_cluster(
+            conn,
+            target,
+            run_id,
+            face_config=face_config,
+        )
+        cards: list[GroupingClusterCard] = []
+        for summary in summaries:
+            cluster_id = int(summary["id"])
+            cluster_tags = sorted(
+                tags.get(cluster_id, ()),
+                key=lambda item: (-item[1], item[2]),
+            )[:3]
+            cards.append(
+                GroupingClusterCard(
+                    id=cluster_id,
+                    run_id=int(summary["run_id"]),
+                    display_order=int(summary["display_order"]),
+                    active_member_count=int(summary["active_member_count"]),
+                    date_from=(
+                        None
+                        if summary["date_from"] is None
+                        else str(summary["date_from"])
+                    ),
+                    date_to=(
+                        None
+                        if summary["date_to"] is None
+                        else str(summary["date_to"])
+                    ),
+                    unknown_date_count=int(summary["unknown_date_count"] or 0),
+                    preview_file_ids=tuple(previews.get(cluster_id, ())),
+                    tags=tuple(
+                        (name, count)
+                        for name, count, _name_key in cluster_tags
+                    ),
+                    people=people.get(cluster_id, ()),
+                )
+            )
+        return tuple(cards)
     finally:
         conn.close()
 
 
-def grouping_cluster_preview_ids(
+def _grouping_people_by_cluster(
+    conn: sqlite3.Connection,
     target: Path,
-    cluster_id: int,
+    run_id: int,
     *,
-    limit: int = 5,
-) -> tuple[int, ...]:
-    validation_conn = connect_openclip_db_read_only(target)
-    validation_conn.close()
-    conn = db.connect_read_only(target)
-    try:
-        uri = f"{openclip_db_path(target).resolve().as_uri()}?mode=ro"
-        conn.execute("ATTACH DATABASE ? AS openclip_db", (uri,))
-        return tuple(
-            int(row["file_id"])
-            for row in conn.execute(
-                """
-                SELECT members.file_id
-                FROM openclip_db.image_cluster_members AS members
-                JOIN files ON files.id = members.file_id
-                          AND files.deleted_at IS NULL
-                WHERE members.cluster_id = ?
-                ORDER BY members.center_rank, members.file_id
-                LIMIT ?
-                """,
-                (cluster_id, limit),
-            )
-        )
-    finally:
-        conn.close()
+    face_config: FaceRecognitionConfig | None,
+) -> dict[int, tuple[tuple[str, int], ...]]:
+    from .face import face_db_path
+    from .server_faces import current_face_db_path
 
-
-def grouping_cluster_tags(
-    target: Path,
-    cluster_id: int,
-) -> tuple[tuple[str, int], ...]:
-    validation_conn = connect_openclip_db_read_only(target)
-    validation_conn.close()
-    conn = db.connect_read_only(target)
-    try:
-        uri = f"{openclip_db_path(target).resolve().as_uri()}?mode=ro"
-        conn.execute("ATTACH DATABASE ? AS openclip_db", (uri,))
-        return tuple(
-            (str(row["name"]), int(row["file_count"]))
-            for row in conn.execute(
-                """
-                SELECT tags.name, COUNT(DISTINCT files.id) AS file_count
-                FROM openclip_db.image_cluster_members AS members
-                JOIN files ON files.id = members.file_id
-                          AND files.deleted_at IS NULL
-                JOIN file_tags ON file_tags.file_id = files.id
-                JOIN tags ON tags.id = file_tags.tag_id
-                WHERE members.cluster_id = ?
-                GROUP BY tags.id
-                ORDER BY file_count DESC, tags.name_key
-                LIMIT 3
-                """,
-                (cluster_id,),
-            )
+    if not regular_database_file_exists(face_db_path(target, face_config)):
+        return {}
+    path = current_face_db_path(target, face_config)
+    uri = f"{path.resolve().as_uri()}?mode=ro"
+    conn.execute("ATTACH DATABASE ? AS face_db", (uri,))
+    counts: dict[int, list[tuple[str, int]]] = {}
+    for person_row in conn.execute(
+        """
+        WITH confirmed_files AS (
+            SELECT members.cluster_id, person_faces.person_id, faces.file_id
+            FROM openclip_db.image_cluster_members AS members
+            JOIN files ON files.id = members.file_id
+                      AND files.deleted_at IS NULL
+            JOIN face_db.faces AS faces ON faces.file_id = members.file_id
+            JOIN face_db.person_faces AS person_faces
+              ON person_faces.face_id = faces.id
+            WHERE members.run_id = ?
+            UNION
+            SELECT members.cluster_id, person_files.person_id,
+                   person_files.file_id
+            FROM openclip_db.image_cluster_members AS members
+            JOIN files ON files.id = members.file_id
+                      AND files.deleted_at IS NULL
+            JOIN face_db.person_files AS person_files
+              ON person_files.file_id = members.file_id
+            WHERE members.run_id = ?
         )
-    finally:
-        conn.close()
+        SELECT
+            confirmed_files.cluster_id,
+            persons.name,
+            COUNT(*) AS file_count
+        FROM confirmed_files
+        JOIN face_db.persons AS persons
+          ON persons.id = confirmed_files.person_id
+        GROUP BY confirmed_files.cluster_id, confirmed_files.person_id
+        """,
+        (run_id, run_id),
+    ):
+        counts.setdefault(int(person_row["cluster_id"]), []).append(
+            (str(person_row["name"]), int(person_row["file_count"]))
+        )
+    return {
+        cluster_id: tuple(
+            sorted(
+                cluster_people,
+                key=lambda item: (-item[1], item[0].casefold()),
+            )[:3]
+        )
+        for cluster_id, cluster_people in counts.items()
+    }
 
 
 def grouping_page_html(server: Any) -> str:
@@ -219,13 +340,13 @@ def grouping_run_page_html(server: Any, run_id: int) -> str | None:
     row = grouping_run(server.target, run_id)
     if row is None:
         return None
-    clusters = grouping_cluster_cards(server.target, run_id)
+    clusters = grouping_cluster_cards(
+        server.target,
+        run_id,
+        face_config=server.config.face_recognition,
+    )
     cluster_html = "\n".join(
-        _cluster_card_html(
-            server.target,
-            cluster,
-            face_config=server.config.face_recognition,
-        )
+        _cluster_card_html(cluster)
         for cluster in clusters
     )
     if not cluster_html:
@@ -306,18 +427,18 @@ def respond_grouping_cluster(handler: Any, raw_path: str) -> None:
     except ValueError:
         handler.respond_text("Ugyldig gruppe-ID.", status=HTTPStatus.BAD_REQUEST)
         return
-    cards = grouping_cluster_cards(handler.server.target, run_id)
-    cluster = next(
-        (row for row in cards if int(row["id"]) == cluster_id),
-        None,
+    display_order = grouping_cluster_display_order(
+        handler.server.target,
+        run_id,
+        cluster_id,
     )
-    if cluster is None:
+    if display_order is None:
         handler.respond_text("Fant ikke gruppen.", status=HTTPStatus.NOT_FOUND)
         return
     source = cluster_browser_source(
         run_id,
         cluster_id,
-        int(cluster["display_order"]),
+        display_order,
     )
     remainder = parts[2] if len(parts) == 3 else ""
     _source_part, page_mode, raw_value = parse_source_path(
@@ -376,111 +497,37 @@ def _run_card_html(row: Any) -> str:
     """
 
 
-def grouping_cluster_people(
-    target: Path,
-    cluster_id: int,
-    *,
-    face_config: FaceRecognitionConfig | None = None,
-) -> tuple[tuple[str, int], ...]:
-    from .face import connect_face_db_read_only, face_db_path
-    from .sidecar_paths import regular_database_file_exists
-
-    path = face_db_path(target, face_config)
-    if not regular_database_file_exists(path):
-        return ()
-    member_ids = grouping_cluster_preview_ids(
-        target,
-        cluster_id,
-        limit=1000000,
-    )
-    if not member_ids:
-        return ()
-    conn = connect_face_db_read_only(target, face_config)
-    try:
-        counts: dict[str, set[int]] = {}
-        for offset in range(0, len(member_ids), 900):
-            chunk = member_ids[offset : offset + 900]
-            placeholders = ",".join("?" for _ in chunk)
-            rows = conn.execute(
-                f"""
-                SELECT persons.name, faces.file_id
-                FROM persons
-                JOIN person_faces ON person_faces.person_id = persons.id
-                JOIN faces ON faces.id = person_faces.face_id
-                WHERE faces.file_id IN ({placeholders})
-                UNION
-                SELECT persons.name, person_files.file_id
-                FROM persons
-                JOIN person_files ON person_files.person_id = persons.id
-                WHERE person_files.file_id IN ({placeholders})
-                """,
-                (*chunk, *chunk),
-            )
-            for person_row in rows:
-                counts.setdefault(
-                    str(person_row["name"]),
-                    set(),
-                ).add(int(person_row["file_id"]))
-        return tuple(
-            sorted(
-                (
-                    (name, len(file_ids))
-                    for name, file_ids in counts.items()
-                ),
-                key=lambda item: (-item[1], item[0].casefold()),
-            )[:3]
-        )
-    finally:
-        conn.close()
-
-
-def _cluster_card_html(
-    target: Path,
-    row: Any,
-    *,
-    face_config: FaceRecognitionConfig | None = None,
-) -> str:
-    run_id = int(row["run_id"])
-    cluster_id = int(row["id"])
-    display_order = int(row["display_order"])
-    previews = grouping_cluster_preview_ids(target, cluster_id)
+def _cluster_card_html(card: GroupingClusterCard) -> str:
     preview_html = "".join(
         f'<span class="grouping-preview">'
         f'<img src="/thumbnail/{file_id}" alt="" loading="lazy" '
         f'onerror="this.hidden=true;this.nextElementSibling.hidden=false">'
         f'<span class="grouping-preview-missing" hidden>Ingen miniatyr</span>'
         f'</span>'
-        for file_id in previews
+        for file_id in card.preview_file_ids
     )
-    tags = grouping_cluster_tags(target, cluster_id)
-    tag_text = ", ".join(f"{name} ({count})" for name, count in tags)
-    people = grouping_cluster_people(
-        target,
-        cluster_id,
-        face_config=face_config,
+    tag_text = ", ".join(
+        f"{name} ({count})" for name, count in card.tags
     )
     people_text = ", ".join(
-        f"{name} ({count})" for name, count in people
+        f"{name} ({count})" for name, count in card.people
     )
-    date_from = row["date_from"]
-    date_to = row["date_to"]
     date_text = (
-        f"{date_from} – {date_to}"
-        if date_from and date_to
+        f"{card.date_from} – {card.date_to}"
+        if card.date_from and card.date_to
         else "Ukjent dato"
     )
-    unknown = int(row["unknown_date_count"] or 0)
-    if unknown:
-        date_text += f" · {unknown} uten kjent dato"
+    if card.unknown_date_count:
+        date_text += f" · {card.unknown_date_count} uten kjent dato"
     return f"""
     <article class="grouping-cluster-card">
-      <h2>Gruppe {display_order}</h2>
+      <h2>Gruppe {card.display_order}</h2>
       <div class="grouping-previews">{preview_html}</div>
-      <p>{int(row["active_member_count"])} aktive bilder</p>
+      <p>{card.active_member_count} aktive bilder</p>
       <p class="meta">{html.escape(date_text)}</p>
       <p class="meta">{html.escape(tag_text)}</p>
       <p class="meta">{html.escape(people_text)}</p>
-      <a href="/grouping/runs/{run_id}/clusters/{cluster_id}">
+      <a href="/grouping/runs/{card.run_id}/clusters/{card.id}">
         Vis alle bildene
       </a>
     </article>
