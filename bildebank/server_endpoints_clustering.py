@@ -362,9 +362,10 @@ def grouping_page_html(server: Any) -> str:
         f"""
         <h1>Gruppering</h1>
         <p class="meta">
-          Kjøringene er reversible forslag. De endrer ikke bilder,
-          tagger eller annen metadata. Hvis du klikker "Slett" på en gruppering nedenfor
-          så slettes ingen biler, bare selve grupperingen av bilder.
+          En gruppering viser bilder som ligner på hverandre, samlet i grupper.
+          Bildene blir ikke flyttet eller endret, og tagger og annen informasjon
+          beholdes. Hvis du sletter en gruppering, fjernes bare denne inndelingen.
+          Selve bildene blir liggende urørt i bildesamlingen.
           <a href="/help/web/gruppering.md">Les mer her.</a>
         </p>
         <div class="grouping-run-list">{cards}</div>
