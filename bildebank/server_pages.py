@@ -395,6 +395,7 @@ def source_month_page_html(
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     hide_out_of_focus: bool = False,
+    month_keys: list[str] | None = None,
 ) -> str:
     return browser_source_month_page_html(
         target,
@@ -406,6 +407,7 @@ def source_month_page_html(
         openclip_enabled=openclip_enabled,
         face_config=face_config,
         hide_out_of_focus=hide_out_of_focus,
+        month_keys=month_keys,
     )
 
 
@@ -418,6 +420,8 @@ def source_year_months_page_html(
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     hide_out_of_focus: bool = False,
+    month_keys: list[str] | None = None,
+    month_cards: list[dict[str, Any]] | None = None,
 ) -> str:
     return browser_source_year_months_page_html(
         target,
@@ -428,6 +432,8 @@ def source_year_months_page_html(
         openclip_enabled=openclip_enabled,
         face_config=face_config,
         hide_out_of_focus=hide_out_of_focus,
+        month_keys=month_keys,
+        month_cards=month_cards,
     )
 
 

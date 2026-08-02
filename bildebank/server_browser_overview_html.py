@@ -22,6 +22,7 @@ from .server_browser_queries import (
     first_month_in_year,
     last_month_before_year,
     source_item_count,
+    month_navigation_for_keys,
     source_month_navigation_for_key,
     source_month_keys,
     source_year_cards,
@@ -241,22 +242,31 @@ def source_year_navigation_controls_html(
     face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
+    month_keys: list[str] | None = None,
+    month_cards: list[dict[str, Any]] | None = None,
 ) -> str:
     from .server_shell import nav_button, nav_disabled
 
-    month_keys = source_month_keys(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
+    if month_keys is None:
+        month_keys = source_month_keys(
+            target,
+            source,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+        )
     years = sorted({key[:4] for key in month_keys})
     previous_year = next((candidate for candidate in reversed(years) if candidate < year), None)
     next_year = next((candidate for candidate in years if candidate > year), None)
     previous_month = last_month_before_year(month_keys, year)
     next_month = first_month_in_year(month_keys, year)
-    month_cards = source_year_month_cards(
-        target,
-        source,
-        year,
-        face_config,
-        hide_out_of_focus=hide_out_of_focus,
-    )
+    if month_cards is None:
+        month_cards = source_year_month_cards(
+            target,
+            source,
+            year,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+        )
     first_item = month_cards[0]["item"] if month_cards else None
     last_item = month_cards[-1]["item"] if month_cards else None
     previous_overview_url = None
@@ -323,18 +333,22 @@ def source_year_months_page_html(
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     hide_out_of_focus: bool = False,
+    month_keys: list[str] | None = None,
+    month_cards: list[dict[str, Any]] | None = None,
 ) -> str:
     from .server_shell import app_header_html
 
-    cards = "\n".join(
-        year_month_card_html(target, source, card)
-        for card in source_year_month_cards(
+    if month_cards is None:
+        month_cards = source_year_month_cards(
             target,
             source,
             year,
             face_config,
             hide_out_of_focus=hide_out_of_focus,
         )
+    cards = "\n".join(
+        year_month_card_html(target, source, card)
+        for card in month_cards
     )
     content = cards if cards else '<p class="meta">Ingen bilder dette året.</p>'
     controls = source_year_navigation_controls_html(
@@ -343,6 +357,8 @@ def source_year_months_page_html(
         year,
         face_config,
         hide_out_of_focus=hide_out_of_focus,
+        month_keys=month_keys,
+        month_cards=month_cards,
     )
     return page_html(
         f"{source.title}: {year}",
@@ -496,18 +512,23 @@ def source_month_page_html(
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     hide_out_of_focus: bool = False,
+    month_keys: list[str] | None = None,
 ) -> str:
     from .server_shell import app_header_html, source_controls_html, suggestion_toggle_button_html
 
     cards = "\n".join(source_month_item_html(target, source, item) for item in items)
     previous_item = items[-1] if items else None
     next_item = items[0] if items else None
-    month_nav = source_month_navigation_for_key(
-        target,
-        source,
-        month_key,
-        face_config,
-        hide_out_of_focus=hide_out_of_focus,
+    month_nav = (
+        month_navigation_for_keys(month_keys, month_key)
+        if month_keys is not None
+        else source_month_navigation_for_key(
+            target,
+            source,
+            month_key,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+        )
     )
     controls = source_controls_html(
         source,
@@ -523,6 +544,9 @@ def source_month_page_html(
             month_nav,
             face_config,
             hide_out_of_focus=hide_out_of_focus,
+            current_key_in_source=(
+                month_keys is not None and month_key in month_keys
+            ),
         ),
         previous_month_fallback_url=(
             previous_month_overview_url(source, month_key, month_nav) if items else None

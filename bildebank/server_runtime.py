@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import secrets
+import sqlite3
 import sys
 import time
 from http.server import ThreadingHTTPServer
@@ -205,7 +206,13 @@ class BildebankServer(ThreadingHTTPServer):
             self._browser_first_day_item_ids[hide_out_of_focus] = cached
         return cached[1].get(day_key)
 
-    def source_month_keys(self, source: BrowserSource, *, hide_out_of_focus: bool = False) -> list[str]:
+    def source_month_keys(
+        self,
+        source: BrowserSource,
+        *,
+        hide_out_of_focus: bool = False,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[str]:
         version = self.browser_navigation_cache_version()
         cache_key = (source, hide_out_of_focus)
         cached = self._source_month_keys.get(cache_key)
@@ -217,6 +224,7 @@ class BildebankServer(ThreadingHTTPServer):
                     source,
                     self.config.face_recognition,
                     hide_out_of_focus=hide_out_of_focus,
+                    conn=conn,
                 ),
             )
             self._source_month_keys[cache_key] = cached

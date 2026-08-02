@@ -20,6 +20,7 @@ from .server_browser_queries import (
     source_item_by_id,
     source_month_items,
     source_month_navigation,
+    source_year_month_cards,
     valid_month_key,
     valid_year_key,
 )
@@ -542,41 +543,71 @@ def respond_browser_source(
         if not valid_month_key(month_key):
             handler.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
             return
-        items = source_month_items(
-            handler.server.target,
-            source,
-            month_key,
-            face_config,
-            hide_out_of_focus=hide_out_of_focus,
-        )
-        handler.respond_html(
-            source_month_page_html(
+        conn = db.connect_read_only(handler.server.target)
+        try:
+            month_keys = handler.server.source_month_keys(
+                source,
+                hide_out_of_focus=hide_out_of_focus,
+                conn=conn,
+            )
+            items = source_month_items(
                 handler.server.target,
                 source,
                 month_key,
-                items,
-                face_enabled=handler.server.face_enabled,
-                openclip_enabled=handler.server.openclip_enabled,
-                face_config=handler.server.config.face_recognition,
+                face_config,
                 hide_out_of_focus=hide_out_of_focus,
+                conn=conn,
             )
-        )
+            handler.respond_html(
+                source_month_page_html(
+                    handler.server.target,
+                    source,
+                    month_key,
+                    items,
+                    face_enabled=handler.server.face_enabled,
+                    openclip_enabled=handler.server.openclip_enabled,
+                    face_config=handler.server.config.face_recognition,
+                    hide_out_of_focus=hide_out_of_focus,
+                    month_keys=month_keys,
+                )
+            )
+        finally:
+            conn.close()
         return
     if page_mode == "year":
         year = urllib.parse.unquote(raw_value).strip()
         if not valid_year_key(year):
             handler.respond_text("Ugyldig år.", status=HTTPStatus.BAD_REQUEST)
             return
-        handler.respond_html(
-            source_year_months_page_html(
+        conn = db.connect_read_only(handler.server.target)
+        try:
+            month_keys = handler.server.source_month_keys(
+                source,
+                hide_out_of_focus=hide_out_of_focus,
+                conn=conn,
+            )
+            month_cards = source_year_month_cards(
                 handler.server.target,
                 source,
                 year,
-                face_enabled=handler.server.face_enabled,
-                openclip_enabled=handler.server.openclip_enabled,
-                face_config=handler.server.config.face_recognition,
+                face_config,
                 hide_out_of_focus=hide_out_of_focus,
+                conn=conn,
             )
-        )
+            handler.respond_html(
+                source_year_months_page_html(
+                    handler.server.target,
+                    source,
+                    year,
+                    face_enabled=handler.server.face_enabled,
+                    openclip_enabled=handler.server.openclip_enabled,
+                    face_config=handler.server.config.face_recognition,
+                    hide_out_of_focus=hide_out_of_focus,
+                    month_keys=month_keys,
+                    month_cards=month_cards,
+                )
+            )
+        finally:
+            conn.close()
         return
     handler.respond_text(invalid_page_message, status=HTTPStatus.NOT_FOUND)

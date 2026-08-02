@@ -1173,9 +1173,19 @@ def source_year_month_cards(
     face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
 ) -> list[dict[str, Any]]:
     if not valid_year_key(year):
         return []
+    if source_has_sql_filter(source):
+        return sql_filtered_source_year_month_cards(
+            target,
+            source,
+            year,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+            conn=conn,
+        )
     month_keys = [
         key
         for key in source_month_keys(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
@@ -1194,6 +1204,72 @@ def source_year_month_cards(
             continue
         cards.append({"month_key": month_key, "item_count": len(items), "item": representative_image_item(items)})
     return cards
+
+
+def sql_filtered_source_year_month_cards(
+    target: Path,
+    source: BrowserSource,
+    year: str,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> list[dict[str, Any]]:
+    where_sql, params = source_sql_filter(source)
+    owned_conn = conn is None
+    conn = conn or db.connect_read_only(target)
+    try:
+        where_sql, params = with_motion_video_filter(
+            target,
+            where_sql,
+            params,
+            include_motion=source_shows_motion_videos(source),
+            conn=conn,
+        )
+        where_sql, params = with_out_of_focus_filter(
+            source,
+            where_sql,
+            params,
+            hide_out_of_focus,
+        )
+        deleted_sql = (
+            "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
+        )
+        attach_source_sql_filter_databases(conn, target, source, face_config)
+        rows = conn.execute(
+            f"""
+            SELECT
+                {FILE_COLUMNS},
+                {db.BROWSER_DATE_ORDER_SQL} AS browser_date
+            FROM files
+            WHERE {deleted_sql}
+              AND ({where_sql})
+              AND substr({db.BROWSER_DATE_ORDER_SQL}, 1, 4) = ?
+            ORDER BY {ITEM_ORDER_SQL}
+            """,
+            (*params, year),
+        )
+
+        cards_by_month: dict[str, dict[str, Any]] = {}
+        for item in rows:
+            month_key = str(item["browser_date"])[:7]
+            if not valid_month_key(month_key):
+                continue
+            card = cards_by_month.get(month_key)
+            if card is None:
+                cards_by_month[month_key] = {
+                    "month_key": month_key,
+                    "item_count": 1,
+                    "item": item,
+                }
+                continue
+            card["item_count"] = int(card["item_count"]) + 1
+            if not is_image_item(card["item"]) and is_image_item(item):
+                card["item"] = item
+        return list(cards_by_month.values())
+    finally:
+        if owned_conn:
+            conn.close()
 
 
 def representative_image_item(items: list[Any]) -> Any:
@@ -1498,9 +1574,17 @@ def source_month_items(
     face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
 ) -> list[Any]:
     if source_has_sql_filter(source):
-        return sql_filtered_source_month_items(target, source, month_key, face_config, hide_out_of_focus=hide_out_of_focus)
+        return sql_filtered_source_month_items(
+            target,
+            source,
+            month_key,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+            conn=conn,
+        )
     if (
         source.person_name is not None
         or source.source_id is not None
@@ -1522,20 +1606,30 @@ def sql_filtered_source_month_items(
     face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
 ) -> list[Any]:
     if not valid_month_key(month_key):
         return []
-    where_sql, params = source_sql_filter(source)
-    where_sql, params = with_motion_video_filter(
-        target,
-        where_sql,
-        params,
-        include_motion=source_shows_motion_videos(source),
-    )
-    where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
-    deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
-    conn = db.connect_read_only(target)
+    owned_conn = conn is None
+    conn = conn or db.connect_read_only(target)
     try:
+        where_sql, params = source_sql_filter(source)
+        where_sql, params = with_motion_video_filter(
+            target,
+            where_sql,
+            params,
+            include_motion=source_shows_motion_videos(source),
+            conn=conn,
+        )
+        where_sql, params = with_out_of_focus_filter(
+            source,
+            where_sql,
+            params,
+            hide_out_of_focus,
+        )
+        deleted_sql = (
+            "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
+        )
         attach_source_sql_filter_databases(conn, target, source, face_config)
         return list(
             conn.execute(
@@ -1551,7 +1645,8 @@ def sql_filtered_source_month_items(
             )
         )
     finally:
-        conn.close()
+        if owned_conn:
+            conn.close()
 
 
 def attach_source_sql_filter_databases(

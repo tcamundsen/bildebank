@@ -7,11 +7,21 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from bildebank import db
+from bildebank import server_browser_overview_html
+from bildebank import server_browser_queries
 from bildebank import server_endpoints_clustering as clustering_endpoints
 from bildebank.config import AppConfig
 from bildebank.image_clustering import delete_clustering_run
-from bildebank.openclip import connect_openclip_db, embedding_blob
-from bildebank.server_browser_queries import source_item_ids
+from bildebank.openclip import (
+    connect_openclip_db,
+    connect_openclip_db_read_only,
+    embedding_blob,
+)
+from bildebank.server_browser_queries import (
+    source_item_ids,
+    source_month_keys,
+    source_year_month_cards,
+)
 from bildebank.server_browser_sources import cluster_browser_source
 from bildebank.server_endpoints_clustering import (
     grouping_page_html,
@@ -19,6 +29,8 @@ from bildebank.server_endpoints_clustering import (
     grouping_run_page_html,
 )
 from bildebank.server_handler import BildebankRequestHandler
+from bildebank.server_pages import source_year_months_page_html
+from bildebank.server_endpoints_browser import respond_browser_source
 from tests.db_test_helpers import insert_basic_item_sidecar_fixture, insert_test_file
 
 
@@ -216,6 +228,124 @@ def test_grouping_run_batches_card_metadata_without_per_cluster_connections(
     assert "Kari (1)" in body
     assert main_connect.call_count == 1
     assert openclip_connect.call_count == 2
+
+
+def test_cluster_year_page_fetches_all_month_cards_once(tmp_path: Path) -> None:
+    target = tmp_path / "collection"
+    db.init_database(target)
+    january = insert_test_file(target, "2024/01/january.png", sha256="sha-1")
+    february = insert_test_file(target, "2024/02/february.png", sha256="sha-2")
+    second_february = insert_test_file(
+        target,
+        "2024/02/second.png",
+        sha256="sha-3",
+    )
+    conn = db.connect(target)
+    try:
+        conn.execute(
+            "UPDATE files SET taken_date = '2024-02-03' WHERE id IN (?, ?)",
+            (february, second_february),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    run_id, cluster_id = insert_completed_run(
+        target,
+        (january, february, second_february),
+    )
+    source = cluster_browser_source(run_id, cluster_id, 1)
+    original_attach = server_browser_queries.attach_source_sql_filter_databases
+
+    with patch.object(
+        server_browser_queries,
+        "attach_source_sql_filter_databases",
+        wraps=original_attach,
+    ) as attach:
+        cards = source_year_month_cards(target, source, "2024")
+
+    assert [(card["month_key"], card["item_count"]) for card in cards] == [
+        ("2024-01", 1),
+        ("2024-02", 2),
+    ]
+    assert attach.call_count == 1
+
+    with patch.object(
+        server_browser_overview_html,
+        "source_year_month_cards",
+        wraps=source_year_month_cards,
+    ) as month_cards:
+        body = source_year_months_page_html(
+            target,
+            source,
+            "2024",
+            month_keys=["2024-01", "2024-02"],
+        )
+
+    assert "2024-01" in body
+    assert "2024-02" in body
+    assert month_cards.call_count == 1
+
+
+def test_cluster_year_and_month_requests_validate_openclip_once_each(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    db.init_database(target)
+    file_id = insert_test_file(target, "2024/01/image.png", sha256="sha-1")
+    run_id, cluster_id = insert_completed_run(target, (file_id,))
+    source = cluster_browser_source(run_id, cluster_id, 1)
+
+    class Server(SimpleNamespace):
+        def source_month_keys(
+            self,
+            browser_source: object,
+            *,
+            hide_out_of_focus: bool = False,
+            conn: object = None,
+        ) -> list[str]:
+            return source_month_keys(
+                self.target,
+                browser_source,  # type: ignore[arg-type]
+                hide_out_of_focus=hide_out_of_focus,
+                conn=conn,  # type: ignore[arg-type]
+            )
+
+    server = Server(
+        target=target,
+        config=AppConfig(),
+        face_enabled=False,
+        openclip_enabled=True,
+    )
+    handler = SimpleNamespace(
+        server=server,
+        respond_html=lambda _body: None,
+        respond_text=lambda _body, **_kwargs: None,
+    )
+
+    with patch(
+        "bildebank.openclip.connect_openclip_db_read_only",
+        wraps=connect_openclip_db_read_only,
+    ) as validate_openclip:
+        respond_browser_source(
+            handler,
+            source,
+            "year",
+            "2024",
+            item_not_found_message="Fant ikke bildet.",
+            invalid_page_message="Ugyldig side.",
+        )
+        assert validate_openclip.call_count == 1
+        validate_openclip.reset_mock()
+        respond_browser_source(
+            handler,
+            source,
+            "month",
+            "2024-01",
+            item_not_found_message="Fant ikke bildet.",
+            invalid_page_message="Ugyldig side.",
+        )
+
+    assert validate_openclip.call_count == 1
 
 
 def test_hdbscan_run_renders_noise_as_ungrouped_images(tmp_path: Path) -> None:
