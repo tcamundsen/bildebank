@@ -1670,7 +1670,10 @@ def attach_source_sql_filter_databases(
             str(row["name"]) == "openclip_db"
             for row in conn.execute("PRAGMA database_list")
         ):
-            validation_conn = connect_openclip_db_read_only(target)
+            validation_conn = connect_openclip_db_read_only(
+                target,
+                full=False,
+            )
             validation_conn.close()
             uri = (
                 f"{openclip_db_path(target).resolve().as_uri()}?mode=ro"

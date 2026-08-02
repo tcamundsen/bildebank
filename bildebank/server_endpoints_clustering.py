@@ -44,7 +44,7 @@ class GroupingClusterCard:
 def grouping_runs(target: Path) -> tuple[Any, ...]:
     if not regular_database_file_exists(openclip_db_path(target)):
         return ()
-    conn = connect_openclip_db_read_only(target)
+    conn = connect_openclip_db_read_only(target, full=False)
     try:
         return tuple(
             conn.execute(
@@ -68,7 +68,7 @@ def grouping_runs(target: Path) -> tuple[Any, ...]:
 def grouping_run(target: Path, run_id: int) -> Any | None:
     if not regular_database_file_exists(openclip_db_path(target)):
         return None
-    conn = connect_openclip_db_read_only(target)
+    conn = connect_openclip_db_read_only(target, full=False)
     try:
         return conn.execute(
             """
@@ -123,7 +123,7 @@ def _cached_grouping_cluster_display_order_and_kind(
 ) -> tuple[int, str] | None:
     del fingerprint  # Used in the cache key to detect OpenCLIP database changes.
     target = Path(target_path)
-    conn = connect_openclip_db_read_only(target)
+    conn = connect_openclip_db_read_only(target, full=False)
     try:
         row = conn.execute(
             """
@@ -150,7 +150,7 @@ def grouping_cluster_cards(
 ) -> tuple[GroupingClusterCard, ...]:
     if not regular_database_file_exists(openclip_db_path(target)):
         return ()
-    validation_conn = connect_openclip_db_read_only(target)
+    validation_conn = connect_openclip_db_read_only(target, full=False)
     validation_conn.close()
     conn = db.connect_read_only(target)
     try:

@@ -531,6 +531,28 @@ def test_read_only_open_rejects_v1_without_migrating(tmp_path: Path) -> None:
         raw.close()
 
 
+def test_read_only_open_can_validate_only_schema_structure(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    target.mkdir()
+    conn = connect_openclip_db(target)
+    conn.close()
+
+    with (
+        patch(
+            "bildebank.openclip.validate_relative_openclip_paths",
+            side_effect=AssertionError("validated stored paths"),
+        ),
+        patch(
+            "bildebank.openclip.validate_openclip_foreign_keys",
+            side_effect=AssertionError("validated foreign keys"),
+        ),
+    ):
+        read_only_conn = connect_openclip_db_read_only(target, full=False)
+        read_only_conn.close()
+
+
 def test_cluster_member_constraints_enforce_run_and_unique_file(
     tmp_path: Path,
 ) -> None:

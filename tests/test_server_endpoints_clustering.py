@@ -368,6 +368,7 @@ def test_cluster_year_and_month_requests_validate_openclip_once_each(
             invalid_page_message="Ugyldig side.",
         )
         assert validate_openclip.call_count == 1
+        assert validate_openclip.call_args.kwargs == {"full": False}
         validate_openclip.reset_mock()
         respond_browser_source(
             handler,
@@ -379,6 +380,7 @@ def test_cluster_year_and_month_requests_validate_openclip_once_each(
         )
 
     assert validate_openclip.call_count == 1
+    assert validate_openclip.call_args.kwargs == {"full": False}
 
 
 def test_cluster_identity_is_cached_until_openclip_database_changes(
@@ -425,6 +427,10 @@ def test_cluster_identity_is_cached_until_openclip_database_changes(
     assert second == first
     assert after_change == first
     assert openclip_connect.call_count == 2
+    assert all(
+        call.kwargs == {"full": False}
+        for call in openclip_connect.call_args_list
+    )
     clustering_endpoints._cached_grouping_cluster_display_order_and_kind.cache_clear()
 
 

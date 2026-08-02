@@ -203,12 +203,16 @@ def connect_openclip_db(target: Path) -> sqlite3.Connection:
         raise
 
 
-def connect_openclip_db_read_only(target: Path) -> sqlite3.Connection:
+def connect_openclip_db_read_only(
+    target: Path,
+    *,
+    full: bool = True,
+) -> sqlite3.Connection:
     path = openclip_db_path(target)
     validate_regular_database_file(path)
     conn = connect_database_read_only(path)
     try:
-        require_current_openclip_schema_read_only(conn)
+        require_current_openclip_schema_read_only(conn, full=full)
         return conn
     except BaseException:
         conn.close()
@@ -512,18 +516,25 @@ def migrate_openclip_v1_to_v2(conn: sqlite3.Connection) -> None:
     )
 
 
-def validate_current_openclip_schema(conn: sqlite3.Connection) -> None:
+def validate_current_openclip_schema(
+    conn: sqlite3.Connection,
+    *,
+    full: bool = True,
+) -> None:
     validate_openclip_schema_structure(
         conn,
         required_columns=OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS,
         require_meta=True,
     )
-    validate_relative_openclip_paths(conn)
-    validate_openclip_foreign_keys(conn)
+    if full:
+        validate_relative_openclip_paths(conn)
+        validate_openclip_foreign_keys(conn)
 
 
 def require_current_openclip_schema_read_only(
     conn: sqlite3.Connection,
+    *,
+    full: bool = True,
 ) -> None:
     version = openclip_schema_version(conn)
     if version is None:
@@ -539,7 +550,7 @@ def require_current_openclip_schema_read_only(
         )
     if version != OPENCLIP_SCHEMA_VERSION:
         reject_unknown_openclip_schema_version(version)
-    validate_current_openclip_schema(conn)
+    validate_current_openclip_schema(conn, full=full)
 
 
 def validate_openclip_schema_structure(
