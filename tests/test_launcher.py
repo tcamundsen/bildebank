@@ -27,7 +27,9 @@ def test_launcher_main_runs_launcher_app() -> None:
     app.run.assert_called_once_with()
 
 
-def test_launcher_restarts_under_python_before_opening_window_on_windows() -> None:
+def test_launcher_restarts_under_python_before_opening_window_on_windows(
+    capsys,
+) -> None:
     child = Mock()
     environment = {"PATH": "test-path"}
 
@@ -45,6 +47,9 @@ def test_launcher_restarts_under_python_before_opening_window_on_windows() -> No
             **environment,
             launcher.WINDOWS_LAUNCHER_CHILD_ENV: "1",
         },
+    )
+    assert capsys.readouterr().out == (
+        "Bildebank starter. Vinduet åpnes om 3–10 sekunder. Vennligst vent …\n"
     )
     app_class.assert_not_called()
 

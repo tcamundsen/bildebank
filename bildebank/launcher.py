@@ -19,6 +19,7 @@ def main() -> int:
             [sys.executable, "-m", "bildebank", "start"],
             env=child_environment,
         )
+        print("Bildebank starter. Vinduet åpnes om 3–10 sekunder. Vennligst vent …")
         return 0
 
     from .launcher_app import LauncherApp
