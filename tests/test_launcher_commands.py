@@ -297,7 +297,9 @@ def test_read_unimport_target_change_report_returns_changed_paths(tmp_path: Path
 
 
 def test_insightface_install_command_runs_existing_powershell_script(tmp_path: Path) -> None:
-    command = insightface_install_command(tmp_path)
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr("bildebank.launcher_commands.sys.platform", "win32")
+        command = insightface_install_command(tmp_path)
 
     assert command == [
         "powershell.exe",
@@ -309,7 +311,9 @@ def test_insightface_install_command_runs_existing_powershell_script(tmp_path: P
 
 
 def test_openclip_install_command_runs_existing_powershell_script(tmp_path: Path) -> None:
-    command = openclip_install_command(tmp_path)
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr("bildebank.launcher_commands.sys.platform", "win32")
+        command = openclip_install_command(tmp_path)
 
     assert command == [
         "powershell.exe",
@@ -318,3 +322,20 @@ def test_openclip_install_command_runs_existing_powershell_script(tmp_path: Path
         "-File",
         str(tmp_path / "install-openclip.ps1"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("command_builder", "script_name"),
+    [
+        (insightface_install_command, "install-insightface.sh"),
+        (openclip_install_command, "install-openclip.sh"),
+    ],
+)
+def test_optional_dependency_install_commands_use_bash_on_linux(
+    tmp_path: Path,
+    command_builder,
+    script_name: str,
+) -> None:
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr("bildebank.launcher_commands.sys.platform", "linux")
+        assert command_builder(tmp_path) == ["bash", str(tmp_path / script_name)]

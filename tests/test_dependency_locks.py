@@ -240,3 +240,15 @@ def test_windows_install_scripts_enforce_the_matching_hash_lock() -> None:
     assert "\n" not in smoke_test
     assert 'f"' not in smoke_test
     compile(smoke_test, "install-openclip-smoke-test", "exec")
+
+
+def test_linux_openclip_install_leaves_model_download_to_launcher() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "install-openclip.sh").read_text(encoding="utf-8")
+
+    assert "'.[openclip]'" in script
+    assert "download-openclip-model" not in script
+    assert "--all-supported" not in script
+    assert "import open_clip" in script
+    assert "import sklearn" in script
+    assert "import torch" in script

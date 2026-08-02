@@ -179,12 +179,12 @@ class SetupTab:
         if not insightface_install_supported():
             self._log(
                 "Installer InsightFace-knappen er deaktivert: "
-                "install-insightface.ps1 er Windows-installasjonsflyt."
+                "automatisk installasjon støttes bare på Windows og Linux."
             )
         if not openclip_install_supported():
             self._log(
                 "Installer OpenCLIP-knappen er deaktivert: "
-                "install-openclip.ps1 er Windows-installasjonsflyt."
+                "automatisk installasjon støttes bare på Windows og Linux."
             )
         if not ffmpeg_install_supported():
             self._log("Installer FFmpeg-knappen er deaktivert: automatisk installasjon støttes bare på Windows.")
@@ -362,7 +362,7 @@ class SetupTab:
 
     def install_insightface(self) -> None:
         if not insightface_install_supported():
-            self._log("Kan ikke installere InsightFace her: install-insightface.ps1 er Windows-installasjonsflyt.")
+            self._log("Kan ikke installere InsightFace automatisk her.")
             return
         if self.insightface_status.status == "Klar" and not self._confirm_rerun(
             "Installer InsightFace på nytt?",
@@ -384,7 +384,7 @@ class SetupTab:
 
     def install_openclip(self) -> None:
         if not openclip_install_supported():
-            self._log("Kan ikke installere OpenCLIP her: install-openclip.ps1 er Windows-installasjonsflyt.")
+            self._log("Kan ikke installere OpenCLIP automatisk her.")
             return
         if self.openclip_status == "Installert" and not self._confirm_rerun(
             "Installer OpenCLIP på nytt?",

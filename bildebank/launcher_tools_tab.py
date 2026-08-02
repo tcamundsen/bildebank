@@ -488,7 +488,7 @@ class ToolsTab:
             messagebox.showerror(
                 "Ansiktsgjenkjenning mangler",
                 "Ansiktsgjenkjenning kan ikke klargjøres automatisk her. "
-                "Installer InsightFace og last ned ansiktsmodellen fra Oppsett-fanen på Windows.",
+                "Automatisk installasjon støttes bare på Windows og Linux.",
                 parent=self.root,
             )
             self._log("Ansiktsscan avbrutt: InsightFace-oppsett kan ikke kjøres automatisk her.")
@@ -565,7 +565,7 @@ class ToolsTab:
             messagebox.showerror(
                 "Bildesøk mangler",
                 "Bildesøk kan ikke klargjøres automatisk her. "
-                "Installer OpenCLIP og AI-modellen fra Oppsett-fanen på Windows.",
+                "Automatisk installasjon støttes bare på Windows og Linux.",
                 parent=self.root,
             )
             self._log("Bildesøk-scan avbrutt: OpenCLIP-oppsett kan ikke kjøres automatisk her.")
@@ -603,15 +603,15 @@ class ToolsTab:
             if not openclip_install_supported():
                 messagebox.showerror(
                     "Gruppering mangler",
-                    "Gruppering krever den komplette OpenCLIP-installasjonen "
-                    "fra Oppsett-fanen på Windows.",
+                    "Gruppering krever OpenCLIP. Automatisk installasjon "
+                    "støttes bare på Windows og Linux.",
                     parent=self.root,
                 )
                 return
             if not messagebox.askyesno(
                 "Installer grupperingsstøtte?",
                 "Gruppering krever OpenCLIP og scikit-learn. Vil du "
-                "installere den låste OpenCLIP-pakken nå?",
+                "installere OpenCLIP-pakken nå?",
                 parent=self.root,
             ):
                 return

@@ -158,11 +158,11 @@ def _run_git(args: list[str], repo_root: Path) -> str:
 
 
 def insightface_install_supported() -> bool:
-    return os.name == "nt"
+    return os.name == "nt" or sys.platform.startswith("linux")
 
 
 def openclip_install_supported() -> bool:
-    return os.name == "nt"
+    return os.name == "nt" or sys.platform.startswith("linux")
 
 
 def ffmpeg_install_supported() -> bool:

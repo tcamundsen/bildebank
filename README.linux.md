@@ -47,19 +47,23 @@ python3 -m venv .venv
 ./.venv/bin/python -m pip install -e .
 ```
 
-## Installer InsightFace (valgfritt)
+## Valgfrie AI-funksjoner
 
-Hvis du vil bruke ansiktsgjenkjenning, installer InsightFace-tillegget fra
-programmappen:
+Når du klikker **Finn ansikter** eller **Klargjør bildesøk** i Bildebank-vinduet,
+kan Bildebank installere de nødvendige Python-modulene automatisk. Etter
+bekreftelse lastes valgt modell ned, funksjonen slås på og skanningen starter.
+
+Du kan også installere Python-modulene manuelt fra programmappen:
 
 ```bash
 ./install-insightface.sh
+./install-openclip.sh
 ```
 
-Slå deretter på ansiktsgjenkjenning og kontroller installasjonen:
+Ved manuell installasjon lastes modeller ned separat fra fanen **Oppsett**.
+Du kan kontrollere installasjonen med:
 
 ```bash
-bildebank config face_recognition enable
 bildebank doctor
 ```
 

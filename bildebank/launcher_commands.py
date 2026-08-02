@@ -234,13 +234,23 @@ def _program_repo_root() -> Path:
 
 
 def insightface_install_command(repo_root: Path | None = None) -> list[str]:
-    script_path = (repo_root or _program_repo_root()) / "install-insightface.ps1"
-    return ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(script_path)]
+    root = repo_root or _program_repo_root()
+    if sys.platform.startswith("linux"):
+        return ["bash", str(root / "install-insightface.sh")]
+    if sys.platform == "win32":
+        script_path = root / "install-insightface.ps1"
+        return ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(script_path)]
+    raise RuntimeError("Automatisk InsightFace-installasjon støttes bare på Windows og Linux.")
 
 
 def openclip_install_command(repo_root: Path | None = None) -> list[str]:
-    script_path = (repo_root or _program_repo_root()) / "install-openclip.ps1"
-    return ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(script_path)]
+    root = repo_root or _program_repo_root()
+    if sys.platform.startswith("linux"):
+        return ["bash", str(root / "install-openclip.sh")]
+    if sys.platform == "win32":
+        script_path = root / "install-openclip.ps1"
+        return ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(script_path)]
+    raise RuntimeError("Automatisk OpenCLIP-installasjon støttes bare på Windows og Linux.")
 
 
 def download_face_model_command() -> list[str]:

@@ -51,6 +51,11 @@ kontrollerte deldata slik at neste forsøk kan fortsette. Launcherens egne
 underprosesser bruker UTF-8 for å unngå feilviste norske tegn fra Python og
 PowerShell.
 
+Installasjonsknappene og den automatiske klargjøringen bruker `.ps1`-scriptene
+på Windows og `.sh`-scriptene på Linux. Scriptet installerer avhengighetene;
+launcheren laster deretter ned valgt modell, slår på funksjonen og starter
+skanningen når brukeren har bekreftet hele flyten.
+
 Verktøy-fanen kan starte bildegruppering med antall grupper, filtersøk, seed
 og et eksplisitt valg for «Skjul ute av fokus». Den interne
 `_image-clustering-worker`-kommandoen er bare en prosessgrense for

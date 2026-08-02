@@ -22,11 +22,13 @@ from bildebank.launcher_status import (
     face_model_download_button_state,
     ffmpeg_dependency_status,
     insightface_dependency_status,
+    insightface_install_supported,
     insightface_model_status,
     is_collection_created,
     load_launcher_config,
     migration_plan_needs_action,
     openclip_dependency_status,
+    openclip_install_supported,
     openclip_model_download_button_state,
     openclip_model_status,
     registered_persons,
@@ -46,6 +48,26 @@ def test_ffmpeg_dependency_status_reports_ready_and_missing(tmp_path: Path) -> N
 
     with patch("bildebank.launcher_status.resolve_ffmpeg_tools", side_effect=FileNotFoundError("mangler")):
         assert ffmpeg_dependency_status() == FFmpegDependencyStatus("Mangler", "mangler")
+
+
+def test_optional_dependency_installers_are_supported_on_windows_and_linux() -> None:
+    with patch("bildebank.launcher_status.os.name", "nt"):
+        assert insightface_install_supported()
+        assert openclip_install_supported()
+
+    with (
+        patch("bildebank.launcher_status.os.name", "posix"),
+        patch("bildebank.launcher_status.sys.platform", "linux"),
+    ):
+        assert insightface_install_supported()
+        assert openclip_install_supported()
+
+    with (
+        patch("bildebank.launcher_status.os.name", "posix"),
+        patch("bildebank.launcher_status.sys.platform", "darwin"),
+    ):
+        assert not insightface_install_supported()
+        assert not openclip_install_supported()
 
 
 def test_openclip_model_download_button_requires_installed_dependency() -> None:

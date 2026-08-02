@@ -4,9 +4,6 @@ set -euo pipefail
 
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 venv_python="$repo_dir/.venv/bin/python"
-model_root="$repo_dir/.bildebank-openclip"
-model_names=("ViT-B-32" "ViT-L-14")
-pretrained_names=("laion2b_s34b_b79k" "laion2b_s32b_b82k")
 
 if [[ ! -x "$venv_python" ]]; then
     echo "Fant ikke Python i .venv. Installer Bildebank først." >&2
@@ -18,49 +15,19 @@ cd "$repo_dir"
 echo "Installerer valgfri OpenCLIP-støtte i Bildebanks lokale Python-miljø"
 "$venv_python" -m pip install -e '.[openclip]'
 
-"$venv_python" -m bildebank download-openclip-model --all-supported
-smoke_test="$(mktemp "${TMPDIR:-/tmp}/bildebank-openclip.XXXXXX.py")"
-trap 'rm -f -- "$smoke_test"' EXIT
-
-cat >"$smoke_test" <<'PY'
-import sys
-from pathlib import Path
-
+echo "Kontrollerer OpenCLIP-avhengighetene"
+"$venv_python" - <<'PY'
 import open_clip
-from bildebank.config import OpenClipConfig
-from bildebank.openclip_models import require_openclip_model_file
+import sklearn
+import torch
+from importlib.metadata import version
 
-model_root = Path(sys.argv[1])
-model_name = sys.argv[2]
-pretrained = sys.argv[3]
-
-model_root.mkdir(parents=True, exist_ok=True)
-config = OpenClipConfig(
-    model_root=model_root,
-    model_name=model_name,
-    pretrained=pretrained,
+print(
+    "OpenCLIP klar: "
+    f"open_clip_torch={version('open_clip_torch')}, "
+    f"torch={torch.__version__}, scikit-learn={sklearn.__version__}"
 )
-model_file = require_openclip_model_file(config)
-open_clip.create_model_and_transforms(
-    model_name,
-    pretrained=str(model_file),
-    device="cpu",
-)
-open_clip.get_tokenizer(model_name)
-print(f"OpenCLIP klar: {model_name} ({pretrained})")
 PY
 
-echo "Modellmappe:"
-echo "  $model_root"
-for index in "${!model_names[@]}"; do
-    model_name="${model_names[$index]}"
-    pretrained="${pretrained_names[$index]}"
-    echo "Laster ned og tester OpenCLIP-modell:"
-    echo "  $model_name ($pretrained)"
-    "$venv_python" "$smoke_test" "$model_root" "$model_name" "$pretrained"
-done
-
-echo "Ferdig. OpenCLIP er installert med modeller:"
-for index in "${!model_names[@]}"; do
-    echo "  ${model_names[$index]} (${pretrained_names[$index]})"
-done
+echo "Ferdig. OpenCLIP-avhengighetene er installert."
+echo "Last ned valgt modell separat fra Oppsett-fanen."
