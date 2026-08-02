@@ -4,6 +4,7 @@ import html
 import json
 import sqlite3
 from dataclasses import dataclass
+from functools import lru_cache
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
@@ -94,6 +95,34 @@ def grouping_cluster_display_order_and_kind(
 ) -> tuple[int, str] | None:
     if not regular_database_file_exists(openclip_db_path(target)):
         return None
+    fingerprint = _openclip_database_fingerprint(target)
+    if fingerprint is None:
+        return None
+    return _cached_grouping_cluster_display_order_and_kind(
+        str(target.resolve()),
+        run_id,
+        cluster_id,
+        fingerprint,
+    )
+
+
+def _openclip_database_fingerprint(target: Path) -> tuple[int, int] | None:
+    try:
+        stat = openclip_db_path(target).stat()
+    except OSError:
+        return None
+    return stat.st_mtime_ns, stat.st_size
+
+
+@lru_cache(maxsize=512)
+def _cached_grouping_cluster_display_order_and_kind(
+    target_path: str,
+    run_id: int,
+    cluster_id: int,
+    fingerprint: tuple[int, int],
+) -> tuple[int, str] | None:
+    del fingerprint  # Used in the cache key to detect OpenCLIP database changes.
+    target = Path(target_path)
     conn = connect_openclip_db_read_only(target)
     try:
         row = conn.execute(
@@ -473,6 +502,7 @@ def respond_delete_grouping_run(handler: Any, run_id: int) -> None:
     if not deleted:
         handler.respond_text("Fant ikke kjøringen.", status=HTTPStatus.NOT_FOUND)
         return
+    _cached_grouping_cluster_display_order_and_kind.cache_clear()
     handler.redirect("/grouping")
 
 

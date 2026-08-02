@@ -348,6 +348,53 @@ def test_cluster_year_and_month_requests_validate_openclip_once_each(
     assert validate_openclip.call_count == 1
 
 
+def test_cluster_identity_is_cached_until_openclip_database_changes(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    db.init_database(target)
+    file_id = insert_test_file(target, "2024/01/image.png", sha256="sha-1")
+    run_id, cluster_id = insert_completed_run(target, (file_id,))
+    clustering_endpoints._cached_grouping_cluster_display_order_and_kind.cache_clear()
+    original_connect = clustering_endpoints.connect_openclip_db_read_only
+
+    with (
+        patch.object(
+            clustering_endpoints,
+            "_openclip_database_fingerprint",
+            side_effect=((1, 100), (1, 100), (2, 100)),
+        ),
+        patch.object(
+            clustering_endpoints,
+            "connect_openclip_db_read_only",
+            wraps=original_connect,
+        ) as openclip_connect,
+    ):
+        first = clustering_endpoints.grouping_cluster_display_order_and_kind(
+            target,
+            run_id,
+            cluster_id,
+        )
+        second = clustering_endpoints.grouping_cluster_display_order_and_kind(
+            target,
+            run_id,
+            cluster_id,
+        )
+        after_change = (
+            clustering_endpoints.grouping_cluster_display_order_and_kind(
+                target,
+                run_id,
+                cluster_id,
+            )
+        )
+
+    assert first == (1, "cluster")
+    assert second == first
+    assert after_change == first
+    assert openclip_connect.call_count == 2
+    clustering_endpoints._cached_grouping_cluster_display_order_and_kind.cache_clear()
+
+
 def test_hdbscan_run_renders_noise_as_ungrouped_images(tmp_path: Path) -> None:
     target = tmp_path / "collection"
     db.init_database(target)

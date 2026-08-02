@@ -861,6 +861,8 @@ lagres som del av run-parametrene.
 - Ingen web-rute kan starte eller avbryte den tunge jobben.
 - Sletting krever skrivbar server, POST og CSRF.
 - Gruppebrowseren bruker den felles browserflyten og utelater inaktive medlemmer.
+- Cluster-identiteten mellomlagres mot OpenCLIP-databasens endringstid og størrelse,
+  slik at bilde-for-bilde-navigasjon ikke validerer hele databasen på nytt.
 - Et fjernet representativt bilde erstattes av neste aktive `center_rank`.
 - Manglende thumbnail gir en kontrollert plassholder.
 - Alle grupperingssider blokkeres i LAN-share.
