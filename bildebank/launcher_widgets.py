@@ -144,7 +144,8 @@ def image_clustering_dialog(
         frame,
         text=(
             "Grupperingen lager bare et reversibelt forslag. "
-            "Ingen bilder eller eksisterende metadata endres."
+            "Ingen bilder eller eksisterende metadata endres. "
+            "Se hjelpetekst lenket fra siden Grupperinger i nettleseren."
         ),
         wraplength=500,
         justify="left",

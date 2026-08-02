@@ -392,6 +392,7 @@ class LauncherApp:
             )
         if self.tools_tab is not None:
             self.tools_tab.update_dependency_tooltips()
+            self.tools_tab.set_dependency_buttons_enabled(enabled)
         if self.setup is not None:
             assert self.main_tab is not None
             self.setup.set_buttons_enabled(

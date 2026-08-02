@@ -107,6 +107,7 @@ class ToolsSetup(Protocol):
     face_model_status: InsightFaceModelStatus
     openclip_status: str
     openclip_model_status: OpenClipModelStatus
+    status_refreshing: bool
 
     def run_insightface_install(self, *, on_success: Callable[[], None]) -> None: ...
 
@@ -164,6 +165,7 @@ class ToolsTab:
         self.face_scan_tooltip: Tooltip | None = None
         self.image_scan_button: Any | None = None
         self.image_scan_tooltip: Tooltip | None = None
+        self.clustering_button: Any | None = None
         self.pending_deletes_status = "Ukjent"
         self.pending_deletes_count: int | None = None
         self.video_preview_missing_count: int | None = None
@@ -185,6 +187,7 @@ class ToolsTab:
         self.face_scan_tooltip = None
         self.image_scan_button = None
         self.image_scan_tooltip = None
+        self.clustering_button = None
         for child in self.button_frame.winfo_children():
             child.destroy()
         if not available:
@@ -353,6 +356,7 @@ class ToolsTab:
             text="Grupper bilder …",
             command=self._run_image_clustering,
         )
+        self.clustering_button = clustering_button
         clustering_button.grid(
             row=4,
             column=0,
@@ -399,6 +403,20 @@ class ToolsTab:
                 and self.setup.openclip_model_status.status == "Tilgjengelig"
                 else IMAGE_SCAN_OPENCLIP_MISSING_TOOLTIP
             )
+
+    def set_dependency_buttons_enabled(self, enabled: bool) -> None:
+        state = (
+            "normal"
+            if enabled and not getattr(self.setup, "status_refreshing", False)
+            else "disabled"
+        )
+        for button in (
+            self.face_scan_button,
+            self.image_scan_button,
+            self.clustering_button,
+        ):
+            if button is not None:
+                button.configure(state=state)
 
     def _refresh_pending_deletes_status(self) -> None:
         try:
@@ -568,6 +586,9 @@ class ToolsTab:
     def _run_image_clustering(self) -> None:
         from tkinter import messagebox
 
+        if getattr(self.setup, "status_refreshing", False):
+            self._log("Venter på kontroll av OpenCLIP-status ...")
+            return
         openclip_missing = self.setup.openclip_status != "Installert"
         image_search_disabled = not self._image_search_enabled()
         if openclip_missing:

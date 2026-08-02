@@ -36,6 +36,7 @@ def ready_setup() -> SimpleNamespace:
         face_model_status=InsightFaceModelStatus("buffalo_l", "Lastet ned"),
         openclip_status="Installert",
         openclip_model_status=OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig"),
+        status_refreshing=False,
     )
 
 
@@ -60,6 +61,9 @@ class FakeWidget:
 
     def columnconfigure(self, *_args: object, **_kwargs: object) -> None:
         pass
+
+    def configure(self, **options: object) -> None:
+        self.options.update(options)
 
     def destroy(self) -> None:
         if self.parent is not None:
@@ -143,6 +147,67 @@ def test_dependency_tooltips_explain_missing_ai_components(tmp_path: Path) -> No
 
     assert tab.face_scan_tooltip.text == FACE_SCAN_TOOLTIP
     assert tab.image_scan_tooltip.text == IMAGE_SCAN_TOOLTIP
+
+
+def test_ai_tool_buttons_are_disabled_while_setup_status_refreshes(
+    tmp_path: Path,
+) -> None:
+    setup = ready_setup()
+    setup.status_refreshing = True
+    notebook = FakeWidget()
+    tab = ToolsTab(
+        tk=SimpleNamespace(BooleanVar=FakeVariable),
+        ttk=SimpleNamespace(Frame=FakeWidget, Checkbutton=FakeWidget),
+        notebook=notebook,
+        root=FakeWidget(),
+        button=FakeWidget,
+        run_waiting_command=lambda *_args, **_kwargs: None,
+        get_collection_path=lambda: tmp_path / "samling",
+        get_setup=lambda: setup,
+        log=lambda _message: None,
+        refresh_launcher=lambda: None,
+        add_tooltip=lambda _widget, _text: None,
+        ask_string=lambda *_args, **_kwargs: None,
+        show_log_review_question=lambda *_args, **_kwargs: None,
+        show_error=lambda _message, _exc: None,
+        padding=12,
+        padx=4,
+        pady=4,
+    )
+    with (
+        patch("bildebank.launcher_tools_tab.list_pending_deletes", return_value=[]),
+        patch(
+            "bildebank.launcher_tools_tab.active_video_preview_candidates",
+            return_value=[],
+        ),
+    ):
+        tab.refresh(available=True)
+
+    tab.set_dependency_buttons_enabled(True)
+
+    assert tab.face_scan_button.options["state"] == "disabled"
+    assert tab.image_scan_button.options["state"] == "disabled"
+    assert tab.clustering_button.options["state"] == "disabled"
+
+    setup.status_refreshing = False
+    tab.set_dependency_buttons_enabled(True)
+    assert tab.clustering_button.options["state"] == "normal"
+
+
+def test_clustering_waits_for_setup_status_instead_of_offering_install(
+    tmp_path: Path,
+) -> None:
+    setup = ready_setup()
+    setup.status_refreshing = True
+    logs: list[str] = []
+    tab = bare_tools_tab(tmp_path, setup)
+    tab._log = logs.append
+
+    with patch("tkinter.messagebox.askyesno") as ask_yes_no:
+        tab._run_image_clustering()
+
+    ask_yes_no.assert_not_called()
+    assert logs == ["Venter på kontroll av OpenCLIP-status ..."]
 
 
 def test_dependency_tooltips_explain_missing_models(tmp_path: Path) -> None:
