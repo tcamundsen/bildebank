@@ -82,6 +82,10 @@ IMAGE_SCAN_ENABLE_MESSAGE = (
     "Bildesøk er slått av i innstillingene.\n\n"
     "Vil du slå det på og klargjøre bildene nå?"
 )
+TOOLS_UNAVAILABLE_MESSAGE = (
+    "Verktøyene blir tilgjengelige når en bildesamling er valgt og klar. "
+    "Gå til fanen «Bildebank» først."
+)
 
 
 class ButtonFactory(Protocol):
@@ -193,6 +197,10 @@ class ToolsTab:
         if not available:
             self.pending_deletes_status = "Ukjent"
             self.pending_deletes_count = None
+            self.ttk.Label(
+                self.button_frame,
+                text=TOOLS_UNAVAILABLE_MESSAGE,
+            ).grid(row=0, column=0, padx=self.padx, pady=self.pady, sticky="w")
             return []
 
         self._refresh_pending_deletes_status()

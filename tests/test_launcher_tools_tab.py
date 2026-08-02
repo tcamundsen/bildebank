@@ -15,6 +15,7 @@ from bildebank.launcher_tools_tab import (
     FACE_SCAN_TOOLTIP,
     IMAGE_SCAN_OPENCLIP_MISSING_TOOLTIP,
     IMAGE_SCAN_TOOLTIP,
+    TOOLS_UNAVAILABLE_MESSAGE,
     ToolsTab,
 )
 
@@ -78,7 +79,7 @@ class FakeWidget:
 
 def test_tools_tab_builds_all_buttons_only_when_collection_is_available(tmp_path: Path) -> None:
     notebook = FakeWidget()
-    ttk = SimpleNamespace(Frame=FakeWidget, Checkbutton=FakeWidget)
+    ttk = SimpleNamespace(Frame=FakeWidget, Checkbutton=FakeWidget, Label=FakeWidget)
     tk = SimpleNamespace(BooleanVar=FakeVariable)
     tab = ToolsTab(
         tk=tk,
@@ -125,7 +126,9 @@ def test_tools_tab_builds_all_buttons_only_when_collection_is_available(tmp_path
     ]
 
     assert tab.refresh(available=False) == []
-    assert tab.button_frame.winfo_children() == []
+    assert [child.options.get("text") for child in tab.button_frame.winfo_children()] == [
+        TOOLS_UNAVAILABLE_MESSAGE
+    ]
 
 
 def test_dependency_tooltips_explain_missing_ai_components(tmp_path: Path) -> None:

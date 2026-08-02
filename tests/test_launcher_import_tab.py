@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from bildebank import db
 from bildebank.launcher_import_tab import (
+    IMPORT_UNAVAILABLE_MESSAGE,
     ImportTab,
     source_is_collection_or_inside,
     suggest_import_name,
@@ -34,6 +35,28 @@ def bare_import_tab(collection_path: Path) -> ImportTab:
     return tab
 
 
+class FakeWidget:
+    def __init__(self, parent: FakeWidget | None = None, **options: object) -> None:
+        self.parent = parent
+        self.options = options
+        self.children: list[FakeWidget] = []
+        if parent is not None:
+            parent.children.append(self)
+
+    def columnconfigure(self, *_args: object, **_kwargs: object) -> None:
+        pass
+
+    def destroy(self) -> None:
+        if self.parent is not None:
+            self.parent.children.remove(self)
+
+    def grid(self, *_args: object, **_kwargs: object) -> None:
+        pass
+
+    def winfo_children(self) -> list[FakeWidget]:
+        return list(self.children)
+
+
 def test_import_helpers_handle_windows_names_and_reject_collection_paths(tmp_path: Path) -> None:
     collection = tmp_path / "samling"
     other_source = tmp_path / "bilder"
@@ -57,6 +80,31 @@ def test_import_tab_defines_all_four_actions_and_safety_tooltips() -> None:
     assert 'text="Sjekk kilde"' in source_code
     assert "Krever nøyaktig bekreftelse" in source_code
     assert "samme SHA-256" in source_code
+
+
+def test_import_tab_explains_when_collection_is_unavailable(tmp_path: Path) -> None:
+    notebook = FakeWidget()
+    tab = ImportTab(
+        tk=object(),
+        ttk=type("FakeTtk", (), {"Frame": FakeWidget, "Label": FakeWidget}),
+        notebook=notebook,
+        root=FakeWidget(),
+        button=FakeWidget,
+        run_waiting_command=lambda *_args, **_kwargs: None,
+        get_collection_path=lambda: tmp_path / "samling",
+        log=lambda _message: None,
+        refresh_launcher=lambda: None,
+        add_tooltip=lambda _widget, _text: None,
+        ask_string=lambda *_args, **_kwargs: None,
+        padding=12,
+        padx=4,
+        pady=4,
+    )
+
+    assert tab.refresh(available=False) == []
+    assert [child.options.get("text") for child in tab.button_frame.children] == [
+        IMPORT_UNAVAILABLE_MESSAGE
+    ]
 
 
 def test_import_flow_runs_import_with_selected_folder_and_trimmed_name(tmp_path: Path) -> None:

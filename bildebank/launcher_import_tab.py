@@ -20,6 +20,12 @@ from .launcher_status import registered_sources, rescan_source_candidates
 from .launcher_widgets import select_source_dialog
 
 
+IMPORT_UNAVAILABLE_MESSAGE = (
+    "Import blir tilgjengelig når en bildesamling er valgt og klar. "
+    "Gå til fanen «Bildebank» først."
+)
+
+
 class ButtonFactory(Protocol):
     def __call__(self, parent: Any, **kwargs: Any) -> Any: ...
 
@@ -120,6 +126,10 @@ class ImportTab:
         for child in self.button_frame.winfo_children():
             child.destroy()
         if not available:
+            self.ttk.Label(
+                self.button_frame,
+                text=IMPORT_UNAVAILABLE_MESSAGE,
+            ).grid(row=0, column=0, padx=self.padx, pady=self.pady, sticky="w")
             return []
 
         import_button = self._button(
