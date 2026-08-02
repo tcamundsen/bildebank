@@ -121,6 +121,10 @@ def test_grouping_pages_render_runs_and_active_cluster_members(
     run_html = grouping_run_page_html(server, run_id)
 
     assert f"Kjøring #{run_id}" in list_html
+    assert f'action="/grouping/runs/{run_id}/delete"' in list_html
+    assert '>Slett</button>' in list_html
+    assert "Slette run #" in list_html
+    assert 'value="token"' in list_html
     assert run_html is not None
     assert "Gruppe 1" in run_html
     assert "2 aktive bilder" in run_html
@@ -130,6 +134,16 @@ def test_grouping_pages_render_runs_and_active_cluster_members(
     assert "Opprettet" in run_html
     assert "Valgte stillbilder" in run_html
     assert "grouping-preview-missing" in run_html
+
+    read_only_html = grouping_page_html(
+        SimpleNamespace(
+            target=target,
+            face_enabled=False,
+            openclip_enabled=True,
+            read_only=True,
+        )
+    )
+    assert f'action="/grouping/runs/{run_id}/delete"' not in read_only_html
 
     source = cluster_browser_source(run_id, cluster_id, 1)
     assert source_item_ids(target, source) == [first, second]

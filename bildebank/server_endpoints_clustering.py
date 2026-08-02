@@ -315,7 +315,7 @@ def _grouping_people_by_cluster(
 
 def grouping_page_html(server: Any) -> str:
     rows = grouping_runs(server.target)
-    cards = "\n".join(_run_card_html(row) for row in rows)
+    cards = "\n".join(_run_card_html(server, row) for row in rows)
     if not cards:
         cards = (
             "<p>Ingen grupperingskjøringer ennå. "
@@ -351,28 +351,13 @@ def grouping_run_page_html(server: Any, run_id: int) -> str | None:
     )
     if not cluster_html:
         cluster_html = "<p>Ingen aktive grupper i denne kjøringen.</p>"
-    selection = json.loads(str(row["selection_json"]))
-    selection_text = (
-        "Alle aktive bilder"
-        if str(row["selection_kind"]) == "all"
-        else str(selection.get("query") or "")
+    selection_text = _run_selection_text(row)
+    delete_form = _delete_run_form_html(
+        server,
+        row,
+        label="Slett kjøring",
+        button_class="danger-button",
     )
-    delete_form = ""
-    if not getattr(server, "read_only", False):
-        confirmation = (
-            f"Slette run #{run_id} med {int(row['cluster_row_count'])} "
-            f"grupper og {int(row['member_row_count'])} medlemsrader? "
-            f"Utvalg: {selection_text}"
-        )
-        confirmation_js = html.escape(json.dumps(confirmation), quote=True)
-        delete_form = f"""
-        <form method="post" action="/grouping/runs/{run_id}/delete"
-              onsubmit="return confirm({confirmation_js})">
-          <input type="hidden" name="csrf_token"
-                 value="{html.escape(str(server.csrf_token), quote=True)}">
-          <button type="submit" class="danger-button">Slett kjøring</button>
-        </form>
-        """
     error_html = (
         f'<p class="error">{html.escape(str(row["error_message"]))}</p>'
         if row["error_message"]
@@ -472,13 +457,50 @@ def respond_delete_grouping_run(handler: Any, run_id: int) -> None:
     handler.redirect("/grouping")
 
 
-def _run_card_html(row: Any) -> str:
-    run_id = int(row["id"])
+def _run_selection_text(row: Any) -> str:
     selection = json.loads(str(row["selection_json"]))
-    selection_text = (
+    return (
         "Alle aktive bilder"
         if str(row["selection_kind"]) == "all"
         else str(selection.get("query") or "")
+    )
+
+
+def _delete_run_form_html(
+    server: Any,
+    row: Any,
+    *,
+    label: str,
+    button_class: str,
+) -> str:
+    if getattr(server, "read_only", False):
+        return ""
+    run_id = int(row["id"])
+    selection_text = _run_selection_text(row)
+    confirmation = (
+        f"Slette run #{run_id} med {int(row['cluster_row_count'])} "
+        f"grupper og {int(row['member_row_count'])} medlemsrader? "
+        f"Utvalg: {selection_text}"
+    )
+    confirmation_js = html.escape(json.dumps(confirmation), quote=True)
+    return f"""
+    <form method="post" action="/grouping/runs/{run_id}/delete"
+          onsubmit="return confirm({confirmation_js})">
+      <input type="hidden" name="csrf_token"
+             value="{html.escape(str(server.csrf_token), quote=True)}">
+      <button type="submit" class="{button_class}">{label}</button>
+    </form>
+    """
+
+
+def _run_card_html(server: Any, row: Any) -> str:
+    run_id = int(row["id"])
+    selection_text = _run_selection_text(row)
+    delete_form = _delete_run_form_html(
+        server,
+        row,
+        label="Slett",
+        button_class="inline-link danger-inline-link",
     )
     error_html = (
         f'<p class="error">{html.escape(str(row["error_message"]))}</p>'
@@ -493,6 +515,7 @@ def _run_card_html(row: Any) -> str:
          {int(row["clustered_file_count"])} bilder</p>
       <p class="meta">{html.escape(selection_text)}</p>
       {error_html}
+      {delete_form}
     </article>
     """
 
