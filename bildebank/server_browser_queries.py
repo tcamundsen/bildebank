@@ -1560,6 +1560,22 @@ def attach_source_sql_filter_databases(
     source: BrowserSource,
     face_config: FaceRecognitionConfig | None = None,
 ) -> None:
+    if source.cluster_id is not None:
+        from .openclip import (
+            connect_openclip_db_read_only,
+            openclip_db_path,
+        )
+
+        if not any(
+            str(row["name"]) == "openclip_db"
+            for row in conn.execute("PRAGMA database_list")
+        ):
+            validation_conn = connect_openclip_db_read_only(target)
+            validation_conn.close()
+            uri = (
+                f"{openclip_db_path(target).resolve().as_uri()}?mode=ro"
+            )
+            conn.execute("ATTACH DATABASE ? AS openclip_db", (uri,))
     if source.person_name is not None:
         attach_face_database(conn, target, face_config)
     if source.reference_suggestions_person_name is not None:

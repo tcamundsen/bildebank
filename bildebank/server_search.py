@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 
 from .config import OpenClipConfig
+from .embedding_vectors import normalized_embedding_blob
 from .html_paths import relative_to_target
 from .openclip import (
     ImageSearchResult,
@@ -256,17 +257,22 @@ def load_search_embedding_cache(conn: sqlite3.Connection, key: SearchEmbeddingCa
         """,
         (key.model_name, key.pretrained),
     )
-    first = cursor.fetchone()
-    if first is None:
-        raise ValueError("Fant ingen bilde-embeddings. Kjør bildebank image-scan først.")
-    first_vector = embedding_array_from_blob(bytes(first["embedding"]))
-    matrix = np.zeros((key.count, first_vector.size), dtype=np.float32)
+    expected_dimension: int | None = None
+    vectors: list[Any] = []
     rows: list[SearchEmbeddingRow] = []
 
-    def add_row(index: int, row: sqlite3.Row) -> None:
-        vector = embedding_array_from_blob(bytes(row["embedding"]))
-        if vector.size == matrix.shape[1]:
-            matrix[index, :] = normalized_search_vector(vector)
+    def add_row(row: sqlite3.Row) -> None:
+        nonlocal expected_dimension
+        try:
+            vector = normalized_embedding_blob(
+                bytes(row["embedding"]),
+                expected_dimension=expected_dimension,
+            )
+        except (TypeError, ValueError):
+            return
+        if expected_dimension is None:
+            expected_dimension = int(vector.size)
+        vectors.append(vector)
         rows.append(
             SearchEmbeddingRow(
                 file_id=int(row["file_id"]),
@@ -274,16 +280,14 @@ def load_search_embedding_cache(conn: sqlite3.Connection, key: SearchEmbeddingCa
                 target_path_key=str(row["target_path_key"]),
             )
         )
-
-    add_row(0, first)
-    index = 1
     for row in cursor:
-        if index >= matrix.shape[0]:
-            break
-        add_row(index, row)
-        index += 1
-    if index < matrix.shape[0]:
-        matrix = matrix[:index, :]
+        add_row(row)
+    if not vectors:
+        raise ValueError(
+            "Fant ingen gyldige bilde-embeddings. "
+            "Kjør bildebank image-scan først."
+        )
+    matrix = np.stack(vectors).astype(np.float32, copy=False)
     return SearchEmbeddingCache(key, matrix, tuple(rows))
 
 

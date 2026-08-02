@@ -265,6 +265,15 @@ def test_remove_cleans_all_item_sidecars_and_undelete_does_not_restore(
         assert openclip_conn.execute(
             "SELECT COUNT(*) FROM image_search_runs"
         ).fetchone()[0] == 1
+        assert openclip_conn.execute(
+            "SELECT COUNT(*) FROM image_cluster_members"
+        ).fetchone()[0] == 0
+        assert openclip_conn.execute(
+            "SELECT COUNT(*) FROM image_clusters"
+        ).fetchone()[0] == 0
+        assert openclip_conn.execute(
+            "SELECT COUNT(*) FROM image_clustering_runs"
+        ).fetchone()[0] == 1
     finally:
         openclip_conn.close()
 
@@ -346,6 +355,15 @@ def test_remove_recovery_finishes_sidecar_cleanup(tmp_path: Path) -> None:
         assert openclip_conn.execute(
             "SELECT COUNT(*) FROM image_search_runs"
         ).fetchone()[0] == 0
+        assert openclip_conn.execute(
+            "SELECT COUNT(*) FROM image_cluster_members"
+        ).fetchone()[0] == 0
+        assert openclip_conn.execute(
+            "SELECT COUNT(*) FROM image_clusters"
+        ).fetchone()[0] == 0
+        assert openclip_conn.execute(
+            "SELECT COUNT(*) FROM image_clustering_runs"
+        ).fetchone()[0] == 1
     finally:
         openclip_conn.close()
 

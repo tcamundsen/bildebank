@@ -1,6 +1,8 @@
 # Gruppering av bilder med OpenCLIP
 
-Status: implementeringsplan, ikke implementert.
+Status: første leveranse implementert. Den manuelle verifikasjonen på Windows
+med omtrent 20 000 embeddings gjenstår før funksjonen brukes på
+hovedsamlingen.
 
 ## Mål
 
@@ -65,7 +67,7 @@ OpenCLIP-data ligger i den separate sidecar-databasen:
 .bilder-openclip.sqlite3
 ```
 
-Dagens OpenCLIP-schema er v1 og har tabellene:
+Før denne leveransen var OpenCLIP-schemaet v1 og hadde tabellene:
 
 - `meta`
 - `image_embeddings`
@@ -860,80 +862,80 @@ Leveranse: ingen åpne produktvalg, ingen runtimeendring.
 
 ### Trinn 2: Avhengighet
 
-- [ ] Legg scikit-learn til `openclip`-ekstraen i `pyproject.toml`.
-- [ ] Regenerer komplett Windows CPython 3.13 OpenCLIP-lås.
-- [ ] Utvid `install-openclip.ps1` sin smoke-test til å importere og vise den
+- [x] Legg scikit-learn til `openclip`-ekstraen i `pyproject.toml`.
+- [x] Regenerer komplett Windows CPython 3.13 OpenCLIP-lås.
+- [x] Utvid `install-openclip.ps1` sin smoke-test til å importere og vise den
   låste scikit-learn-versjonen sammen med OpenCLIP og Torch.
-- [ ] Utvid dependency-lock-testene.
-- [ ] Fastsett eksplisitte verdier for `n_init`, `max_iter` og
+- [x] Utvid dependency-lock-testene.
+- [x] Fastsett eksplisitte verdier for `n_init`, `max_iter` og
   `reassignment_ratio` mot den låste scikit-learn-versjonen.
 - [ ] Bekreft `batch_size=1024` med et representativt lite utvalg og omtrent
   20 000 embeddings.
-- [ ] Dokumenter alle effektive verdier for den senere felles parametermodellen.
+- [x] Dokumenter alle effektive verdier for den senere felles parametermodellen.
 
 Leveranse: installert og låst algoritmebibliotek med eksplisitte, testbare
 standardverdier, uten funksjonell kobling.
 
 ### Trinn 3: OpenCLIP schema v2
 
-- [ ] Del schema-validering per OpenCLIP-versjon.
-- [ ] Implementer nye tabeller og indekser.
-- [ ] Legg inn medlemsradens `run_id`, sammensatt foreign key og
+- [x] Del schema-validering per OpenCLIP-versjon.
+- [x] Implementer nye tabeller og indekser.
+- [x] Legg inn medlemsradens `run_id`, sammensatt foreign key og
   `UNIQUE(run_id, file_id)`.
-- [ ] Implementer eksplisitt v1 til v2-migrering.
-- [ ] Oppdater read-only schema-gate.
-- [ ] Skriv migrerings-, rollback- og databevaringstester.
-- [ ] Oppdater `devel-docs/openclip-database.md`.
+- [x] Implementer eksplisitt v1 til v2-migrering.
+- [x] Oppdater read-only schema-gate.
+- [x] Skriv migrerings-, rollback- og databevaringstester.
+- [x] Oppdater `devel-docs/openclip-database.md`.
 
 Leveranse: tomme grupperingstabeller, eksisterende OpenCLIP-funksjon uendret.
 
 ### Trinn 4: Felles embedding-loader
 
-- [ ] Implementer streng BLOB-/dimensjons-/finite-/normvalidering.
-- [ ] Returner matrise, file-ID-er, modell og tellinger.
-- [ ] Gjenbruk loaderen i serverens likhetssøk der det er lokalt og trygt.
-- [ ] Skriv isolerte tester for alle ugyldige vektorvarianter.
+- [x] Implementer streng BLOB-/dimensjons-/finite-/normvalidering.
+- [x] Returner matrise, file-ID-er, modell og tellinger.
+- [x] Gjenbruk loaderen i serverens likhetssøk der det er lokalt og trygt.
+- [x] Skriv isolerte tester for alle ugyldige vektorvarianter.
 
 Leveranse: robust modellspesifikk embeddingmatrise uten gruppering.
 
 ### Trinn 5: Ren algoritmekjerne
 
-- [ ] Lag dataklasser for parametere og resultat.
-- [ ] Implementer MiniBatchKMeans-adapter.
-- [ ] Beregn avstand, representant og `center_rank`.
-- [ ] Gjør sortering og tie-break deterministisk.
-- [ ] Skriv algoritmetester uten SQLite.
+- [x] Lag dataklasser for parametere og resultat.
+- [x] Implementer MiniBatchKMeans-adapter.
+- [x] Beregn avstand, representant og `center_rank`.
+- [x] Gjør sortering og tie-break deterministisk.
+- [x] Skriv algoritmetester uten SQLite.
 
 Leveranse: ren funksjon fra matrise til grupperingsresultat.
 
 ### Trinn 6: Utvalg og run-tjeneste
 
-- [ ] Gjenbruk eksisterende filterparser og browserutvalg.
-- [ ] Opprett og oppdater run-status.
-- [ ] Koble utvalg, embedding-loader og algoritmekjerne.
-- [ ] Skriv resultatet atomisk.
-- [ ] Håndter tomt utvalg, manglende embeddings, feil og Ctrl-C.
-- [ ] Skriv tjeneste- og transaksjonstester.
+- [x] Gjenbruk eksisterende filterparser og browserutvalg.
+- [x] Opprett og oppdater run-status.
+- [x] Koble utvalg, embedding-loader og algoritmekjerne.
+- [x] Skriv resultatet atomisk.
+- [x] Håndter tomt utvalg, manglende embeddings, feil og Ctrl-C.
+- [x] Skriv tjeneste- og transaksjonstester.
 
 Leveranse: intern Python-API som kan kjøre og slette en run.
 
 ### Trinn 7: Launcherjobb
 
-- [ ] Legg til ren `image_clustering_command(...)`-bygger i
+- [x] Legg til ren `image_clustering_command(...)`-bygger i
   `launcher_commands.py`.
-- [ ] Legg til en intern, ikke-dokumentert workerinngang som kaller
+- [x] Legg til en intern, ikke-dokumentert workerinngang som kaller
   run-tjenesten og returnerer vanlige prosesskoder.
-- [ ] Legg til **Grupper bilder …** og parameterdialog i
+- [x] Legg til **Grupper bilder …** og parameterdialog i
   `launcher_tools_tab.py`.
-- [ ] Utvid den eksisterende OpenCLIP-statusen med kontroll av hele
+- [x] Utvid den eksisterende OpenCLIP-statusen med kontroll av hele
   grupperingsavhengigheten, og gjenbruk den vanlige automatiske
   OpenCLIP-installasjonsflyten dersom kontrollen feiler.
-- [ ] Koble jobben til `CommandRunner` med `cancellable=True`.
-- [ ] Legg til `Image-clustering` som progresjonsnøkkel i
+- [x] Koble jobben til `CommandRunner` med `cancellable=True`.
+- [x] Legg til `Image-clustering` som progresjonsnøkkel i
   `launcher_runner.py`.
-- [ ] Skriv progresjon og lesbar oppsummering, inkludert run-ID, til
+- [x] Skriv progresjon og lesbar oppsummering, inkludert run-ID, til
   launcherloggen.
-- [ ] Test kommandobygging, preflight, oppstart, progresjon, fullføring og
+- [x] Test kommandobygging, preflight, oppstart, progresjon, fullføring og
   avbrudd.
 
 Leveranse: den tunge jobben kan bare startes fra launcheren og kjører uten å
@@ -941,43 +943,43 @@ blokkere Tk-prosessen.
 
 ### Trinn 8: Livssyklus og integritet
 
-- [ ] Oppdater ATTACH-opprydding ved remove/unimport.
-- [ ] Oppdater opprydding av foreldreløse OpenCLIP-rader.
-- [ ] Oppdater doctor-kontroller.
-- [ ] Test remove, undelete, unimport med/uten annen kilde og purge-forutsetninger.
+- [x] Oppdater ATTACH-opprydding ved remove/unimport.
+- [x] Oppdater opprydding av foreldreløse OpenCLIP-rader.
+- [x] Oppdater doctor-kontroller.
+- [x] Test remove, undelete, unimport med/uten annen kilde og purge-forutsetninger.
 
 Leveranse: cluster-medlemskap følger aktiv bildelivssyklus uten å påvirke filer.
 
 ### Trinn 9: Read-only queries og felles browser
 
-- [ ] Implementer run-, cluster- og medlemsoppslag read-only.
-- [ ] Utvid `BrowserSource` med cluster-utvalg.
-- [ ] Vedlegg OpenCLIP-databasen eksplisitt med `mode=ro`.
-- [ ] Gjenbruk kilde-, måned-, item- og navigasjonsflyten.
-- [ ] Skriv kontrakttester for gruppebrowseren.
+- [x] Implementer run-, cluster- og medlemsoppslag read-only.
+- [x] Utvid `BrowserSource` med cluster-utvalg.
+- [x] Vedlegg OpenCLIP-databasen eksplisitt med `mode=ro`.
+- [x] Gjenbruk kilde-, måned-, item- og navigasjonsflyten.
+- [x] Skriv kontrakttester for gruppebrowseren.
 
 Leveranse: alle bilder i en gruppe kan blas i den ordinære browseren.
 
 ### Trinn 10: Webvisning og sletting
 
-- [ ] Legg til `/grouping` og run-side.
-- [ ] Render gruppekort med thumbnails, dato og metadata.
-- [ ] Legg til navigasjonslenke og dashboardstatus.
-- [ ] Legg til CSRF-beskyttet, bekreftet sletting.
-- [ ] Håndter read-only og blokker grupperingssider i LAN-share.
-- [ ] Skriv server-, HTML- og sikkerhetstester.
+- [x] Legg til `/grouping` og run-side.
+- [x] Render gruppekort med thumbnails, dato og metadata.
+- [x] Legg til navigasjonslenke og dashboardstatus.
+- [x] Legg til CSRF-beskyttet, bekreftet sletting.
+- [x] Håndter read-only og blokker grupperingssider i LAN-share.
+- [x] Skriv server-, HTML- og sikkerhetstester.
 
 Leveranse: ferdige launcher-runs kan brukes og slettes i webgrensesnittet.
 
 ### Trinn 11: Dokumentasjon og verifikasjon
 
-- [ ] Oppdater `app-design.md` med ikke-muterende grupperingsatferd og korrekt
+- [x] Oppdater `app-design.md` med ikke-muterende grupperingsatferd og korrekt
   hovedschema-versjon.
-- [ ] Oppdater launcher-, OpenCLIP- og filtersøkdokumentasjon.
-- [ ] Oppdater `docs/start.md` og skriv `docs/web/gruppering.md`; ikke opprett
+- [x] Oppdater launcher-, OpenCLIP- og filtersøkdokumentasjon.
+- [x] Oppdater `docs/start.md` og skriv `docs/web/gruppering.md`; ikke opprett
   en offentlig CLI-side for workerkommandoen.
-- [ ] Kjør fokuserte tester uten xdist.
-- [ ] Kjør full suite med `python -m pytest -n auto`.
+- [x] Kjør fokuserte tester uten xdist.
+- [x] Kjør full suite med `python -m pytest -n auto`.
 - [ ] Test en disponibel Windows-samling med et lite filter og omtrent 20 000
   embeddings før funksjonen brukes på hovedsamlingen.
 

@@ -20,6 +20,12 @@ bildebank start
 Dette er den vanlige måten å starte Bildebank på når du vil bruke vinduet i
 stedet for å skrive kommandoer i PowerShell.
 
+I fanen **Verktøy** kan **Grupper bilder …** lage forslag til grupper av
+lignende bilder når bildesøk er klargjort. Du velger antall grupper, et
+valgfritt filtersøk og en seed. Jobben endrer ingen bilder, tagger eller annen
+metadata. Når den er ferdig, åpner du **Gruppering** i bildebrowseren for å se
+resultatet.
+
 Fanen **Bildebank** starter bildebrowseren på vanlig måte. Fanen **Nettleser og
 deling** kan brukes når du vil velge en annen port, åpne bildebrowseren
 skrivebeskyttet, dele en skrivebeskyttet visning på et privat LAN eller starte

@@ -25,6 +25,8 @@ class BrowserSource:
     geo_place_cells: tuple[str, ...] = ()
     tag_name: str | None = None
     text_filter: Any | None = None
+    cluster_run_id: int | None = None
+    cluster_id: int | None = None
 
 
 def person_url(person_name: str, *, show_faces: bool = True) -> str:
@@ -135,6 +137,20 @@ def tag_browser_source(tag_name: str) -> BrowserSource:
     )
 
 
+def cluster_browser_source(
+    run_id: int,
+    cluster_id: int,
+    display_order: int,
+) -> BrowserSource:
+    root_url = f"/grouping/runs/{run_id}/clusters/{cluster_id}"
+    return BrowserSource(
+        f"Gruppe {display_order}",
+        root_url,
+        cluster_run_id=run_id,
+        cluster_id=cluster_id,
+    )
+
+
 def is_filtered_source(source: BrowserSource) -> bool:
     return (
         source.person_name is not None
@@ -144,6 +160,7 @@ def is_filtered_source(source: BrowserSource) -> bool:
         or source.geo_place_slug is not None
         or source.tag_name is not None
         or source.text_filter is not None
+        or source.cluster_id is not None
     )
 
 
@@ -152,6 +169,8 @@ def source_has_sql_filter(source: BrowserSource) -> bool:
         from .server_filter import text_filter_has_runtime_filter
 
         return not text_filter_has_runtime_filter(source.text_filter)
+    if source.cluster_id is not None:
+        return True
     return (
         source.person_name is not None
         or source.reference_suggestions_person_name is not None
@@ -167,6 +186,19 @@ def source_includes_deleted(source: BrowserSource) -> bool:
 
 
 def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[object, ...]]:
+    if source.cluster_id is not None:
+        if source.cluster_run_id is None:
+            raise ValueError("Gruppekilden mangler run-ID.")
+        return (
+            """
+            files.id IN (
+                SELECT file_id
+                FROM openclip_db.image_cluster_members
+                WHERE run_id = ? AND cluster_id = ?
+            )
+            """,
+            (source.cluster_run_id, source.cluster_id),
+        )
     if source.reference_suggestions_person_name is not None:
         from .face import normalize_person_name
 

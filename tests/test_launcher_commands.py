@@ -18,6 +18,7 @@ from bildebank.launcher_commands import (
     face_scan_command,
     geo_scan_command,
     image_scan_command,
+    image_clustering_command,
     import_command,
     insightface_install_command,
     launcher_command,
@@ -111,6 +112,23 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
     assert deep_doctor_command(collection)[-4:] == ["--target", str(collection), "doctor", "--deep"]
     assert face_scan_command(collection)[-3:] == ["--target", str(collection), "face-scan"]
     assert image_scan_command(collection)[-3:] == ["--target", str(collection), "image-scan"]
+    clustering = image_clustering_command(
+        collection,
+        filter_query="year=1999 tag:Ferie",
+        n_clusters=12,
+        random_seed=7,
+        hide_out_of_focus=True,
+    )
+    assert clustering[-8:] == [
+        "_image-clustering-worker",
+        "--clusters",
+        "12",
+        "--seed",
+        "7",
+        "--filter",
+        "year=1999 tag:Ferie",
+        "--hide-out-of-focus",
+    ]
     assert make_thumbnails_command(collection)[-3:] == [
         "--target",
         str(collection),

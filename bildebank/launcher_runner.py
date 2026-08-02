@@ -21,6 +21,7 @@ PROGRESS_LOG_LABELS = (
     "Doctor orphan",
     "Image-scan",
     "Image-search",
+    "Image-clustering",
     "Face-scan",
     "Face-suggest",
     "Refresh-metadata",

@@ -837,6 +837,32 @@ def build_parser() -> argparse.ArgumentParser:
         description="Scan bilder for tekstbasert bildesøk",
     )
     image_scan.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal scannes")
+    image_clustering_worker = subparsers.add_parser(
+        "_image-clustering-worker",
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--clusters",
+        type=positive_int_arg,
+        required=True,
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--seed",
+        type=int,
+        required=True,
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--filter",
+        default="",
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--hide-out-of-focus",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     image_search = add_command(
         subparsers,
         "image-search",
@@ -1304,6 +1330,7 @@ TARGET_COMMANDS = {
 }
 
 IMAGE_COMMANDS = {
+    "_image-clustering-worker",
     "image-scan",
     "image-search",
     "cleanup-image-search",

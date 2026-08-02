@@ -114,6 +114,119 @@ def ask_string_dialog(
     return result
 
 
+def image_clustering_dialog(
+    *,
+    tk: Any,
+    ttk: Any,
+    root: Any,
+    button: Callable[..., Any],
+) -> tuple[int, str, int, bool] | None:
+    dialog = tk.Toplevel(root)
+    dialog.title("Grupper bilder")
+    dialog.transient(root)
+    dialog.resizable(False, False)
+    frame = ttk.Frame(dialog, padding=16)
+    frame.grid(row=0, column=0, sticky="nsew")
+    frame.columnconfigure(1, weight=1)
+    ttk.Label(
+        frame,
+        text=(
+            "Grupperingen lager bare et reversibelt forslag. "
+            "Ingen bilder eller eksisterende metadata endres."
+        ),
+        wraplength=500,
+        justify="left",
+    ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 12))
+
+    clusters = tk.StringVar(value="20")
+    query = tk.StringVar(value="")
+    seed = tk.StringVar(value="0")
+    hide_out_of_focus = tk.BooleanVar(value=False)
+    error = tk.StringVar(value="")
+    fields = (
+        ("Antall grupper:", clusters),
+        ("Filter (tomt betyr alle):", query),
+        ("Random seed:", seed),
+    )
+    entries: list[Any] = []
+    for row_index, (label, variable) in enumerate(fields, start=1):
+        ttk.Label(frame, text=label).grid(
+            row=row_index,
+            column=0,
+            sticky="w",
+            padx=(0, 10),
+            pady=4,
+        )
+        entry = ttk.Entry(
+            frame,
+            textvariable=variable,
+            width=48 if row_index == 2 else 16,
+        )
+        entry.grid(row=row_index, column=1, sticky="ew", pady=4)
+        entries.append(entry)
+    ttk.Checkbutton(
+        frame,
+        text='Skjul "Ute av fokus"',
+        variable=hide_out_of_focus,
+    ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 4))
+    ttk.Label(
+        frame,
+        textvariable=error,
+        foreground="#a40000",
+        wraplength=500,
+    ).grid(row=5, column=0, columnspan=2, sticky="w")
+    result: tuple[int, str, int, bool] | None = None
+
+    def accept() -> None:
+        nonlocal result
+        try:
+            cluster_count = int(clusters.get())
+            random_seed = int(seed.get())
+        except ValueError:
+            error.set("Antall grupper og random seed må være heltall.")
+            return
+        if cluster_count < 1:
+            error.set("Antall grupper må være minst 1.")
+            return
+        result = (
+            cluster_count,
+            query.get(),
+            random_seed,
+            bool(hide_out_of_focus.get()),
+        )
+        dialog.destroy()
+
+    def cancel() -> None:
+        dialog.destroy()
+
+    button_frame = ttk.Frame(frame)
+    button_frame.grid(
+        row=6,
+        column=0,
+        columnspan=2,
+        sticky="e",
+        pady=(14, 0),
+    )
+    button(button_frame, text="Avbryt", command=cancel).grid(
+        row=0,
+        column=0,
+        padx=(0, 8),
+    )
+    button(button_frame, text="Start gruppering", command=accept).grid(
+        row=0,
+        column=1,
+    )
+    entries[0].focus_set()
+    entries[0].selection_range(0, tk.END)
+    dialog.bind("<Return>", lambda _event: accept())
+    dialog.bind("<Escape>", lambda _event: cancel())
+    dialog.protocol("WM_DELETE_WINDOW", cancel)
+    center_dialog(dialog, root)
+    dialog.grab_set()
+    root.wait_window(dialog)
+    return result
+
+
 def show_log_review_question(
     *,
     tk: Any,

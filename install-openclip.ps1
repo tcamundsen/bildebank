@@ -44,9 +44,13 @@ try {
     Write-Host "Kontrollerer OpenCLIP-avhengighetene"
     $SmokeTest = @'
 import open_clip
+import sklearn
 import torch
 from importlib.metadata import version
-print(f"OpenCLIP klar: open_clip_torch={version('open_clip_torch')}, torch={torch.__version__}")
+print(
+    f"OpenCLIP klar: open_clip_torch={version('open_clip_torch')}, "
+    f"torch={torch.__version__}, scikit-learn={sklearn.__version__}"
+)
 '@
     Invoke-Native -FilePath $VenvPython -ArgumentList @("-c", $SmokeTest)
     Write-Host "Ferdig. OpenCLIP-avhengighetene er installert."

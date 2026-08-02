@@ -40,10 +40,11 @@ from .value_parsing import optional_int
 
 
 OPENCLIP_DB_FILENAME = ".bilder-openclip.sqlite3"
-OPENCLIP_SCHEMA_VERSION = 1
+OPENCLIP_SCHEMA_VERSION = 2
+OPENCLIP_LEGACY_SCHEMA_VERSION = 1
 MAIN_DB_ALIAS = "main_db"
 IMAGE_SCAN_RUN_META_KEY = "image_scan_run_id"
-OPENCLIP_SCHEMA_REQUIRED_COLUMNS = {
+OPENCLIP_SCHEMA_V1_REQUIRED_COLUMNS = {
     "meta": {"key", "value"},
     "image_embeddings": {
         "file_id",
@@ -71,6 +72,26 @@ OPENCLIP_SCHEMA_REQUIRED_COLUMNS = {
         "target_path_key",
         "similarity",
         "rank",
+    },
+}
+OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS = {
+    **OPENCLIP_SCHEMA_V1_REQUIRED_COLUMNS,
+    "image_clustering_runs": {
+        "id", "selection_kind", "selection_json", "model_name", "pretrained",
+        "embedding_dimension", "algorithm", "parameters_json", "random_seed",
+        "status", "selected_file_count", "selected_image_count",
+        "embedded_file_count", "missing_embedding_count",
+        "invalid_embedding_count", "clustered_file_count",
+        "actual_cluster_count", "warning_message", "error_message",
+        "created_at", "started_at", "finished_at", "updated_at",
+    },
+    "image_clusters": {
+        "id", "run_id", "algorithm_label", "display_order", "kind",
+        "center_embedding",
+    },
+    "image_cluster_members": {
+        "run_id", "cluster_id", "file_id", "distance_to_center",
+        "center_rank", "membership_score",
     },
 }
 
@@ -131,9 +152,12 @@ class OpenClipCleanupStats:
     exists: bool
     embedding_rows: int = 0
     search_result_rows: int = 0
+    cluster_member_rows: int = 0
     groups: tuple[OpenClipOrphanGroup, ...] = ()
     deleted_embedding_rows: int = 0
     deleted_search_result_rows: int = 0
+    deleted_cluster_member_rows: int = 0
+    deleted_empty_clusters: int = 0
     deleted_search_runs: int = 0
     applied: bool = False
 
@@ -220,11 +244,37 @@ def apply_schema(conn: sqlite3.Connection) -> None:
 
         existing_tables = openclip_user_tables(conn)
         if existing_tables:
-            validate_openclip_schema_structure(conn, require_meta=False)
-            validate_relative_openclip_paths(conn)
-            validate_openclip_foreign_keys(conn)
-            if not db.table_exists(conn, "meta"):
-                create_openclip_meta_schema(conn)
+            if version is None:
+                unversioned_columns = (
+                    OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS
+                    if (
+                        set(OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS) - {"meta"}
+                    )
+                    <= existing_tables
+                    else OPENCLIP_SCHEMA_V1_REQUIRED_COLUMNS
+                )
+                validate_openclip_schema_structure(
+                    conn,
+                    required_columns=unversioned_columns,
+                    require_meta=False,
+                )
+                validate_relative_openclip_paths(conn)
+                validate_openclip_foreign_keys(conn)
+                if not db.table_exists(conn, "meta"):
+                    create_openclip_meta_schema(conn)
+                version = (
+                    OPENCLIP_SCHEMA_VERSION
+                    if unversioned_columns is OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS
+                    else OPENCLIP_LEGACY_SCHEMA_VERSION
+                )
+                set_meta(conn, "schema_version", str(version))
+            if version == OPENCLIP_LEGACY_SCHEMA_VERSION:
+                validate_openclip_schema_structure(
+                    conn,
+                    required_columns=OPENCLIP_SCHEMA_V1_REQUIRED_COLUMNS,
+                    require_meta=True,
+                )
+                migrate_openclip_v1_to_v2(conn)
         else:
             create_current_openclip_schema(conn)
 
@@ -240,7 +290,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
 def openclip_schema_version(conn: sqlite3.Connection) -> int | None:
     if not db.table_exists(conn, "meta"):
         return None
-    validate_openclip_table_columns(conn, "meta", OPENCLIP_SCHEMA_REQUIRED_COLUMNS["meta"])
+    validate_openclip_table_columns(conn, "meta", OPENCLIP_SCHEMA_V1_REQUIRED_COLUMNS["meta"])
     row = conn.execute(
         "SELECT value FROM meta WHERE key = 'schema_version'"
     ).fetchone()
@@ -264,9 +314,10 @@ def reject_unknown_openclip_schema_version(version: int | None) -> None:
             f"(schema_version={version}) enn programmet støtter "
             f"(schema_version={OPENCLIP_SCHEMA_VERSION})."
         )
-    raise ValueError(
-        f"Kan ikke migrere OpenCLIP-database med schema_version={version}."
-    )
+    if version != OPENCLIP_LEGACY_SCHEMA_VERSION:
+        raise ValueError(
+            f"Kan ikke migrere OpenCLIP-database med schema_version={version}."
+        )
 
 
 def openclip_user_tables(conn: sqlite3.Connection) -> set[str]:
@@ -339,12 +390,134 @@ def create_current_openclip_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX idx_image_search_results_run_id
         ON image_search_results(run_id);
+
+        CREATE TABLE image_clustering_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            selection_kind TEXT NOT NULL CHECK(selection_kind IN ('all', 'filter')),
+            selection_json TEXT NOT NULL,
+            model_name TEXT NOT NULL,
+            pretrained TEXT NOT NULL,
+            embedding_dimension INTEGER CHECK(embedding_dimension IS NULL OR embedding_dimension > 0),
+            algorithm TEXT NOT NULL,
+            parameters_json TEXT NOT NULL,
+            random_seed INTEGER NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+            selected_file_count INTEGER NOT NULL DEFAULT 0 CHECK(selected_file_count >= 0),
+            selected_image_count INTEGER NOT NULL DEFAULT 0 CHECK(selected_image_count >= 0),
+            embedded_file_count INTEGER NOT NULL DEFAULT 0 CHECK(embedded_file_count >= 0),
+            missing_embedding_count INTEGER NOT NULL DEFAULT 0 CHECK(missing_embedding_count >= 0),
+            invalid_embedding_count INTEGER NOT NULL DEFAULT 0 CHECK(invalid_embedding_count >= 0),
+            clustered_file_count INTEGER NOT NULL DEFAULT 0 CHECK(clustered_file_count >= 0),
+            actual_cluster_count INTEGER NOT NULL DEFAULT 0 CHECK(actual_cluster_count >= 0),
+            warning_message TEXT,
+            error_message TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            started_at TEXT,
+            finished_at TEXT,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE image_clusters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id INTEGER NOT NULL REFERENCES image_clustering_runs(id) ON DELETE CASCADE,
+            algorithm_label INTEGER NOT NULL,
+            display_order INTEGER NOT NULL,
+            kind TEXT NOT NULL DEFAULT 'cluster' CHECK(kind IN ('cluster', 'noise')),
+            center_embedding BLOB,
+            UNIQUE(run_id, algorithm_label),
+            UNIQUE(run_id, display_order),
+            UNIQUE(id, run_id)
+        );
+
+        CREATE INDEX idx_image_clusters_run_id
+        ON image_clusters(run_id, display_order);
+
+        CREATE TABLE image_cluster_members (
+            run_id INTEGER NOT NULL,
+            cluster_id INTEGER NOT NULL,
+            file_id INTEGER NOT NULL,
+            distance_to_center REAL,
+            center_rank INTEGER,
+            membership_score REAL,
+            PRIMARY KEY(cluster_id, file_id),
+            UNIQUE(cluster_id, center_rank),
+            UNIQUE(run_id, file_id),
+            FOREIGN KEY(cluster_id, run_id)
+                REFERENCES image_clusters(id, run_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX idx_image_cluster_members_file_id
+        ON image_cluster_members(file_id);
         """
     )
 
 
+def migrate_openclip_v1_to_v2(conn: sqlite3.Connection) -> None:
+    """Add only clustering tables; embedding and search rows remain untouched."""
+    db.execute_sql_statements(
+        conn,
+        """
+        CREATE TABLE image_clustering_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            selection_kind TEXT NOT NULL CHECK(selection_kind IN ('all', 'filter')),
+            selection_json TEXT NOT NULL,
+            model_name TEXT NOT NULL,
+            pretrained TEXT NOT NULL,
+            embedding_dimension INTEGER CHECK(embedding_dimension IS NULL OR embedding_dimension > 0),
+            algorithm TEXT NOT NULL,
+            parameters_json TEXT NOT NULL,
+            random_seed INTEGER NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+            selected_file_count INTEGER NOT NULL DEFAULT 0 CHECK(selected_file_count >= 0),
+            selected_image_count INTEGER NOT NULL DEFAULT 0 CHECK(selected_image_count >= 0),
+            embedded_file_count INTEGER NOT NULL DEFAULT 0 CHECK(embedded_file_count >= 0),
+            missing_embedding_count INTEGER NOT NULL DEFAULT 0 CHECK(missing_embedding_count >= 0),
+            invalid_embedding_count INTEGER NOT NULL DEFAULT 0 CHECK(invalid_embedding_count >= 0),
+            clustered_file_count INTEGER NOT NULL DEFAULT 0 CHECK(clustered_file_count >= 0),
+            actual_cluster_count INTEGER NOT NULL DEFAULT 0 CHECK(actual_cluster_count >= 0),
+            warning_message TEXT,
+            error_message TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            started_at TEXT,
+            finished_at TEXT,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE image_clusters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id INTEGER NOT NULL REFERENCES image_clustering_runs(id) ON DELETE CASCADE,
+            algorithm_label INTEGER NOT NULL,
+            display_order INTEGER NOT NULL,
+            kind TEXT NOT NULL DEFAULT 'cluster' CHECK(kind IN ('cluster', 'noise')),
+            center_embedding BLOB,
+            UNIQUE(run_id, algorithm_label),
+            UNIQUE(run_id, display_order),
+            UNIQUE(id, run_id)
+        );
+        CREATE INDEX idx_image_clusters_run_id ON image_clusters(run_id, display_order);
+        CREATE TABLE image_cluster_members (
+            run_id INTEGER NOT NULL,
+            cluster_id INTEGER NOT NULL,
+            file_id INTEGER NOT NULL,
+            distance_to_center REAL,
+            center_rank INTEGER,
+            membership_score REAL,
+            PRIMARY KEY(cluster_id, file_id),
+            UNIQUE(cluster_id, center_rank),
+            UNIQUE(run_id, file_id),
+            FOREIGN KEY(cluster_id, run_id)
+                REFERENCES image_clusters(id, run_id) ON DELETE CASCADE
+        );
+        CREATE INDEX idx_image_cluster_members_file_id ON image_cluster_members(file_id);
+        """,
+    )
+
+
 def validate_current_openclip_schema(conn: sqlite3.Connection) -> None:
-    validate_openclip_schema_structure(conn, require_meta=True)
+    validate_openclip_schema_structure(
+        conn,
+        required_columns=OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS,
+        require_meta=True,
+    )
     validate_relative_openclip_paths(conn)
     validate_openclip_foreign_keys(conn)
 
@@ -358,6 +531,12 @@ def require_current_openclip_schema_read_only(
             "OpenCLIP-databasen mangler eksplisitt schema_version. "
             "Read-only-åpning adopterer eller migrerer ikke databasen."
         )
+    if version == OPENCLIP_LEGACY_SCHEMA_VERSION:
+        raise ValueError(
+            "OpenCLIP-databasen bruker schema_version=1. En skrivbar "
+            "OpenCLIP-operasjon må åpne og migrere databasen til "
+            f"schema_version={OPENCLIP_SCHEMA_VERSION} før read-only-visning."
+        )
     if version != OPENCLIP_SCHEMA_VERSION:
         reject_unknown_openclip_schema_version(version)
     validate_current_openclip_schema(conn)
@@ -366,9 +545,10 @@ def require_current_openclip_schema_read_only(
 def validate_openclip_schema_structure(
     conn: sqlite3.Connection,
     *,
+    required_columns: dict[str, set[str]],
     require_meta: bool,
 ) -> None:
-    required_tables = set(OPENCLIP_SCHEMA_REQUIRED_COLUMNS)
+    required_tables = set(required_columns)
     if not require_meta:
         required_tables.remove("meta")
     missing_tables = sorted(
@@ -379,10 +559,10 @@ def validate_openclip_schema_structure(
             "OpenCLIP-databasen mangler forventede tabeller: "
             f"{', '.join(missing_tables)}."
         )
-    for table, required_columns in OPENCLIP_SCHEMA_REQUIRED_COLUMNS.items():
+    for table, table_required_columns in required_columns.items():
         if table == "meta" and not db.table_exists(conn, table):
             continue
-        validate_openclip_table_columns(conn, table, required_columns)
+        validate_openclip_table_columns(conn, table, table_required_columns)
 
 
 def validate_openclip_table_columns(
@@ -813,6 +993,7 @@ def cleanup_image_search(target: Path, *, apply: bool = False) -> OpenClipCleanu
         groups = (
             *orphan_openclip_groups(conn, "image_embeddings"),
             *orphan_openclip_groups(conn, "image_search_results"),
+            *orphan_openclip_groups(conn, "image_cluster_members"),
         )
         embedding_rows = sum(
             group.row_count for group in groups if group.table == "image_embeddings"
@@ -820,24 +1001,38 @@ def cleanup_image_search(target: Path, *, apply: bool = False) -> OpenClipCleanu
         search_result_rows = sum(
             group.row_count for group in groups if group.table == "image_search_results"
         )
+        cluster_member_rows = sum(
+            group.row_count
+            for group in groups
+            if group.table == "image_cluster_members"
+        )
         if not apply:
             return OpenClipCleanupStats(
                 exists=True,
                 embedding_rows=embedding_rows,
                 search_result_rows=search_result_rows,
+                cluster_member_rows=cluster_member_rows,
                 groups=groups,
             )
         deleted_embedding_rows = delete_orphan_openclip_rows(conn, "image_embeddings")
         deleted_search_result_rows = delete_orphan_openclip_rows(conn, "image_search_results")
+        deleted_cluster_member_rows = delete_orphan_openclip_rows(
+            conn,
+            "image_cluster_members",
+        )
+        deleted_empty_clusters = delete_empty_clusters(conn)
         deleted_search_runs = delete_empty_search_runs(conn)
         conn.commit()
         return OpenClipCleanupStats(
             exists=True,
             embedding_rows=embedding_rows,
             search_result_rows=search_result_rows,
+            cluster_member_rows=cluster_member_rows,
             groups=groups,
             deleted_embedding_rows=deleted_embedding_rows,
             deleted_search_result_rows=deleted_search_result_rows,
+            deleted_cluster_member_rows=deleted_cluster_member_rows,
+            deleted_empty_clusters=deleted_empty_clusters,
             deleted_search_runs=deleted_search_runs,
             applied=True,
         )
@@ -1141,6 +1336,8 @@ def validate_openclip_cleanup_schema(conn: sqlite3.Connection) -> None:
         "image_embeddings": {"file_id", "target_path"},
         "image_search_results": {"run_id", "file_id", "target_path"},
         "image_search_runs": {"id"},
+        "image_cluster_members": {"file_id", "cluster_id"},
+        "image_clusters": {"id"},
     }
     for table, columns in required_columns.items():
         rows = list(conn.execute(f"PRAGMA table_info({table})"))
@@ -1159,17 +1356,27 @@ def validate_openclip_cleanup_schema(conn: sqlite3.Connection) -> None:
 
 
 def orphan_openclip_groups(conn: sqlite3.Connection, table: str) -> tuple[OpenClipOrphanGroup, ...]:
-    if table not in {"image_embeddings", "image_search_results"}:
+    if table not in {
+        "image_embeddings",
+        "image_search_results",
+        "image_cluster_members",
+    }:
         raise ValueError(f"Uventet OpenCLIP-tabell: {table}")
+    target_path_sql = (
+        f"{table}.target_path"
+        if table != "image_cluster_members"
+        else "''"
+    )
     rows = conn.execute(
         f"""
-        SELECT {table}.file_id, {table}.target_path, COUNT(*) AS row_count
+        SELECT {table}.file_id, {target_path_sql} AS target_path,
+               COUNT(*) AS row_count
         FROM {table}
         LEFT JOIN {MAIN_DB_ALIAS}.files ON {MAIN_DB_ALIAS}.files.id = {table}.file_id
         WHERE {MAIN_DB_ALIAS}.files.id IS NULL
            OR {MAIN_DB_ALIAS}.files.deleted_at IS NOT NULL
-        GROUP BY {table}.file_id, {table}.target_path
-        ORDER BY {table}.file_id, {table}.target_path
+        GROUP BY {table}.file_id, {target_path_sql}
+        ORDER BY {table}.file_id, {target_path_sql}
         """
     )
     return tuple(
@@ -1184,7 +1391,11 @@ def orphan_openclip_groups(conn: sqlite3.Connection, table: str) -> tuple[OpenCl
 
 
 def delete_orphan_openclip_rows(conn: sqlite3.Connection, table: str) -> int:
-    if table not in {"image_embeddings", "image_search_results"}:
+    if table not in {
+        "image_embeddings",
+        "image_search_results",
+        "image_cluster_members",
+    }:
         raise ValueError(f"Uventet OpenCLIP-tabell: {table}")
     cursor = conn.execute(
         f"""
@@ -1195,6 +1406,20 @@ def delete_orphan_openclip_rows(conn: sqlite3.Connection, table: str) -> int:
             LEFT JOIN {MAIN_DB_ALIAS}.files ON {MAIN_DB_ALIAS}.files.id = {table}.file_id
             WHERE {MAIN_DB_ALIAS}.files.id IS NULL
                OR {MAIN_DB_ALIAS}.files.deleted_at IS NOT NULL
+        )
+        """
+    )
+    return cursor.rowcount if cursor.rowcount >= 0 else 0
+
+
+def delete_empty_clusters(conn: sqlite3.Connection) -> int:
+    cursor = conn.execute(
+        """
+        DELETE FROM image_clusters
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM image_cluster_members
+            WHERE image_cluster_members.cluster_id = image_clusters.id
         )
         """
     )

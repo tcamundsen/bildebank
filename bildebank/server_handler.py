@@ -14,6 +14,7 @@ from . import db
 from . import server_app
 from . import server_endpoints_admin
 from . import server_endpoints_browser
+from . import server_endpoints_clustering
 from . import server_endpoints_faces
 from . import server_endpoints_items
 from . import server_endpoints_purge
@@ -198,6 +199,16 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if getattr(self.server, "slideshow", None) is not None:
                 server_slideshow.respond_slideshow_get(self, parsed.path)
                 return
+            if parsed.path.startswith("/grouping") and getattr(
+                self.server,
+                "lan_share",
+                False,
+            ):
+                self.respond_text(
+                    "Grupperingssider er ikke tilgjengelige i LAN-deling.",
+                    status=HTTPStatus.FORBIDDEN,
+                )
+                return
             if getattr(self.server, "read_only", False) and self.read_only_get_blocked(
                 parsed.path
             ):
@@ -211,6 +222,57 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path in {"/dashboard", "/dashboard/"}:
                 self.respond_html(dashboard_page_html(self.server))
+                return
+            if parsed.path in {"/grouping", "/grouping/"}:
+                if not self.server.openclip_enabled:
+                    self.respond_text(
+                        "Gruppering er av.",
+                        status=HTTPStatus.NOT_FOUND,
+                    )
+                    return
+                self.respond_html(
+                    server_endpoints_clustering.grouping_page_html(
+                        self.server,
+                    )
+                )
+                return
+            grouping_prefix = "/grouping/runs/"
+            if parsed.path.startswith(grouping_prefix):
+                if not self.server.openclip_enabled:
+                    self.respond_text(
+                        "Gruppering er av.",
+                        status=HTTPStatus.NOT_FOUND,
+                    )
+                    return
+                grouping_path = parsed.path.removeprefix(grouping_prefix)
+                raw_run_id, separator, cluster_path = grouping_path.partition(
+                    "/clusters/"
+                )
+                if separator:
+                    server_endpoints_clustering.respond_grouping_cluster(
+                        self,
+                        f"{raw_run_id}/{cluster_path}",
+                    )
+                    return
+                if grouping_path.isdigit():
+                    page = (
+                        server_endpoints_clustering.grouping_run_page_html(
+                            self.server,
+                            int(grouping_path),
+                        )
+                    )
+                    if page is None:
+                        self.respond_text(
+                            "Fant ikke kjøringen.",
+                            status=HTTPStatus.NOT_FOUND,
+                        )
+                    else:
+                        self.respond_html(page)
+                    return
+                self.respond_text(
+                    "Ugyldig grupperingsside.",
+                    status=HTTPStatus.NOT_FOUND,
+                )
                 return
             if parsed.path == "/people":
                 if not self.server.face_enabled:
@@ -531,6 +593,17 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.close_connection = True
             self.respond_text("Siden finnes ikke.", status=HTTPStatus.NOT_FOUND)
             return
+        if parsed.path.startswith("/grouping") and getattr(
+            self.server,
+            "lan_share",
+            False,
+        ):
+            self.close_connection = True
+            self.respond_text(
+                "Grupperingssider er ikke tilgjengelige i LAN-deling.",
+                status=HTTPStatus.FORBIDDEN,
+            )
+            return
         if getattr(self.server, "read_only", False):
             self.close_connection = True
             self.respond_read_only_forbidden(parsed.path)
@@ -558,6 +631,31 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         if not validate_csrf_request(self, body):
             return
         try:
+            grouping_delete_prefix = "/grouping/runs/"
+            if (
+                parsed.path.startswith(grouping_delete_prefix)
+                and parsed.path.endswith("/delete")
+            ):
+                if not self.server.openclip_enabled:
+                    self.respond_text(
+                        "Gruppering er av.",
+                        status=HTTPStatus.NOT_FOUND,
+                    )
+                    return
+                raw_run_id = parsed.path[
+                    len(grouping_delete_prefix) : -len("/delete")
+                ].strip("/")
+                if not raw_run_id.isdigit():
+                    self.respond_text(
+                        "Ugyldig run-ID.",
+                        status=HTTPStatus.BAD_REQUEST,
+                    )
+                    return
+                server_endpoints_clustering.respond_delete_grouping_run(
+                    self,
+                    int(raw_run_id),
+                )
+                return
             if parsed.path == "/search":
                 if not self.server.openclip_enabled:
                     self.respond_text(
@@ -633,7 +731,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         ),
                         DEFAULT_SEARCH_LIMIT,
                     )
-                    stats = search_server_similar_images(
+                    similar_stats = search_server_similar_images(
                         self.server,
                         file_id=file_id,
                         limit=limit,
@@ -668,7 +766,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         status=HTTPStatus.INTERNAL_SERVER_ERROR,
                     )
                     return
-                self.respond_html(similar_search_html(self.server, stats))
+                self.respond_html(
+                    similar_search_html(self.server, similar_stats)
+                )
                 return
             if parsed.path == "/api/search-preload":
                 self.respond_search_preload()

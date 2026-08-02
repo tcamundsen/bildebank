@@ -117,6 +117,7 @@ def test_tools_tab_builds_all_buttons_only_when_collection_is_available(tmp_path
         "Ventende filsletting: OK",
         "Eksporter person",
         "Videoavspilling: OK",
+        "Grupper bilder …",
     ]
 
     assert tab.refresh(available=False) == []

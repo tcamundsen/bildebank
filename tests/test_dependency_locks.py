@@ -195,7 +195,16 @@ def test_checked_in_windows_locks_are_complete_and_consistent() -> None:
 
     assert set(base) == {"h3", "numpy", "pillow", "setuptools"}
     assert {"insightface", "onnxruntime", "opencv-python"} <= set(face)
-    assert {"open-clip-torch", "torch", "torchvision"} <= set(openclip)
+    assert {
+        "open-clip-torch",
+        "scikit-learn",
+        "scipy",
+        "joblib",
+        "narwhals",
+        "threadpoolctl",
+        "torch",
+        "torchvision",
+    } <= set(openclip)
     assert all(face[name] == locked for name, locked in base.items())
     assert all(openclip[name] == locked for name, locked in base.items())
 
@@ -224,5 +233,6 @@ def test_windows_install_scripts_enforce_the_matching_hash_lock() -> None:
     assert '"download-openclip-model"' not in openclip_script
     assert '"--all-supported"' not in openclip_script
     assert "import open_clip" in openclip_script
+    assert "import sklearn" in openclip_script
     assert "import torch" in openclip_script
     assert "cache_dir=" not in openclip_script

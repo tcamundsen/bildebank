@@ -226,7 +226,10 @@ def openclip_model_download_button_state(
 
 
 def openclip_dependency_status() -> str:
-    if importlib.util.find_spec("open_clip") is not None:
+    if all(
+        importlib.util.find_spec(module_name) is not None
+        for module_name in ("open_clip", "sklearn")
+    ):
         return "Installert"
     return "Mangler"
 

@@ -76,6 +76,7 @@ def dashboard_page_html(
           <a href="/sources">Importerte mapper</a>
           <a href="/settings/removed">Slettede bilder</a>
           <a href="/people">Personer</a>
+          {"<a href='/grouping'>Gruppering</a>" if openclip_enabled else ""}
         </nav>
         <section class="dashboard-section" aria-labelledby="dashboard-actions-heading">
           <h2 id="dashboard-actions-heading">Anbefalte handlinger</h2>
@@ -88,6 +89,7 @@ def dashboard_page_html(
           {control_section_html(summary)}
           {snapshot_repositories_section_html(summary, hide_local_paths=hide_local_paths)}
           {coverage_section_html(summary)}
+          {grouping_status_section_html(target) if openclip_enabled else ""}
         </section>
         """,
         face_enabled=face_enabled,
@@ -356,6 +358,42 @@ def coverage_section_html(summary: DashboardSummary) -> str:
     )
 
 
+def grouping_status_section_html(target: Path) -> str:
+    from .openclip import connect_openclip_db_read_only, openclip_db_path
+    from .sidecar_paths import regular_database_file_exists
+
+    completed = failed = cancelled = 0
+    if regular_database_file_exists(openclip_db_path(target)):
+        try:
+            conn = connect_openclip_db_read_only(target)
+            try:
+                counts = {
+                    str(row["status"]): int(row["count"])
+                    for row in conn.execute(
+                        """
+                        SELECT status, COUNT(*) AS count
+                        FROM image_clustering_runs
+                        GROUP BY status
+                        """
+                    )
+                }
+            finally:
+                conn.close()
+            completed = counts.get("completed", 0)
+            failed = counts.get("failed", 0)
+            cancelled = counts.get("cancelled", 0)
+        except (OSError, sqlite3.Error, ValueError):
+            pass
+    return dashboard_card_html(
+        "Gruppering",
+        f"""
+        <dl class="info-list">
+          {info_row_html("Fullførte kjøringer", str(completed), "/grouping")}
+          {info_row_html("Feilede kjøringer", str(failed), "/grouping")}
+          {info_row_html("Avbrutte kjøringer", str(cancelled), "/grouping")}
+        </dl>
+        """,
+    )
 def dashboard_snapshot_repositories(
     program_root: Path,
     collection_id: str,

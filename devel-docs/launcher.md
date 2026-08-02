@@ -51,6 +51,12 @@ kontrollerte deldata slik at neste forsøk kan fortsette. Launcherens egne
 underprosesser bruker UTF-8 for å unngå feilviste norske tegn fra Python og
 PowerShell.
 
+Verktøy-fanen kan starte bildegruppering med antall grupper, filtersøk, seed
+og et eksplisitt valg for «Skjul ute av fokus». Den interne
+`_image-clustering-worker`-kommandoen er bare en prosessgrense for
+`CommandRunner`, ikke en offentlig CLI-arbeidsflyt. Jobben er avbrytbar og
+resultatet vises senere under **Gruppering** i webgrensesnittet.
+
 Snapshotfanen bruker den eksisterende snapshotkjernen direkte. Liste- og
 browseoperasjoner leser validerte, publiserte manifester under repositorylås.
 Enkeltfiler planlegges og eksporteres med de samme funksjonene som

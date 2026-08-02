@@ -289,7 +289,7 @@ lagring uten å kreve en separat databaseserver.
 
 ## Databaseversjoner
 
-- gjeldende schema er v21
+- gjeldende schema er v22
 - eldste hoveddatabaseformat som støttes av gjeldende migrator er v5
 - v1–v4 er historiske, utfasete formater; eldre hjelpegrener i koden er ikke
   et løfte om at disse formatene kan oppgraderes direkte
@@ -308,7 +308,7 @@ lagring uten å kreve en separat databaseserver.
   devel-docs/database-v17-migration.md,
   devel-docs/database-v18-migration.md og
   devel-docs/database-v19-migration.md,
-  devel-docs/database-v20-migration.md og
+  devel-docs/database-v20-migration.md,
   devel-docs/database-v21-migration.md
 - v21 oppretter `file_tombstones` og den restriktive journalen
   `pending_file_purges`. SQLite-triggere håndhever at samme SHA-256 ikke kan
@@ -316,9 +316,10 @@ lagring uten å kreve en separat databaseserver.
 - migrering fra v20 til v21 er en ren skjemamigrering. Den skanner eller
   endrer ikke mediefiler og oppretter ikke tombstones fra eksisterende
   papirkurvinnhold eller manglende filer
-- ny runtime-kode skal anta v21, med mindre oppgaven eksplisitt gjelder
+- v22 legger til kommentarer og kamerafelter på `files`
+- ny runtime-kode skal anta v22, med mindre oppgaven eksplisitt gjelder
   migrering
-- den separate OpenCLIP-databasen har schema v1 og er beskrevet i
+- den separate OpenCLIP-databasen har schema v2 og er beskrevet i
   devel-docs/openclip-database.md
 
 ## Plattform
@@ -634,6 +635,14 @@ for «ute av fokus» og lagres i dagens søketabeller som
 `similar:file_id=<id>`. Referansebildet skal aldri være blant treffene. Denne
 flyten skal ikke laste tekstmodellen, og knappen skal ikke vises for videoer,
 når OpenCLIP er deaktivert eller i read-only-modus.
+
+OpenCLIP-embeddings kan også brukes til reversible forslag til bildegrupper.
+Den tunge grupperingen startes bare fra Verktøy-fanen i launcheren og kjøres
+som en avbrytbar underprosess. Webserveren viser og kan eksplisitt slette
+resultater, men starter ingen grupperingsjobb. Runs, grupper og medlemskap er
+avledede data i OpenCLIP-databasen; funksjonen endrer ikke `files`,
+`file_sources`, bildefiler, tagger, personer, steder eller kommentarer.
+Grupperingssider er ikke tilgjengelige ved LAN-deling.
 Eksplisitt telling av thumbnails skal av samme grunn bruke beskyttet POST.
 Automatisk vedlikeholdsstatus kan forbli GET fordi den bare gjør read-only
 databaseoppslag og også skal fungere i read-only-modus.

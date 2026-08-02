@@ -98,6 +98,7 @@ def source_top_links_html(
         or source.geo_place_slug is not None
         or source.tag_name is not None
         or source.text_filter is not None
+        or source.cluster_id is not None
     ):
         all_url = all_items_url or (source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/")
         links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">{all_label}</a>')
@@ -121,6 +122,11 @@ def source_action_links_html(
         if openclip_enabled
         else ""
     )
+    grouping_link = (
+        '<a class="server-search-link" href="/grouping">Gruppering</a>'
+        if openclip_enabled
+        else ""
+    )
     return f"""
     <div class="top-actions">
       {source_top_links_html(
@@ -131,6 +137,7 @@ def source_action_links_html(
           all_items_label=all_items_label,
       )}
       {search_link}
+      {grouping_link}
       <a class="server-search-link" href="/dashboard">Dashboard</a>
       <a class="server-search-link" href="/help/web/bildebrowser">Hjelp</a>
       <a class="server-search-link" href="/settings">Innstillinger</a>

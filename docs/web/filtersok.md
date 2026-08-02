@@ -28,6 +28,10 @@ month:12 day:24
 
 Flere kriterier kombineres med **OG**. Det betyr at bildet må oppfylle alle kriteriene for å vises.
 
+Det samme filterfeltet brukes når du starter **Grupper bilder …** fra
+Verktøy-fanen. Et tomt felt betyr alle aktive bilder. `is:deleted` kan ikke
+brukes til gruppering.
+
 Bruk anførselstegn når verdien inneholder mellomrom:
 
 ```text

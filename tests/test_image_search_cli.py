@@ -176,7 +176,10 @@ pretrained = "laion2b_s34b_b79k"
             self.assertIn("image_embeddings", tables)
             self.assertIn("image_search_runs", tables)
             self.assertIn("image_search_results", tables)
-            self.assertEqual(schema_version, "1")
+            self.assertIn("image_clustering_runs", tables)
+            self.assertIn("image_clusters", tables)
+            self.assertIn("image_cluster_members", tables)
+            self.assertEqual(schema_version, "2")
 
     def test_openclip_adopts_complete_unversioned_schema_without_losing_data(
         self,
@@ -207,7 +210,7 @@ pretrained = "laion2b_s34b_b79k"
                     conn.execute(
                         "SELECT value FROM meta WHERE key = 'schema_version'"
                     ).fetchone()[0],
-                    "1",
+                    "2",
                 )
                 row = conn.execute(
                     """
@@ -260,7 +263,7 @@ pretrained = "laion2b_s34b_b79k"
                     conn.execute(
                         "SELECT value FROM meta WHERE key = 'schema_version'"
                     ).fetchone()[0],
-                    "1",
+                    "2",
                 )
                 self.assertEqual(
                     conn.execute(
@@ -330,7 +333,7 @@ pretrained = "laion2b_s34b_b79k"
             try:
                 conn.execute(
                     """
-                    INSERT INTO meta(key, value) VALUES('schema_version', '2')
+                    INSERT INTO meta(key, value) VALUES('schema_version', '3')
                     ON CONFLICT(key) DO UPDATE SET value = excluded.value
                     """
                 )
@@ -508,7 +511,12 @@ pretrained = "laion2b_s34b_b79k"
             self.assertEqual(code, 0, stderr)
             self.assertIn("foreldreløse_embeddings=2", stdout)
             self.assertIn("foreldreløse_søkeresultater=2", stdout)
-            self.assertIn("Slettet: image_embeddings=2, image_search_results=2, tomme_image_search_runs=2", stdout)
+            self.assertIn(
+                "Slettet: image_embeddings=2, image_search_results=2, "
+                "image_cluster_members=0, tomme_image_clusters=0, "
+                "tomme_image_search_runs=2",
+                stdout,
+            )
             conn = sqlite3.connect(openclip_db_path(target))
             try:
                 self.assertEqual(

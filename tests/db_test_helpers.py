@@ -251,6 +251,37 @@ def insert_basic_item_sidecar_fixture(
             """,
             (run_id, file_id, target_path, target_path.casefold()),
         )
+        cluster_run_id = conn.execute(
+            """
+            INSERT INTO image_clustering_runs(
+                selection_kind, selection_json, model_name, pretrained,
+                algorithm, parameters_json, random_seed, status,
+                selected_file_count, selected_image_count,
+                embedded_file_count, clustered_file_count,
+                actual_cluster_count, started_at, finished_at
+            ) VALUES(
+                'all', '{"hide_out_of_focus":false,"kind":"all"}',
+                'test', 'test', 'minibatch_kmeans', '{}', 0, 'completed',
+                1, 1, 1, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            """
+        ).lastrowid
+        cluster_id = conn.execute(
+            """
+            INSERT INTO image_clusters(
+                run_id, algorithm_label, display_order
+            ) VALUES(?, 0, 1)
+            """,
+            (cluster_run_id,),
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO image_cluster_members(
+                run_id, cluster_id, file_id, distance_to_center, center_rank
+            ) VALUES(?, ?, ?, 0.0, 1)
+            """,
+            (cluster_run_id, cluster_id, file_id),
+        )
         conn.commit()
     finally:
         conn.close()

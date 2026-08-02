@@ -5,6 +5,10 @@ import webbrowser
 from pathlib import Path
 
 from .config import CONFIG_FILENAME, load_config
+from .image_clustering import (
+    ClusteringParameters,
+    run_image_clustering,
+)
 from .openclip import (
     cleanup_image_search,
     openclip_db_path,
@@ -26,6 +30,15 @@ def run_image_command(args: argparse.Namespace, target: Path, *, repo_root: Path
     if args.command == "repair-image-search-paths":
         return run_repair_image_search_paths(target, apply=args.apply)
     require_openclip_enabled(load_config(repo_root).openclip.enabled)
+    if args.command == "_image-clustering-worker":
+        return run_image_clustering_worker(
+            target,
+            repo_root=repo_root,
+            query=args.filter,
+            hide_out_of_focus=args.hide_out_of_focus,
+            n_clusters=args.clusters,
+            random_seed=args.seed,
+        )
     if args.command == "image-scan":
         return run_image_scan(target, repo_root=repo_root, limit=args.limit)
     return run_image_search(
@@ -35,6 +48,73 @@ def run_image_command(args: argparse.Namespace, target: Path, *, repo_root: Path
         limit=args.limit,
         browser=not args.no_browser,
     )
+
+
+def run_image_clustering_worker(
+    target: Path,
+    *,
+    repo_root: Path,
+    query: str,
+    hide_out_of_focus: bool,
+    n_clusters: int,
+    random_seed: int,
+) -> int:
+    config = load_config(repo_root).openclip
+    parameters = ClusteringParameters(
+        n_clusters=n_clusters,
+        random_seed=random_seed,
+    )
+    print(
+        "Image-clustering: starter "
+        f"clusters={n_clusters}, seed={random_seed}, "
+        f"batch_size={parameters.batch_size}, n_init={parameters.n_init}, "
+        f"max_iter={parameters.max_iter}, "
+        f"reassignment_ratio={parameters.reassignment_ratio}"
+    )
+    result = run_image_clustering(
+        target,
+        config,
+        query=query,
+        hide_out_of_focus=hide_out_of_focus,
+        parameters=parameters,
+        progress=print_image_clustering_progress,
+    )
+    print(
+        "Image-clustering: "
+        f"run_id={result.run_id}, status={result.status}, "
+        f"valgt={result.selected_file_count}, bilder={result.selected_image_count}, "
+        f"gyldige={result.embedded_file_count}, "
+        f"mangler={result.missing_embedding_count}, "
+        f"ugyldige={result.invalid_embedding_count}, "
+        f"gruppert={result.clustered_file_count}, "
+        f"grupper={result.actual_cluster_count}"
+    )
+    if result.warning_message:
+        print(f"Image-clustering: advarsel={result.warning_message}")
+    if result.status != "completed":
+        print(f"Image-clustering: feil={result.error_message}")
+        return 2
+    print(
+        "Image-clustering: ferdig. Resultatet finnes under Gruppering "
+        "i webgrensesnittet."
+    )
+    return 0
+
+
+def print_image_clustering_progress(
+    stage: str,
+    values: dict[str, object],
+) -> None:
+    details = ", ".join(
+        f"{key}={value}"
+        for key, value in values.items()
+    )
+    if stage == "algorithm":
+        print("Image-clustering: Grupperer bilder ...")
+    elif details:
+        print(f"Image-clustering: {stage}: {details}")
+    else:
+        print(f"Image-clustering: {stage}")
 
 
 def run_image_scan(target: Path, *, repo_root: Path, limit: int | None) -> int:
@@ -131,7 +211,8 @@ def run_cleanup_image_search(target: Path, *, apply: bool) -> int:
     print(
         "Bildesøk-opprydding: "
         f"foreldreløse_embeddings={stats.embedding_rows}, "
-        f"foreldreløse_søkeresultater={stats.search_result_rows}"
+        f"foreldreløse_søkeresultater={stats.search_result_rows}, "
+        f"foreldreløse_cluster-medlemmer={stats.cluster_member_rows}"
     )
     for group in stats.groups[:20]:
         suffix = f" ({group.row_count} rader)" if group.row_count > 1 else ""
@@ -143,13 +224,19 @@ def run_cleanup_image_search(target: Path, *, apply: bool) -> int:
         print(f"... og {len(stats.groups) - 20} file_id/sti-grupper til")
     if not apply:
         print("Dry-run: ingen endringer er gjort.")
-        if stats.embedding_rows or stats.search_result_rows:
+        if (
+            stats.embedding_rows
+            or stats.search_result_rows
+            or stats.cluster_member_rows
+        ):
             print("Kjør: bildebank cleanup-image-search --apply")
         return 0
     print(
         "Slettet: "
         f"image_embeddings={stats.deleted_embedding_rows}, "
         f"image_search_results={stats.deleted_search_result_rows}, "
+        f"image_cluster_members={stats.deleted_cluster_member_rows}, "
+        f"tomme_image_clusters={stats.deleted_empty_clusters}, "
         f"tomme_image_search_runs={stats.deleted_search_runs}"
     )
     return 0

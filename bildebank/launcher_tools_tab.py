@@ -19,6 +19,7 @@ from .launcher_commands import (
     export_person_command,
     face_scan_command,
     geo_scan_command,
+    image_clustering_command,
     image_scan_command,
     make_browser_command,
     make_people_browser_command,
@@ -37,7 +38,12 @@ from .launcher_status import (
     program_repo_root,
     registered_persons,
 )
-from .launcher_widgets import Tooltip, select_person_dialog
+from .launcher_widgets import (
+    Tooltip,
+    image_clustering_dialog,
+    select_person_dialog,
+)
+from .image_clustering import parse_clustering_selection
 from .pending_deletes import list_pending_deletes
 from .thumbnails import plan_legacy_thumbnail_cleanup
 from .video_previews import active_video_preview_candidates, existing_video_preview_path
@@ -342,6 +348,23 @@ class ToolsTab:
             "Når dette er valgt, får de statiske HTML-browserkommandoene "
             "flagget --hide-out-of-focus.",
         )
+        clustering_button = self._button(
+            self.button_frame,
+            text="Grupper bilder …",
+            command=self._run_image_clustering,
+        )
+        clustering_button.grid(
+            row=4,
+            column=0,
+            padx=self.padx,
+            pady=self.pady,
+            sticky="ew",
+        )
+        self._add_tooltip(
+            clustering_button,
+            "Lag et reversibelt forslag til grupper med eksisterende "
+            "OpenCLIP-data. Ingen bilder eller metadata endres.",
+        )
         self.update_dependency_tooltips()
         return [
             geo_button,
@@ -358,6 +381,7 @@ class ToolsTab:
             pending_button,
             export_person_button,
             video_preview_button,
+            clustering_button,
         ]
 
     def update_dependency_tooltips(self) -> None:
@@ -540,6 +564,87 @@ class ToolsTab:
         if image_search_disabled:
             steps.append(self._run_image_scan_enable_step)
         self._run_image_scan_setup_steps(steps)
+
+    def _run_image_clustering(self) -> None:
+        from tkinter import messagebox
+
+        openclip_missing = self.setup.openclip_status != "Installert"
+        image_search_disabled = not self._image_search_enabled()
+        if openclip_missing:
+            if not openclip_install_supported():
+                messagebox.showerror(
+                    "Gruppering mangler",
+                    "Gruppering krever den komplette OpenCLIP-installasjonen "
+                    "fra Oppsett-fanen på Windows.",
+                    parent=self.root,
+                )
+                return
+            if not messagebox.askyesno(
+                "Installer grupperingsstøtte?",
+                "Gruppering krever OpenCLIP og scikit-learn. Vil du "
+                "installere den låste OpenCLIP-pakken nå?",
+                parent=self.root,
+            ):
+                return
+            self.setup.run_openclip_install(
+                on_success=self._run_image_clustering,
+            )
+            return
+        if image_search_disabled:
+            if not messagebox.askyesno(
+                "Slå på bildesøk?",
+                "Gruppering bruker modellen som er valgt for bildesøk. "
+                "Vil du slå på bildesøk?",
+                parent=self.root,
+            ):
+                return
+            try:
+                set_image_search_enabled(program_repo_root(), True)
+            except (OSError, ValueError) as exc:
+                self._show_error("Kunne ikke slå på bildesøk.", exc)
+                return
+
+        values = image_clustering_dialog(
+            tk=self.tk,
+            ttk=self.ttk,
+            root=self.root,
+            button=self._button,
+        )
+        if values is None:
+            self._log("Bildegruppering avbrutt.")
+            return
+        n_clusters, query, random_seed, hide_out_of_focus = values
+        try:
+            selection = parse_clustering_selection(
+                self.collection_path,
+                query,
+                hide_out_of_focus=hide_out_of_focus,
+            )
+        except ValueError as exc:
+            messagebox.showerror(
+                "Ugyldig filter",
+                str(exc),
+                parent=self.root,
+            )
+            return
+        self._log("Starter bildegruppering ...")
+        self._run_waiting_command(
+            image_clustering_command(
+                self.collection_path,
+                filter_query=selection.query or "",
+                n_clusters=n_clusters,
+                random_seed=random_seed,
+                hide_out_of_focus=hide_out_of_focus,
+            ),
+            running_message="Grupperer bilder ...",
+            success_message=(
+                "Bildegruppering fullført. Run-ID står i loggen; resultatet "
+                "finnes under Gruppering i webgrensesnittet."
+            ),
+            failure_message="Bildegruppering feilet.",
+            on_success=self._refresh_launcher,
+            cancellable=True,
+        )
 
     def _start_image_scan_command(self) -> None:
         self._log("Scanner bilder for bildesøk ...")

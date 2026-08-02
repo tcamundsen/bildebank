@@ -1597,6 +1597,10 @@ def doctor_check_openclip_consistency(target: Path) -> None:
                 conn,
                 "image_search_results",
             )
+            cluster_member_orphans = doctor_orphan_openclip_rows(
+                conn,
+                "image_cluster_members",
+            )
             embedding_mismatches = doctor_openclip_identity_mismatches(
                 conn,
                 "image_embeddings",
@@ -1620,6 +1624,7 @@ def doctor_check_openclip_consistency(target: Path) -> None:
     if not (
         embedding_orphans
         or result_orphans
+        or cluster_member_orphans
         or embedding_mismatches
         or result_mismatches
     ):
@@ -1659,7 +1664,24 @@ def doctor_check_openclip_consistency(target: Path) -> None:
                 f"{Path(str(row['target_path'])).as_posix()}{count_suffix}"
             )
         doctor_report_omitted_openclip_groups(len(result_orphans))
-    if embedding_orphans or result_orphans:
+    if cluster_member_orphans:
+        total_member_rows = sum(
+            int(row["row_count"]) for row in cluster_member_orphans
+        )
+        doctor_error(
+            f"{total_member_rows} OpenCLIP cluster-medlemsrad(er) peker "
+            "på manglende eller slettet fil."
+        )
+        for row in cluster_member_orphans[:20]:
+            doctor_info(
+                "image_cluster_members "
+                f"file #{int(row['file_id'])}: "
+                f"{int(row['row_count'])} rad(er)"
+            )
+        doctor_report_omitted_openclip_groups(
+            len(cluster_member_orphans)
+        )
+    if embedding_orphans or result_orphans or cluster_member_orphans:
         doctor_advice("Kjør bildebank cleanup-image-search --apply")
 
     doctor_report_openclip_identity_mismatches(
@@ -1690,18 +1712,28 @@ def doctor_check_openclip_consistency(target: Path) -> None:
 
 
 def doctor_orphan_openclip_rows(conn: sqlite3.Connection, table: str) -> list[sqlite3.Row]:
-    if table not in {"image_embeddings", "image_search_results"}:
+    if table not in {
+        "image_embeddings",
+        "image_search_results",
+        "image_cluster_members",
+    }:
         raise ValueError(f"Uventet OpenCLIP-tabell: {table}")
+    target_path_sql = (
+        f"{table}.target_path"
+        if table != "image_cluster_members"
+        else "''"
+    )
     return list(
         conn.execute(
             f"""
-            SELECT {table}.file_id, {table}.target_path, COUNT(*) AS row_count
+            SELECT {table}.file_id, {target_path_sql} AS target_path,
+                   COUNT(*) AS row_count
             FROM {table}
             LEFT JOIN main_db.files ON main_db.files.id = {table}.file_id
             WHERE main_db.files.id IS NULL
                OR main_db.files.deleted_at IS NOT NULL
-            GROUP BY {table}.file_id, {table}.target_path
-            ORDER BY {table}.file_id, {table}.target_path
+            GROUP BY {table}.file_id, {target_path_sql}
+            ORDER BY {table}.file_id, {target_path_sql}
             """
         )
     )

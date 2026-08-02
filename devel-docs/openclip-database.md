@@ -20,7 +20,8 @@ finnes. `unimport` av én av flere kilder skal ikke rydde disse radene.
 
 `remove` er en eksplisitt beslutning om at bildet ikke lenger skal brukes.
 Operasjonen sletter derfor bildets `image_embeddings` og
-`image_search_results`, og sletter søkekjøringer som blir tomme.
+`image_search_results` og `image_cluster_members`, og sletter tomme søke-
+og cluster-rader.
 `undelete` gjenoppretter ikke radene; `image-scan` må bygge embeddings på nytt.
 
 Når `unimport` fjerner siste `file_sources`-rad og dermed `files`-raden, skal
@@ -34,19 +35,45 @@ slettede eller manglende `file_id`. Se
 
 ## Dagens versjon
 
-Dagens schema er `OPENCLIP_SCHEMA_VERSION = 1` i `bildebank/openclip.py`.
+Dagens schema er `OPENCLIP_SCHEMA_VERSION = 2` i `bildebank/openclip.py`.
 Versjonen lagres i:
 
 ```text
 meta.schema_version
 ```
 
-Schema v1 har disse tabellene:
+Schema v2 har disse tabellene:
 
 - `meta`
 - `image_embeddings`
 - `image_search_runs`
 - `image_search_results`
+- `image_clustering_runs`
+- `image_clusters`
+- `image_cluster_members`
+
+Migreringen fra v1 til v2 oppretter bare de tre grupperingstabellene og
+tilhørende indekser. Den leser, dekoder eller omskriver ikke eksisterende
+embedding-BLOB-er eller søkeresultater. Hele migreringen kjøres i
+`BEGIN IMMEDIATE`, valideres og rulles tilbake ved feil.
+
+## Bildegruppering
+
+En grupperingskjøring lagrer det kanoniske browserutvalget, modellnøkkelen,
+eksplisitte MiniBatchKMeans-parametere, tellinger og status. Medlemskap bruker
+unik `file_id` per run. `file_sources` brukes bare indirekte av
+filtersøkets `EXISTS`-semantikk, slik at flere importreferanser aldri gir
+duplikate bilder.
+
+Embeddings kontrolleres for BLOB-lengde, finite `float32`-verdier, positiv
+norm, lik dimensjon og SHA-256-samsvar. Ugyldige rader hoppes over og telles;
+de repareres eller slettes ikke. Resultatet skrives atomisk etter at
+algoritmen er ferdig.
+
+`remove` og unimport av siste kilde sletter medlemskapet i samme
+ATTACH-transaksjon som øvrige sidecar-data. Run-raden beholdes som historikk.
+Å slette en run fra webgrensesnittet sletter bare run, clusters og medlemskap
+med foreign-key-kaskade.
 
 ## Søk fra webserveren
 
@@ -71,7 +98,7 @@ eksisterende embedding-cache og laster ikke tekstmodellen.
 OpenCLIP-databaser fra før schema-versjonering kan mangle
 `meta.schema_version`. De aller eldste kan også mangle hele `meta`-tabellen.
 
-Et slikt schema adopteres som v1 bare når:
+Et slikt schema adopteres som v1 eller v2 bare når:
 
 - alle tre datatabellene finnes
 - alle kolonnene runtime-koden trenger finnes
@@ -79,17 +106,17 @@ Et slikt schema adopteres som v1 bare når:
 - `PRAGMA foreign_key_check` ikke finner brutte deklarerte referanser
 - `PRAGMA integrity_check` er `ok`
 
-Adopsjonen skjer under `BEGIN IMMEDIATE`. Koden oppretter bare `meta` hvis den
-mangler og setter `meta.schema_version=1`. Datatabellene bygges ikke om, og
-embedding- eller søkeresultatrader endres ikke. Derfor lages det ikke en egen
-backup for denne metadataendringen.
+Adopsjonen skjer under `BEGIN IMMEDIATE`. Koden identifiserer en komplett
+v1- eller v2-struktur, oppretter bare `meta` hvis den mangler og setter riktig
+versjon. En adoptert v1-struktur migreres deretter til v2 i samme transaksjon.
+Eksisterende datatabeller bygges ikke om.
 
 Ved feil rulles hele metadataendringen tilbake. Et mangelfullt uversjonert
 schema avvises uten at manglende tabeller eller kolonner opprettes lydløst.
 
 ## Validering
 
-Ved vanlig åpning av en v1-database kontrolleres:
+Ved vanlig åpning av en v2-database kontrolleres:
 
 - alle forventede tabeller og nødvendige kolonner
 - relative samlingsinterne stier

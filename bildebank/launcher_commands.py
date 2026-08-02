@@ -77,6 +77,30 @@ def image_scan_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "image-scan")
 
 
+def image_clustering_command(
+    collection_path: Path,
+    *,
+    filter_query: str,
+    n_clusters: int,
+    random_seed: int,
+    hide_out_of_focus: bool,
+) -> list[str]:
+    command = bildebank_command(
+        "--target",
+        collection_path,
+        "_image-clustering-worker",
+        "--clusters",
+        str(n_clusters),
+        "--seed",
+        str(random_seed),
+        "--filter",
+        filter_query,
+    )
+    if hide_out_of_focus:
+        command.append("--hide-out-of-focus")
+    return command
+
+
 def make_thumbnails_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "make-thumbnails")
 

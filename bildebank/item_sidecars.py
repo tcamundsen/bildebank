@@ -316,6 +316,21 @@ def delete_attached_item_data(
             )
         elif database == "openclip_db":
             conn.execute(
+                f"DELETE FROM openclip_db.image_cluster_members "
+                f"WHERE file_id IN ({placeholders})",
+                file_ids,
+            )
+            conn.execute(
+                """
+                DELETE FROM openclip_db.image_clusters
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM openclip_db.image_cluster_members
+                    WHERE image_cluster_members.cluster_id = image_clusters.id
+                )
+                """
+            )
+            conn.execute(
                 f"""
                 DELETE FROM openclip_db.image_search_runs
                 WHERE id IN (
@@ -394,6 +409,27 @@ def delete_attached_obsolete_item_data(conn: sqlite3.Connection) -> None:
                 ")"
             )
         elif database == "openclip_db":
+            conn.execute(
+                """
+                DELETE FROM openclip_db.image_cluster_members
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM main.files
+                    WHERE files.id = image_cluster_members.file_id
+                      AND files.deleted_at IS NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                DELETE FROM openclip_db.image_clusters
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM openclip_db.image_cluster_members
+                    WHERE image_cluster_members.cluster_id = image_clusters.id
+                )
+                """
+            )
             conn.execute(
                 """
                 DELETE FROM openclip_db.image_search_runs
