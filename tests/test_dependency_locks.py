@@ -236,3 +236,7 @@ def test_windows_install_scripts_enforce_the_matching_hash_lock() -> None:
     assert "import sklearn" in openclip_script
     assert "import torch" in openclip_script
     assert "cache_dir=" not in openclip_script
+    smoke_test = openclip_script.split('$SmokeTest = "', 1)[1].split('"', 1)[0]
+    assert "\n" not in smoke_test
+    assert 'f"' not in smoke_test
+    compile(smoke_test, "install-openclip-smoke-test", "exec")
