@@ -18,7 +18,8 @@ grupper du ønsker.
 
 **HDBSCAN** velger antall grupper automatisk. Du velger minste gruppestørrelse
 og kan la **Min samples** stå tomt for å bruke samme verdi. Bilder som ikke
-passer tydelig i en gruppe, vises separat som **Ugrupperte bilder**. HDBSCAN kan
+passer tydelig i en gruppe, vises separat som **Ugrupperte bilder**.  Et godt
+forlag er minste gruppestørrelse på 8 og **Min samples** på 3.  HDBSCAN kan
 bruke vesentlig mer tid og minne enn MiniBatchKMeans på store samlinger.
 
 Et tomt filter bruker alle aktive bilder. Valget **Skjul "Ute av fokus"** er
