@@ -156,6 +156,31 @@ def test_load_status_calls_all_dependency_status_functions() -> None:
     )
 
 
+def test_insightface_install_finish_refreshes_status_before_callback() -> None:
+    setup = bare_setup_tab()
+    actions: list[str] = []
+    setup.insightface_status = InsightFaceDependencyStatus("Mangler")
+    setup.face_model_status = InsightFaceModelStatus("antelopev2", "Mangler")
+    setup._on_status_changed = lambda: actions.append("status")
+
+    with (
+        patch("bildebank.launcher_setup_tab.importlib.invalidate_caches"),
+        patch(
+            "bildebank.launcher_setup_tab.insightface_dependency_status",
+            return_value=InsightFaceDependencyStatus("Klar"),
+        ),
+        patch(
+            "bildebank.launcher_setup_tab.insightface_model_status",
+            return_value=InsightFaceModelStatus("antelopev2", "Lastet ned"),
+        ),
+    ):
+        setup._insightface_install_finished(lambda: actions.append("next"))
+
+    assert setup.insightface_status.status == "Klar"
+    assert setup.face_model_status.status == "Lastet ned"
+    assert actions == ["status", "next"]
+
+
 def test_openclip_install_finish_refreshes_status_before_callback() -> None:
     setup = bare_setup_tab()
     actions: list[str] = []
@@ -213,3 +238,40 @@ def test_openclip_model_download_is_cancellable_and_uses_model_only_command() ->
     command, options = calls[0]
     assert command[-1] == "download-openclip-model"
     assert options["cancellable"] is True
+
+
+def test_model_downloads_refresh_setup_status_before_continuing() -> None:
+    setup = bare_setup_tab()
+    calls: list[tuple[list[str], dict[str, object]]] = []
+    actions: list[str] = []
+    setup._run_waiting_command = lambda command, **options: calls.append((command, options))
+    setup._on_status_changed = lambda: actions.append("status")
+
+    with (
+        patch(
+            "bildebank.launcher_setup_tab.insightface_model_status",
+            return_value=InsightFaceModelStatus("antelopev2", "Lastet ned"),
+        ),
+        patch(
+            "bildebank.launcher_setup_tab.openclip_model_status",
+            return_value=OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig"),
+        ),
+    ):
+        setup.run_face_model_download(on_success=lambda: actions.append("face-next"))
+        face_success = calls.pop()[1]["on_success"]
+        assert callable(face_success)
+        face_success()
+
+        setup.run_openclip_model_download(on_success=lambda: actions.append("openclip-next"))
+        openclip_success = calls.pop()[1]["on_success"]
+        assert callable(openclip_success)
+        openclip_success()
+
+    assert setup.face_model_status.status == "Lastet ned"
+    assert setup.openclip_model_status.status == "Tilgjengelig"
+    assert actions == [
+        "status",
+        "face-next",
+        "status",
+        "openclip-next",
+    ]

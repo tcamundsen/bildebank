@@ -379,7 +379,7 @@ class SetupTab:
             running_message="Installerer InsightFace ...",
             success_message="InsightFace-installasjon fullført.",
             failure_message="InsightFace-installasjon feilet.",
-            on_success=lambda: self._install_finished(on_success),
+            on_success=lambda: self._insightface_install_finished(on_success),
         )
 
     def install_openclip(self) -> None:
@@ -405,14 +405,37 @@ class SetupTab:
             cancellable=True,
         )
 
-    def _install_finished(self, on_success: Callable[[], None]) -> None:
+    def _insightface_install_finished(self, on_success: Callable[[], None]) -> None:
         importlib.invalidate_caches()
+        self.refresh_insightface_status_after_install()
         on_success()
 
     def _openclip_install_finished(self, on_success: Callable[[], None]) -> None:
         importlib.invalidate_caches()
         self.refresh_openclip_status_after_install()
         on_success()
+
+    def refresh_insightface_status_after_install(self) -> None:
+        try:
+            self.insightface_status = insightface_dependency_status()
+        except Exception as exc:  # noqa: BLE001 - setup status must not block launcher flow
+            self.insightface_status = InsightFaceDependencyStatus("Feil", str(exc))
+        try:
+            self.face_model_status = insightface_model_status()
+        except Exception as exc:  # noqa: BLE001 - setup status must not block launcher flow
+            self.face_model_status = InsightFaceModelStatus("", "Feil", str(exc))
+        self._log_status_detail(
+            "InsightFace",
+            self.insightface_status.status,
+            self.insightface_status.detail,
+        )
+        self._log_status_detail(
+            "Ansiktsmodell",
+            self.face_model_status.status,
+            self.face_model_status.detail,
+        )
+        self._apply_status_values()
+        self._on_status_changed()
 
     def refresh_openclip_status_after_install(self) -> None:
         try:
@@ -454,8 +477,22 @@ class SetupTab:
             running_message="Laster ned ansiktsmodell ...",
             success_message="Ansiktsmodell lastet ned.",
             failure_message="Nedlasting av ansiktsmodell feilet.",
-            on_success=on_success,
+            on_success=lambda: self._face_model_download_finished(on_success),
         )
+
+    def _face_model_download_finished(self, on_success: Callable[[], None]) -> None:
+        try:
+            self.face_model_status = insightface_model_status()
+        except Exception as exc:  # noqa: BLE001 - setup status must not block launcher flow
+            self.face_model_status = InsightFaceModelStatus("", "Feil", str(exc))
+        self._log_status_detail(
+            "Ansiktsmodell",
+            self.face_model_status.status,
+            self.face_model_status.detail,
+        )
+        self._apply_status_values()
+        self._on_status_changed()
+        on_success()
 
     def download_openclip_model(self) -> None:
         if self.openclip_status != "Installert":
@@ -480,6 +517,20 @@ class SetupTab:
             running_message="Laster ned valgt OpenCLIP-modell ...",
             success_message="OpenCLIP-modell lastet ned.",
             failure_message="Nedlasting av OpenCLIP-modell feilet.",
-            on_success=on_success,
+            on_success=lambda: self._openclip_model_download_finished(on_success),
             cancellable=True,
         )
+
+    def _openclip_model_download_finished(self, on_success: Callable[[], None]) -> None:
+        try:
+            self.openclip_model_status = openclip_model_status()
+        except Exception as exc:  # noqa: BLE001 - setup status must not block launcher flow
+            self.openclip_model_status = OpenClipModelStatus("", "", "Feil", str(exc))
+        self._log_status_detail(
+            "OpenCLIP-modell",
+            self.openclip_model_status.status,
+            self.openclip_model_status.detail,
+        )
+        self._apply_status_values()
+        self._on_status_changed()
+        on_success()
