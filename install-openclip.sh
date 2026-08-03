@@ -18,6 +18,7 @@ echo "Installerer valgfri OpenCLIP-støtte i Bildebanks lokale Python-miljø"
 echo "Kontrollerer OpenCLIP-avhengighetene"
 "$venv_python" - <<'PY'
 import open_clip
+import igraph
 import sklearn
 import torch
 from importlib.metadata import version
@@ -25,7 +26,8 @@ from importlib.metadata import version
 print(
     "OpenCLIP klar: "
     f"open_clip_torch={version('open_clip_torch')}, "
-    f"torch={torch.__version__}, scikit-learn={sklearn.__version__}"
+    f"torch={torch.__version__}, scikit-learn={sklearn.__version__}, "
+    f"igraph={igraph.__version__}"
 )
 PY
 

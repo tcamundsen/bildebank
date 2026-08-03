@@ -395,9 +395,10 @@ def grouping_run_page_html(server: Any, run_id: int) -> str | None:
     algorithm_text = _run_algorithm_text(row)
     seed_html = (
         f'<div><dt>Seed</dt><dd>{int(row["random_seed"])}</dd></div>'
-        if algorithm == "minibatch_kmeans"
+        if algorithm in {"minibatch_kmeans", "leiden"}
         else ""
     )
+    graph_stats_html = _run_graph_stats_html(row)
     delete_form = _delete_run_form_html(
         server,
         row,
@@ -437,6 +438,7 @@ def grouping_run_page_html(server: Any, run_id: int) -> str | None:
           <div><dt>Gruppert</dt><dd>{int(row["clustered_file_count"])}</dd></div>
           <div><dt>Uten embedding</dt><dd>{int(row["missing_embedding_count"])}</dd></div>
           <div><dt>Ugyldig embedding</dt><dd>{int(row["invalid_embedding_count"])}</dd></div>
+          {graph_stats_html}
         </dl>
         {warning_html}
         {error_html}
@@ -522,6 +524,8 @@ def _run_algorithm_text(row: Any) -> str:
         return "MiniBatchKMeans"
     if algorithm == "hdbscan":
         return "HDBSCAN"
+    if algorithm == "leiden":
+        return "Leiden"
     return algorithm
 
 
@@ -551,7 +555,38 @@ def _run_parameters_text(row: Any) -> str:
             f"Minste gruppestørrelse: {minimum_size} · "
             f"Min samples: {minimum_samples_text}"
         )
+    if algorithm == "leiden":
+        requested_k = parameters.get("requested_k", "-")
+        mode = (
+            "Gjensidige naboer"
+            if parameters.get("neighbor_mode") == "mutual"
+            else "Åpen graf"
+        )
+        resolution = parameters.get("resolution", "-")
+        return (
+            f"Naboer: {requested_k} · {mode} · "
+            f"CPM-oppløsning: {resolution}"
+        )
     return raw_parameters
+
+
+def _run_graph_stats_html(row: Any) -> str:
+    if str(row["algorithm"]) != "leiden":
+        return ""
+
+    def value(name: str) -> str:
+        raw_value = row[name]
+        return "Ikke beregnet" if raw_value is None else html.escape(str(raw_value))
+
+    return f"""
+      <div><dt>Effektive naboer</dt><dd>{value("effective_neighbor_count")}</dd></div>
+      <div><dt>Grafnoder</dt><dd>{value("graph_node_count")}</dd></div>
+      <div><dt>Grafkanter</dt><dd>{value("graph_edge_count")}</dd></div>
+      <div><dt>Ugrupperte</dt><dd>{value("isolated_file_count")}</dd></div>
+      <div><dt>Kanter fjernet av terskel</dt><dd>{value("threshold_removed_edge_count")}</dd></div>
+      <div><dt>Median nærmeste likhet</dt><dd>{value("nearest_similarity_median")}</dd></div>
+      <div><dt>Median likhet til nabo k</dt><dd>{value("kth_similarity_median")}</dd></div>
+    """
 
 
 def _delete_run_form_html(

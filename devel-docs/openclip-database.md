@@ -35,14 +35,14 @@ slettede eller manglende `file_id`. Se
 
 ## Dagens versjon
 
-Dagens schema er `OPENCLIP_SCHEMA_VERSION = 2` i `bildebank/openclip.py`.
+Dagens schema er `OPENCLIP_SCHEMA_VERSION = 3` i `bildebank/openclip.py`.
 Versjonen lagres i:
 
 ```text
 meta.schema_version
 ```
 
-Schema v2 har disse tabellene:
+Schema v3 har disse tabellene:
 
 - `meta`
 - `image_embeddings`
@@ -57,11 +57,19 @@ tilhørende indekser. Den leser, dekoder eller omskriver ikke eksisterende
 embedding-BLOB-er eller søkeresultater. Hele migreringen kjøres i
 `BEGIN IMMEDIATE`, valideres og rulles tilbake ved feil.
 
+Migreringen fra v2 til v3 legger bare nullable Leiden-metadata til
+`image_clustering_runs`: input-fingerprint, grafstørrelse, antall isolerte
+bilder og terskelfjernede kanter, nabosimilaritetsmedianer og
+bibliotekversjoner. Gamle kjøringer beholder `NULL` i disse feltene. En
+fullført Leiden-kjøring får alltid alle feltene; `NULL` betyr ellers «ikke
+relevant eller ikke beregnet».
+
 ## Bildegruppering
 
 En grupperingskjøring lagrer det kanoniske browserutvalget, modellnøkkelen,
-eksplisitte MiniBatchKMeans-parametere, tellinger og status. Medlemskap bruker
-unik `file_id` per run. `file_sources` brukes bare indirekte av
+eksplisitte algoritmeparametere, tellinger og status. MiniBatchKMeans, HDBSCAN
+og Leiden bruker samme run-, cluster- og medlemsmodell. Medlemskap bruker unik
+`file_id` per run. `file_sources` brukes bare indirekte av
 filtersøkets `EXISTS`-semantikk, slik at flere importreferanser aldri gir
 duplikate bilder.
 
@@ -98,7 +106,7 @@ eksisterende embedding-cache og laster ikke tekstmodellen.
 OpenCLIP-databaser fra før schema-versjonering kan mangle
 `meta.schema_version`. De aller eldste kan også mangle hele `meta`-tabellen.
 
-Et slikt schema adopteres som v1 eller v2 bare når:
+Et slikt schema adopteres som v1, v2 eller v3 bare når:
 
 - alle tre datatabellene finnes
 - alle kolonnene runtime-koden trenger finnes
@@ -108,15 +116,16 @@ Et slikt schema adopteres som v1 eller v2 bare når:
 
 Adopsjonen skjer under `BEGIN IMMEDIATE`. Koden identifiserer en komplett
 v1- eller v2-struktur, oppretter bare `meta` hvis den mangler og setter riktig
-versjon. En adoptert v1-struktur migreres deretter til v2 i samme transaksjon.
-Eksisterende datatabeller bygges ikke om.
+versjon. En adoptert v1-struktur migreres deretter via v2 til v3, og en
+adoptert v2-struktur migreres til v3 i samme transaksjon. Eksisterende
+datatabeller bygges ikke om.
 
 Ved feil rulles hele metadataendringen tilbake. Et mangelfullt uversjonert
 schema avvises uten at manglende tabeller eller kolonner opprettes lydløst.
 
 ## Validering
 
-Ved vanlig åpning av en v2-database kontrolleres:
+Ved vanlig åpning av en v3-database kontrolleres:
 
 - alle forventede tabeller og nødvendige kolonner
 - relative samlingsinterne stier

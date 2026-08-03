@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -17,6 +18,11 @@ class ImageClusteringDialogValues:
     random_seed: int = 0
     min_cluster_size: int | None = None
     min_samples: int | None = None
+    neighbor_count: int | None = None
+    neighbor_mode: str = "union"
+    minimum_similarity: float = 0.0
+    weight_mode: str = "cosine"
+    resolution: float | None = None
 
 
 class Tooltip:
@@ -155,6 +161,11 @@ def image_clustering_dialog(
     clusters = tk.StringVar(value="20")
     min_cluster_size = tk.StringVar(value="5")
     min_samples = tk.StringVar(value="")
+    neighbors = tk.StringVar(value="20")
+    neighbor_mode = tk.StringVar(value="Åpen graf")
+    minimum_similarity = tk.StringVar(value="")
+    weight_mode = tk.StringVar(value="Cosinuslikhet")
+    resolution = tk.StringVar(value="0.2")
     query = tk.StringVar(value="")
     seed = tk.StringVar(value="0")
     hide_out_of_focus = tk.BooleanVar(value=False)
@@ -169,7 +180,7 @@ def image_clustering_dialog(
     algorithm_entry = ttk.Combobox(
         frame,
         textvariable=algorithm,
-        values=("MiniBatchKMeans", "HDBSCAN"),
+        values=("MiniBatchKMeans", "HDBSCAN", "Leiden"),
         state="readonly",
         width=24,
     )
@@ -203,20 +214,59 @@ def image_clustering_dialog(
         "Min samples (tomt = gruppestørrelse):",
         min_samples,
     )
+    neighbors_widgets = entry_row(5, "Antall naboer:", neighbors)
+    neighbor_mode_label = ttk.Label(frame, text="Nabomodus:")
+    neighbor_mode_label.grid(row=6, column=0, sticky="w", padx=(0, 10), pady=4)
+    neighbor_mode_entry = ttk.Combobox(
+        frame,
+        textvariable=neighbor_mode,
+        values=("Åpen graf", "Gjensidige naboer"),
+        state="readonly",
+        width=24,
+    )
+    neighbor_mode_entry.grid(row=6, column=1, sticky="w", pady=4)
+    similarity_widgets = entry_row(
+        7,
+        "Minste likhet (tomt = 0,0):",
+        minimum_similarity,
+    )
+    weight_mode_label = ttk.Label(frame, text="Kantvekter:")
+    weight_mode_label.grid(row=8, column=0, sticky="w", padx=(0, 10), pady=4)
+    weight_mode_entry = ttk.Combobox(
+        frame,
+        textvariable=weight_mode,
+        values=("Cosinuslikhet", "Uvektet"),
+        state="readonly",
+        width=24,
+    )
+    weight_mode_entry.grid(row=8, column=1, sticky="w", pady=4)
+    resolution_widgets = entry_row(9, "CPM-oppløsning:", resolution)
+    leiden_widgets = (
+        neighbors_widgets
+        + (neighbor_mode_label, neighbor_mode_entry)
+        + similarity_widgets
+        + (weight_mode_label, weight_mode_entry)
+        + resolution_widgets
+    )
     _query_label, query_entry = entry_row(
-        5,
+        10,
         "Filter (tomt betyr alle):",
         query,
         width=48,
     )
-    seed_widgets = entry_row(6, "Random seed:", seed)
+    seed_widgets = entry_row(11, "Random seed:", seed)
 
     def update_algorithm_fields(_event: Any = None) -> None:
         hdbscan = algorithm.get() == "HDBSCAN"
-        for widget in clusters_widgets + seed_widgets:
+        leiden = algorithm.get() == "Leiden"
+        for widget in clusters_widgets:
+            (widget.grid if not hdbscan and not leiden else widget.grid_remove)()
+        for widget in seed_widgets:
             (widget.grid_remove if hdbscan else widget.grid)()
         for widget in min_cluster_size_widgets + min_samples_widgets:
             (widget.grid if hdbscan else widget.grid_remove)()
+        for widget in leiden_widgets:
+            (widget.grid if leiden else widget.grid_remove)()
         error.set("")
 
     algorithm_entry.bind("<<ComboboxSelected>>", update_algorithm_fields)
@@ -225,13 +275,13 @@ def image_clustering_dialog(
         frame,
         text='Skjul "Ute av fokus"',
         variable=hide_out_of_focus,
-    ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 4))
+    ).grid(row=12, column=0, columnspan=2, sticky="w", pady=(8, 4))
     ttk.Label(
         frame,
         textvariable=error,
         foreground="#a40000",
         wraplength=500,
-    ).grid(row=8, column=0, columnspan=2, sticky="w")
+    ).grid(row=13, column=0, columnspan=2, sticky="w")
     result: ImageClusteringDialogValues | None = None
 
     def accept() -> None:
@@ -258,6 +308,47 @@ def image_clustering_dialog(
                 min_cluster_size=minimum_size,
                 min_samples=minimum_samples,
             )
+        elif algorithm.get() == "Leiden":
+            try:
+                neighbor_count = int(neighbors.get())
+                similarity = (
+                    0.0
+                    if not minimum_similarity.get().strip()
+                    else float(minimum_similarity.get().replace(",", "."))
+                )
+                cpm_resolution = float(resolution.get().replace(",", "."))
+                random_seed = int(seed.get())
+            except ValueError:
+                error.set(
+                    "Naboer og seed må være heltall; likhet og oppløsning må være tall."
+                )
+                return
+            if not 1 <= neighbor_count <= 200:
+                error.set("Antall naboer må være mellom 1 og 200.")
+                return
+            if not math.isfinite(similarity) or not 0.0 <= similarity <= 1.0:
+                error.set("Minste likhet må være mellom 0 og 1.")
+                return
+            if not math.isfinite(cpm_resolution) or cpm_resolution <= 0.0:
+                error.set("CPM-oppløsning må være større enn 0.")
+                return
+            result = ImageClusteringDialogValues(
+                algorithm="leiden",
+                query=query.get(),
+                hide_out_of_focus=bool(hide_out_of_focus.get()),
+                random_seed=random_seed,
+                neighbor_count=neighbor_count,
+                neighbor_mode=(
+                    "mutual"
+                    if neighbor_mode.get() == "Gjensidige naboer"
+                    else "union"
+                ),
+                minimum_similarity=similarity,
+                weight_mode=(
+                    "unweighted" if weight_mode.get() == "Uvektet" else "cosine"
+                ),
+                resolution=cpm_resolution,
+            )
         else:
             try:
                 cluster_count = int(clusters.get())
@@ -282,7 +373,7 @@ def image_clustering_dialog(
 
     button_frame = ttk.Frame(frame)
     button_frame.grid(
-        row=9,
+        row=14,
         column=0,
         columnspan=2,
         sticky="e",

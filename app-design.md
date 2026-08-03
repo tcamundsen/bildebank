@@ -319,7 +319,7 @@ lagring uten å kreve en separat databaseserver.
 - v22 legger til kommentarer og kamerafelter på `files`
 - ny runtime-kode skal anta v22, med mindre oppgaven eksplisitt gjelder
   migrering
-- den separate OpenCLIP-databasen har schema v2 og er beskrevet i
+- den separate OpenCLIP-databasen har schema v3 og er beskrevet i
   devel-docs/openclip-database.md
 
 ## Plattform

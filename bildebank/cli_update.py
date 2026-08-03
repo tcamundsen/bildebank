@@ -22,7 +22,7 @@ UPDATE_PROFILE_MODULES = {
 }
 UPDATE_PROFILE_SMOKE_TESTS = {
     "face": "import insightface; import onnxruntime",
-    "openclip": "import open_clip; import torch",
+    "openclip": "import igraph; import open_clip; import sklearn; import torch",
 }
 
 

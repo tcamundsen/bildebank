@@ -490,6 +490,64 @@ def test_hdbscan_run_renders_noise_as_ungrouped_images(tmp_path: Path) -> None:
     ).title == "Ugrupperte bilder"
 
 
+def test_leiden_run_renders_parameters_graph_stats_and_noise(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    db.init_database(target)
+    file_id = insert_test_file(target, "2024/01/noise.png", sha256="sha-1")
+    run_id, cluster_id = insert_completed_run(target, (file_id,))
+    conn = connect_openclip_db(target)
+    try:
+        conn.execute(
+            """
+            UPDATE image_clustering_runs
+            SET algorithm = 'leiden',
+                parameters_json = '{"requested_k":20,"neighbor_mode":"union","resolution":0.2}',
+                random_seed = 42,
+                actual_cluster_count = 0,
+                effective_neighbor_count = 1,
+                graph_node_count = 1,
+                graph_edge_count = 0,
+                isolated_file_count = 1,
+                threshold_removed_edge_count = 0,
+                nearest_similarity_median = 0.5,
+                kth_similarity_median = 0.5
+            WHERE id = ?
+            """,
+            (run_id,),
+        )
+        conn.execute(
+            """
+            UPDATE image_clusters
+            SET algorithm_label = -1, kind = 'noise'
+            WHERE id = ?
+            """,
+            (cluster_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    server = SimpleNamespace(
+        target=target,
+        config=AppConfig(),
+        face_enabled=False,
+        openclip_enabled=True,
+        read_only=True,
+    )
+
+    list_html = grouping_page_html(server)
+    run_html = grouping_run_page_html(server, run_id)
+
+    assert run_html is not None
+    assert "Leiden" in list_html
+    assert "Naboer: 20 · Åpen graf · CPM-oppløsning: 0.2" in list_html
+    assert "<dt>Seed</dt><dd>42</dd>" in run_html
+    assert "<dt>Grafnoder</dt><dd>1</dd>" in run_html
+    assert "<dt>Grafkanter</dt><dd>0</dd>" in run_html
+    assert "Ugrupperte bilder" in run_html
+
+
 def test_delete_run_cascades_only_grouping_data(tmp_path: Path) -> None:
     target = tmp_path / "collection"
     db.init_database(target)

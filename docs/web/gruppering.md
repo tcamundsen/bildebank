@@ -22,6 +22,13 @@ passer tydelig i en gruppe, vises separat som **Ugrupperte bilder**.  Et godt
 forlag er minste gruppestørrelse på 8 og **Min samples** på 3.  HDBSCAN kan
 bruke vesentlig mer tid og minne enn MiniBatchKMeans på store samlinger.
 
+**Leiden** bygger en graf av bilder som ligner hverandre og finner grupper i
+grafen. Standardverdiene er laget for utprøving: 20 naboer, åpen graf,
+cosinusvekter og CPM-oppløsning 0,2. Høyere oppløsning gir vanligvis flere og
+mindre grupper. **Gjensidige naboer** gir en strengere graf og kan føre til
+flere ugrupperte bilder. Et tomt felt for minste likhet betyr 0. Bildene som
+ikke får noen kant, vises som **Ugrupperte bilder**.
+
 Et tomt filter bruker alle aktive bilder. Valget **Skjul "Ute av fokus"** er
 av som standard. Jobben bruker embeddings som allerede er laget av
 **Klargjør bildesøk**. Bilder uten en gyldig embedding hoppes over og telles i
@@ -30,8 +37,8 @@ resultatet.
 Mens algoritmen arbeider, oppdateres én linje i launcherloggen hvert sekund med
 forløpt tid. Oppdateringen drives av launcheren og fortsetter selv når
 selve beregningen ikke kan rapportere fremdrift. HDBSCAN kan ikke gi en
-pålitelig prosent eller beregnet gjenstående tid, så loggen viser bare at
-prosessen fortsatt arbeider.
+pålitelig prosent eller beregnet gjenstående tid. Leiden rapporterer hvilket
+trinn som arbeider, men ikke beregnet gjenstående tid.
 
 ## Se eller slett resultatet
 

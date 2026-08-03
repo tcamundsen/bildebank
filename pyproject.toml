@@ -26,6 +26,7 @@ face = [
     "onnxruntime",
 ]
 openclip = [
+    "igraph==1.0.0",
     "open_clip_torch",
     "scikit-learn==1.9.0",
 ]
@@ -40,5 +41,5 @@ include = ["bildebank*"]
 bildebank = ["assets/*.css", "assets/*.js", "assets/icons/*.png"]
 
 [[tool.mypy.overrides]]
-module = ["h3", "insightface.*", "open_clip", "sklearn.*", "torch"]
+module = ["h3", "igraph", "insightface.*", "open_clip", "sklearn.*", "torch"]
 ignore_missing_imports = true

@@ -843,7 +843,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     image_clustering_worker.add_argument(
         "--algorithm",
-        choices=("minibatch_kmeans", "hdbscan"),
+        choices=("minibatch_kmeans", "hdbscan", "leiden"),
         default="minibatch_kmeans",
         help=argparse.SUPPRESS,
     )
@@ -868,6 +868,36 @@ def build_parser() -> argparse.ArgumentParser:
     image_clustering_worker.add_argument(
         "--min-samples",
         type=positive_int_arg,
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--neighbors",
+        type=positive_int_arg,
+        default=20,
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--neighbor-mode",
+        choices=("union", "mutual"),
+        default="union",
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--minimum-similarity",
+        type=float,
+        default=0.0,
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--weight-mode",
+        choices=("unweighted", "cosine"),
+        default="cosine",
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--resolution",
+        type=float,
+        default=0.2,
         help=argparse.SUPPRESS,
     )
     image_clustering_worker.add_argument(

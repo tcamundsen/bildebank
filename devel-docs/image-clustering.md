@@ -4,6 +4,10 @@ Status: første leveranse implementert. Den manuelle verifikasjonen på Windows
 med omtrent 20 000 embeddings gjenstår før funksjonen brukes på
 hovedsamlingen.
 
+Dette dokumentet beskriver den opprinnelige schema-v2-leveransen med
+MiniBatchKMeans og HDBSCAN. Leiden-utvidelsen og gjeldende schema v3 beskrives
+i `devel-docs/image-clustering2.md`.
+
 ## Mål
 
 Bildebank skal kunne lage reversible forslag til grupper av visuelt eller

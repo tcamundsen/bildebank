@@ -40,8 +40,9 @@ from .value_parsing import optional_int
 
 
 OPENCLIP_DB_FILENAME = ".bilder-openclip.sqlite3"
-OPENCLIP_SCHEMA_VERSION = 2
+OPENCLIP_SCHEMA_VERSION = 3
 OPENCLIP_LEGACY_SCHEMA_VERSION = 1
+OPENCLIP_CLUSTERING_SCHEMA_VERSION = 2
 MAIN_DB_ALIAS = "main_db"
 IMAGE_SCAN_RUN_META_KEY = "image_scan_run_id"
 OPENCLIP_SCHEMA_V1_REQUIRED_COLUMNS = {
@@ -93,6 +94,25 @@ OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS = {
         "run_id", "cluster_id", "file_id", "distance_to_center",
         "center_rank", "membership_score",
     },
+}
+OPENCLIP_SCHEMA_V3_RUN_COLUMNS = {
+    "input_fingerprint",
+    "input_fingerprint_version",
+    "effective_neighbor_count",
+    "graph_node_count",
+    "graph_edge_count",
+    "isolated_file_count",
+    "threshold_removed_edge_count",
+    "nearest_similarity_median",
+    "kth_similarity_median",
+    "library_versions_json",
+}
+OPENCLIP_SCHEMA_V3_REQUIRED_COLUMNS = {
+    **OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS,
+    "image_clustering_runs": (
+        OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS["image_clustering_runs"]
+        | OPENCLIP_SCHEMA_V3_RUN_COLUMNS
+    ),
 }
 
 
@@ -249,14 +269,23 @@ def apply_schema(conn: sqlite3.Connection) -> None:
         existing_tables = openclip_user_tables(conn)
         if existing_tables:
             if version is None:
-                unversioned_columns = (
-                    OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS
-                    if (
-                        set(OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS) - {"meta"}
+                has_clustering_tables = (
+                    set(OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS) - {"meta"}
+                ) <= existing_tables
+                if has_clustering_tables:
+                    run_columns = {
+                        str(row[1])
+                        for row in conn.execute(
+                            "PRAGMA table_info(image_clustering_runs)"
+                        )
+                    }
+                    unversioned_columns = (
+                        OPENCLIP_SCHEMA_V3_REQUIRED_COLUMNS
+                        if OPENCLIP_SCHEMA_V3_RUN_COLUMNS <= run_columns
+                        else OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS
                     )
-                    <= existing_tables
-                    else OPENCLIP_SCHEMA_V1_REQUIRED_COLUMNS
-                )
+                else:
+                    unversioned_columns = OPENCLIP_SCHEMA_V1_REQUIRED_COLUMNS
                 validate_openclip_schema_structure(
                     conn,
                     required_columns=unversioned_columns,
@@ -266,11 +295,12 @@ def apply_schema(conn: sqlite3.Connection) -> None:
                 validate_openclip_foreign_keys(conn)
                 if not db.table_exists(conn, "meta"):
                     create_openclip_meta_schema(conn)
-                version = (
-                    OPENCLIP_SCHEMA_VERSION
-                    if unversioned_columns is OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS
-                    else OPENCLIP_LEGACY_SCHEMA_VERSION
-                )
+                if unversioned_columns is OPENCLIP_SCHEMA_V3_REQUIRED_COLUMNS:
+                    version = OPENCLIP_SCHEMA_VERSION
+                elif unversioned_columns is OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS:
+                    version = OPENCLIP_CLUSTERING_SCHEMA_VERSION
+                else:
+                    version = OPENCLIP_LEGACY_SCHEMA_VERSION
                 set_meta(conn, "schema_version", str(version))
             if version == OPENCLIP_LEGACY_SCHEMA_VERSION:
                 validate_openclip_schema_structure(
@@ -279,6 +309,14 @@ def apply_schema(conn: sqlite3.Connection) -> None:
                     require_meta=True,
                 )
                 migrate_openclip_v1_to_v2(conn)
+                version = OPENCLIP_CLUSTERING_SCHEMA_VERSION
+            if version == OPENCLIP_CLUSTERING_SCHEMA_VERSION:
+                validate_openclip_schema_structure(
+                    conn,
+                    required_columns=OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS,
+                    require_meta=True,
+                )
+                migrate_openclip_v2_to_v3(conn)
         else:
             create_current_openclip_schema(conn)
 
@@ -318,7 +356,10 @@ def reject_unknown_openclip_schema_version(version: int | None) -> None:
             f"(schema_version={version}) enn programmet støtter "
             f"(schema_version={OPENCLIP_SCHEMA_VERSION})."
         )
-    if version != OPENCLIP_LEGACY_SCHEMA_VERSION:
+    if version not in {
+        OPENCLIP_LEGACY_SCHEMA_VERSION,
+        OPENCLIP_CLUSTERING_SCHEMA_VERSION,
+    }:
         raise ValueError(
             f"Kan ikke migrere OpenCLIP-database med schema_version={version}."
         )
@@ -418,7 +459,25 @@ def create_current_openclip_schema(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             started_at TEXT,
             finished_at TEXT,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            input_fingerprint TEXT,
+            input_fingerprint_version INTEGER
+                CHECK(input_fingerprint_version IS NULL OR input_fingerprint_version > 0),
+            effective_neighbor_count INTEGER
+                CHECK(effective_neighbor_count IS NULL OR effective_neighbor_count >= 0),
+            graph_node_count INTEGER
+                CHECK(graph_node_count IS NULL OR graph_node_count >= 0),
+            graph_edge_count INTEGER
+                CHECK(graph_edge_count IS NULL OR graph_edge_count >= 0),
+            isolated_file_count INTEGER
+                CHECK(isolated_file_count IS NULL OR isolated_file_count >= 0),
+            threshold_removed_edge_count INTEGER
+                CHECK(threshold_removed_edge_count IS NULL OR threshold_removed_edge_count >= 0),
+            nearest_similarity_median REAL
+                CHECK(nearest_similarity_median IS NULL OR nearest_similarity_median BETWEEN -1.0 AND 1.0),
+            kth_similarity_median REAL
+                CHECK(kth_similarity_median IS NULL OR kth_similarity_median BETWEEN -1.0 AND 1.0),
+            library_versions_json TEXT
         );
 
         CREATE TABLE image_clusters (
@@ -516,6 +575,33 @@ def migrate_openclip_v1_to_v2(conn: sqlite3.Connection) -> None:
     )
 
 
+def migrate_openclip_v2_to_v3(conn: sqlite3.Connection) -> None:
+    """Add nullable Leiden metadata without changing existing runs."""
+    db.execute_sql_statements(
+        conn,
+        """
+        ALTER TABLE image_clustering_runs ADD COLUMN input_fingerprint TEXT;
+        ALTER TABLE image_clustering_runs ADD COLUMN input_fingerprint_version INTEGER
+            CHECK(input_fingerprint_version IS NULL OR input_fingerprint_version > 0);
+        ALTER TABLE image_clustering_runs ADD COLUMN effective_neighbor_count INTEGER
+            CHECK(effective_neighbor_count IS NULL OR effective_neighbor_count >= 0);
+        ALTER TABLE image_clustering_runs ADD COLUMN graph_node_count INTEGER
+            CHECK(graph_node_count IS NULL OR graph_node_count >= 0);
+        ALTER TABLE image_clustering_runs ADD COLUMN graph_edge_count INTEGER
+            CHECK(graph_edge_count IS NULL OR graph_edge_count >= 0);
+        ALTER TABLE image_clustering_runs ADD COLUMN isolated_file_count INTEGER
+            CHECK(isolated_file_count IS NULL OR isolated_file_count >= 0);
+        ALTER TABLE image_clustering_runs ADD COLUMN threshold_removed_edge_count INTEGER
+            CHECK(threshold_removed_edge_count IS NULL OR threshold_removed_edge_count >= 0);
+        ALTER TABLE image_clustering_runs ADD COLUMN nearest_similarity_median REAL
+            CHECK(nearest_similarity_median IS NULL OR nearest_similarity_median BETWEEN -1.0 AND 1.0);
+        ALTER TABLE image_clustering_runs ADD COLUMN kth_similarity_median REAL
+            CHECK(kth_similarity_median IS NULL OR kth_similarity_median BETWEEN -1.0 AND 1.0);
+        ALTER TABLE image_clustering_runs ADD COLUMN library_versions_json TEXT;
+        """,
+    )
+
+
 def validate_current_openclip_schema(
     conn: sqlite3.Connection,
     *,
@@ -523,7 +609,7 @@ def validate_current_openclip_schema(
 ) -> None:
     validate_openclip_schema_structure(
         conn,
-        required_columns=OPENCLIP_SCHEMA_V2_REQUIRED_COLUMNS,
+        required_columns=OPENCLIP_SCHEMA_V3_REQUIRED_COLUMNS,
         require_meta=True,
     )
     if full:
@@ -542,9 +628,12 @@ def require_current_openclip_schema_read_only(
             "OpenCLIP-databasen mangler eksplisitt schema_version. "
             "Read-only-åpning adopterer eller migrerer ikke databasen."
         )
-    if version == OPENCLIP_LEGACY_SCHEMA_VERSION:
+    if version in {
+        OPENCLIP_LEGACY_SCHEMA_VERSION,
+        OPENCLIP_CLUSTERING_SCHEMA_VERSION,
+    }:
         raise ValueError(
-            "OpenCLIP-databasen bruker schema_version=1. En skrivbar "
+            f"OpenCLIP-databasen bruker schema_version={version}. En skrivbar "
             "OpenCLIP-operasjon må åpne og migrere databasen til "
             f"schema_version={OPENCLIP_SCHEMA_VERSION} før read-only-visning."
         )
