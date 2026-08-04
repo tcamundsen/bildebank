@@ -80,8 +80,10 @@ algoritmen er ferdig.
 
 `remove` og unimport av siste kilde sletter medlemskapet i samme
 ATTACH-transaksjon som øvrige sidecar-data. Run-raden beholdes som historikk.
-Å slette en run fra webgrensesnittet sletter bare run, clusters og medlemskap
-med foreign-key-kaskade.
+Å slette en run fra webgrensesnittet sletter atomisk bare medlemskap, grupper
+og run-raden for den valgte kjøringen. Medlemskapet slettes først avgrenset på
+`run_id`, slik at store runs ikke trenger en separat foreign-key-kaskade per
+gruppe.
 
 ## Søk fra webserveren
 

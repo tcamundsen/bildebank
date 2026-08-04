@@ -960,11 +960,19 @@ def delete_clustering_run(target: Path, run_id: int) -> bool:
     with TargetLock(target, command="delete-image-clustering-run"):
         conn = connect_openclip_db(target)
         try:
-            cursor = conn.execute(
-                "DELETE FROM image_clustering_runs WHERE id = ?",
-                (run_id,),
-            )
-            conn.commit()
+            with conn:
+                conn.execute(
+                    "DELETE FROM image_cluster_members WHERE run_id = ?",
+                    (run_id,),
+                )
+                conn.execute(
+                    "DELETE FROM image_clusters WHERE run_id = ?",
+                    (run_id,),
+                )
+                cursor = conn.execute(
+                    "DELETE FROM image_clustering_runs WHERE id = ?",
+                    (run_id,),
+                )
             return cursor.rowcount > 0
         finally:
             conn.close()

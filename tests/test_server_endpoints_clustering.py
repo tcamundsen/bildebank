@@ -3,8 +3,11 @@ from __future__ import annotations
 from io import BytesIO
 from http import HTTPStatus
 from pathlib import Path
+import sqlite3
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
 
 from bildebank import db
 from bildebank import server_browser_overview_html
@@ -548,31 +551,40 @@ def test_leiden_run_renders_parameters_graph_stats_and_noise(
     assert "Ugrupperte bilder" in run_html
 
 
-def test_delete_run_cascades_only_grouping_data(tmp_path: Path) -> None:
+def test_delete_run_removes_only_targeted_grouping_data(tmp_path: Path) -> None:
     target = tmp_path / "collection"
     db.init_database(target)
-    file_id = insert_test_file(
+    deleted_file_id = insert_test_file(
         target,
         "2024/01/first.png",
         sha256="sha-1",
     )
-    run_id, _cluster_id = insert_completed_run(target, (file_id,))
+    retained_file_id = insert_test_file(
+        target,
+        "2024/01/second.png",
+        sha256="sha-2",
+    )
+    run_id, _cluster_id = insert_completed_run(target, (deleted_file_id,))
+    retained_run_id, _retained_cluster_id = insert_completed_run(target, (retained_file_id,))
 
     assert delete_clustering_run(target, run_id) is True
     conn = connect_openclip_db(target)
     try:
         assert conn.execute(
             "SELECT COUNT(*) FROM image_clustering_runs"
-        ).fetchone()[0] == 0
+        ).fetchone()[0] == 1
         assert conn.execute(
             "SELECT COUNT(*) FROM image_clusters"
-        ).fetchone()[0] == 0
+        ).fetchone()[0] == 1
         assert conn.execute(
             "SELECT COUNT(*) FROM image_cluster_members"
-        ).fetchone()[0] == 0
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT run_id FROM image_cluster_members"
+        ).fetchone()[0] == retained_run_id
         assert conn.execute(
             "SELECT COUNT(*) FROM image_embeddings"
-        ).fetchone()[0] == 1
+        ).fetchone()[0] == 2
     finally:
         conn.close()
 
@@ -580,9 +592,43 @@ def test_delete_run_cascades_only_grouping_data(tmp_path: Path) -> None:
     try:
         assert main_conn.execute(
             "SELECT COUNT(*) FROM files"
-        ).fetchone()[0] == 1
+        ).fetchone()[0] == 2
     finally:
         main_conn.close()
+
+
+def test_delete_run_rolls_back_all_grouping_rows_when_run_delete_fails(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    db.init_database(target)
+    file_id = insert_test_file(target, "2024/01/first.png", sha256="sha-1")
+    run_id, _cluster_id = insert_completed_run(target, (file_id,))
+    conn = connect_openclip_db(target)
+    try:
+        conn.execute(
+            """
+            CREATE TRIGGER reject_clustering_run_delete
+            BEFORE DELETE ON image_clustering_runs
+            BEGIN
+                SELECT RAISE(FAIL, 'test rollback');
+            END
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    with pytest.raises(sqlite3.IntegrityError, match="test rollback"):
+        delete_clustering_run(target, run_id)
+
+    conn = connect_openclip_db(target)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM image_clustering_runs").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM image_clusters").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM image_cluster_members").fetchone()[0] == 1
+    finally:
+        conn.close()
 
 
 def test_grouping_routes_block_lan_and_require_csrf_for_delete(
