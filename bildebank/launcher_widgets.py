@@ -213,14 +213,25 @@ def image_clustering_dialog(
     )
     neighbors_widgets = entry_row(5, "Antall naboer:", neighbors)
     resolution_widgets = entry_row(6, "CPM-oppløsning:", resolution)
-    leiden_widgets = neighbors_widgets + resolution_widgets
+    leiden_suggestions = ttk.Label(
+        frame,
+        text=(
+            "Forslag: Detaljerte grupper: 20 naboer og 0,2. "
+            "Mellomstore grupper: 50 og 0,2. Store grupper: 50 og 0,1. "
+            "Du kan skrive egne verdier i feltene over."
+        ),
+        wraplength=500,
+        justify="left",
+    )
+    leiden_suggestions.grid(row=7, column=0, columnspan=2, sticky="w", pady=(4, 2))
+    leiden_widgets = neighbors_widgets + resolution_widgets + (leiden_suggestions,)
     _query_label, query_entry = entry_row(
-        7,
+        8,
         "Filter (tomt betyr alle):",
         query,
         width=48,
     )
-    seed_widgets = entry_row(8, "Random seed:", seed)
+    seed_widgets = entry_row(9, "Random seed:", seed)
 
     def update_algorithm_fields(_event: Any = None) -> None:
         hdbscan = algorithm.get() == "HDBSCAN"
@@ -241,13 +252,13 @@ def image_clustering_dialog(
         frame,
         text='Skjul "Ute av fokus"',
         variable=hide_out_of_focus,
-    ).grid(row=9, column=0, columnspan=2, sticky="w", pady=(8, 4))
+    ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 4))
     ttk.Label(
         frame,
         textvariable=error,
         foreground="#a40000",
         wraplength=500,
-    ).grid(row=10, column=0, columnspan=2, sticky="w")
+    ).grid(row=11, column=0, columnspan=2, sticky="w")
     result: ImageClusteringDialogValues | None = None
 
     def accept() -> None:
@@ -318,7 +329,7 @@ def image_clustering_dialog(
 
     button_frame = ttk.Frame(frame)
     button_frame.grid(
-        row=11,
+        row=12,
         column=0,
         columnspan=2,
         sticky="e",

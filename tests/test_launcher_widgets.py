@@ -76,6 +76,8 @@ def test_leiden_dialog_hides_fixed_technical_parameters() -> None:
     assert "Nabomodus:" not in source
     assert "Minste likhet" not in source
     assert "Kantvekter:" not in source
+    assert "Detaljerte grupper: 20 naboer og 0,2" in source
+    assert "Du kan skrive egne verdier i feltene over." in source
     assert "random_seed=" not in leiden_source
     assert "neighbor_mode=" not in leiden_source
     assert "minimum_similarity=" not in leiden_source

@@ -402,6 +402,11 @@ Eksisterende dialog utvides med algoritmen **Leiden**. Når den er valgt, vises:
 - dagens filterfelt
 - dagens valg for å skjule «Ute av fokus»
 
+Dialogen viser tre veiledende kombinasjoner, men begge tallfeltene kan alltid
+endres manuelt: detaljerte grupper (`20`, `0.2`), mellomstore grupper (`50`,
+`0.2`) og store grupper (`50`, `0.1`). Forslagene endrer ikke verdiene før
+brukeren skriver dem inn.
+
 Dialogen skal forklare kort at høyere `k` vanligvis gir en tettere graf, at
 oppløsning påvirker detaljnivået. Validering skjer både i dialogen, workerens
 argumentbehandling og domenemodellen.

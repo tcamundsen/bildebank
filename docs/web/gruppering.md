@@ -25,8 +25,10 @@ bruke vesentlig mer tid og minne enn MiniBatchKMeans på store samlinger.
 **Leiden** bygger en graf av bilder som ligner hverandre og finner grupper i
 grafen. Du velger antall naboer og CPM-oppløsning. Høyere oppløsning gir
 vanligvis flere og mindre grupper. De øvrige tekniske innstillingene bruker
-testede standardverdier. Bilder som ikke får noen forbindelse til andre bilder,
-vises som **Ugrupperte bilder**.
+testede standardverdier. Dialogen foreslår tre startpunkter: detaljerte grupper
+med 20 naboer og 0,2 i CPM-oppløsning, mellomstore grupper med 50 og 0,2, og
+store grupper med 50 og 0,1. Du kan alltid skrive andre verdier. Bilder som
+ikke får noen forbindelse til andre bilder, vises som **Ugrupperte bilder**.
 
 Et tomt filter bruker alle aktive bilder. Valget **Skjul "Ute av fokus"** er
 av som standard. Jobben bruker embeddings som allerede er laget av
