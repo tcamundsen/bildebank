@@ -188,8 +188,8 @@ selvkanter eller duplikate kanter.
 - `mutual`: kanten A–B beholdes bare dersom A og B valgte hverandre.
 
 Første standard er `union`, fordi den er mindre utsatt for mange isolerte
-bilder. Brukergrensesnittet viser navnene **Åpen graf** og **Gjensidige
-naboer**, mens de stabile lagrede verdiene er `union` og `mutual`.
+bilder. Nabomodus er en fast, lagret intern innstilling i launcheren; de
+stabile verdiene er `union` og `mutual`.
 
 Grafen bygges i denne faste rekkefølgen:
 
@@ -205,15 +205,10 @@ Grafen bygges i denne faste rekkefølgen:
 
 ### Minste likhet og kantvekter
 
-Cosinuslikhet er en skår, ikke en sannsynlighet. Dette skal stå i hjelpeteksten.
-
-Minste likhet er valgfri i brukergrensesnittet:
-
-- tomt felt betyr effektiv terskel `0.0`
-- eksplisitt verdi må være mellom `0.0` og `1.0`
-- kanter med likhet lavere enn terskelen fjernes
-- kanter med vekt `0.0` fjernes også, slik at Leiden bare mottar positive
-  vekter i vektet modus
+Cosinuslikhet er en skår, ikke en sannsynlighet. Minste likhet og kantvekter
+er faste, lagrede interne innstillinger i launcheren: terskelen er `0.0` og
+vektene er `cosine`. Kanter med likhet lavere enn terskelen, eller vekt `0.0`,
+fjernes slik at Leiden bare mottar positive vekter i vektet modus.
 
 Negativ cosinuslikhet oppretter derfor aldri en kant i første leveranse.
 
@@ -267,10 +262,10 @@ Alle effektive Leiden-parametere skal angis eksplisitt i kode og lagres i
 - tilfeldig seed
 - vektmodus
 
-Launcher-dialogen eksponerer seed med standard 0. Iterasjonsvalget eksponeres
-ikke i første brukergrensesnitt; det får en dokumentert intern standard. Hvis
-det valgte biblioteket bruker en negativ verdi for «til stabilt resultat»,
-skal domenemodellen bruke et forståelig navn og bare oversette til råverdien i
+Launcher-dialogen eksponerer ikke seed eller iterasjonsvalg i første
+brukergrensesnitt. De får dokumenterte interne standarder; seed er `0`. Hvis
+det valgte biblioteket bruker en negativ verdi for «til stabilt resultat», skal
+domenemodellen bruke et forståelig navn og bare oversette til råverdien i
 bibliotekadapteren.
 
 Navn og versjon for graf- og Leiden-biblioteket lagres i en validert
@@ -403,17 +398,13 @@ Windows etter prosjektets vanlige låseflyt.
 Eksisterende dialog utvides med algoritmen **Leiden**. Når den er valgt, vises:
 
 - antall naboer, standard 20
-- nabomodus, standard **Åpen graf**
-- minste likhet, tomt felt betyr 0.0
-- kantvekter, standard **Cosinuslikhet**
 - CPM-oppløsning
-- seed, standard 0
 - dagens filterfelt
 - dagens valg for å skjule «Ute av fokus»
 
 Dialogen skal forklare kort at høyere `k` vanligvis gir en tettere graf, at
-oppløsning påvirker detaljnivået, og at likhetsskåren ikke er en sannsynlighet.
-Validering skjer både i dialogen, workerens argumentbehandling og domenemodellen.
+oppløsning påvirker detaljnivået. Validering skjer både i dialogen, workerens
+argumentbehandling og domenemodellen.
 
 Workerens eksisterende progresjonsmodell utvides med stadiene:
 

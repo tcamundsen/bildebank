@@ -5,7 +5,9 @@ import inspect
 from bildebank.launcher_import_tab import ImportTab
 from bildebank.launcher_tools_tab import ToolsTab
 from bildebank.launcher_widgets import (
+    ImageClusteringDialogValues,
     ask_string_dialog,
+    image_clustering_dialog,
     select_person_dialog,
     select_source_dialog,
     show_log_review_question,
@@ -58,3 +60,27 @@ def test_launcher_log_review_question_is_nonmodal() -> None:
     assert "set_busy(True" in source
     assert "set_busy(False" in source
     assert "_show_log_review_question" in pending_source
+
+
+def test_leiden_dialog_hides_fixed_technical_parameters() -> None:
+    source = inspect.getsource(image_clustering_dialog)
+    leiden_source = source.split('elif algorithm.get() == "Leiden":', 1)[1].split("        else:", 1)[0]
+    values = ImageClusteringDialogValues(
+        algorithm="leiden",
+        query="",
+        hide_out_of_focus=False,
+        neighbor_count=20,
+        resolution=0.2,
+    )
+
+    assert "Nabomodus:" not in source
+    assert "Minste likhet" not in source
+    assert "Kantvekter:" not in source
+    assert "random_seed=" not in leiden_source
+    assert "neighbor_mode=" not in leiden_source
+    assert "minimum_similarity=" not in leiden_source
+    assert "weight_mode=" not in leiden_source
+    assert values.random_seed == 0
+    assert values.neighbor_mode == "union"
+    assert values.minimum_similarity == 0.0
+    assert values.weight_mode == "cosine"

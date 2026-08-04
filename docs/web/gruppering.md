@@ -23,11 +23,10 @@ forlag er minste gruppestørrelse på 8 og **Min samples** på 3.  HDBSCAN kan
 bruke vesentlig mer tid og minne enn MiniBatchKMeans på store samlinger.
 
 **Leiden** bygger en graf av bilder som ligner hverandre og finner grupper i
-grafen. Standardverdiene er laget for utprøving: 20 naboer, åpen graf,
-cosinusvekter og CPM-oppløsning 0,2. Høyere oppløsning gir vanligvis flere og
-mindre grupper. **Gjensidige naboer** gir en strengere graf og kan føre til
-flere ugrupperte bilder. Et tomt felt for minste likhet betyr 0. Bildene som
-ikke får noen kant, vises som **Ugrupperte bilder**.
+grafen. Du velger antall naboer og CPM-oppløsning. Høyere oppløsning gir
+vanligvis flere og mindre grupper. De øvrige tekniske innstillingene bruker
+testede standardverdier. Bilder som ikke får noen forbindelse til andre bilder,
+vises som **Ugrupperte bilder**.
 
 Et tomt filter bruker alle aktive bilder. Valget **Skjul "Ute av fokus"** er
 av som standard. Jobben bruker embeddings som allerede er laget av
