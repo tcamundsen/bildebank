@@ -1681,3 +1681,25 @@
     event.preventDefault();
     window.location.href = link.href;
   });
+
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest(".header-menu-content a")) {
+      const dropdown = target.closest("details.header-menu-dropdown");
+      if (dropdown) dropdown.removeAttribute("open");
+    } else {
+      document.querySelectorAll("details.header-menu-dropdown[open]").forEach((menu) => {
+        if (target instanceof Node && !menu.contains(target)) {
+          menu.removeAttribute("open");
+        }
+      });
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      document.querySelectorAll("details.header-menu-dropdown[open]").forEach((menu) => {
+        menu.removeAttribute("open");
+      });
+    }
+  });
