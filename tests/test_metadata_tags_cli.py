@@ -297,8 +297,78 @@ class MetadataTagsCliTests(unittest.TestCase):
         self.assertIn('data-confirm-submit="Slette taggen Familie fra alle bilder?"', tags_body)
         self.assertLess(tags_body.index("<h2>Brukertagger</h2>"), tags_body.index("<h2>Systemtagger</h2>"))
         self.assertIn('<a class="person-link" href="/tag/Ute%20av%20fokus">0 bilder</a>', tags_body)
+        self.assertNotIn(db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW, item_body)
+        self.assertNotIn(db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW, tags_body)
         self.assertNotIn("systemtagg kan ikke endres", tags_body)
         self.assertNotIn("opprettet:", tags_body)
+
+    def test_duplicate_repair_system_tag_is_shown_only_when_used(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+
+            empty_item_body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+            )
+            empty_tags_body = tags_page_html(target)
+
+            conn = db.connect(target)
+            try:
+                db.tag_file(
+                    conn,
+                    file_id=1,
+                    tag_name=db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW,
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            used_item_body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+            )
+            used_tags_body = tags_page_html(target)
+
+        self.assertNotIn(
+            db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW,
+            empty_item_body,
+        )
+        self.assertNotIn(
+            db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW,
+            empty_tags_body,
+        )
+        self.assertIn(
+            f'data-tag-name="{db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW}"',
+            used_item_body,
+        )
+        self.assertIn(
+            db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW,
+            used_tags_body,
+        )
 
     def test_non_metadata_lists_files_not_placed_by_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

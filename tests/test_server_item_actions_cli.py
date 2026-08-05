@@ -1986,6 +1986,7 @@ class ServerItemActionsCliTests(unittest.TestCase):
         self.assertIn('data-tag-toggle="1"', body)
         self.assertIn('data-tag-name="Ute av fokus"', body)
         self.assertIn('data-tag-name="Familie"', body)
+        self.assertNotIn(db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW, body)
         self.assertIn('aria-pressed="false"', body)
         self.assertLess(
             body.index('data-tag-name="Ute av fokus"'),

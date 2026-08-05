@@ -52,6 +52,10 @@ navnet tilbake.
 Kode med særbehandling av en bestemt systemtagg slår opp eller filtrerer etter
 `system_key`, ikke norsk `name` eller `name_key`.
 
+Systemtaggen `duplicate_repair_review` beskriver resultatet av en historisk
+engangsreparasjon. Bildebrowserens taggsidepanel og `/tags` skjuler derfor
+taggen når den ikke har noen `file_tags`-koblinger. Selve taggraden beholdes.
+
 ## Tester
 
 Regresjonstestene dekker at:

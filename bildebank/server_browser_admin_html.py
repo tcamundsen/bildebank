@@ -66,7 +66,15 @@ def tags_page_html(
     finally:
         conn.close()
     user_rows = [row for row in rows if row["kind"] == db.TAG_KIND_USER]
-    system_rows = [row for row in rows if row["kind"] == db.TAG_KIND_SYSTEM]
+    system_rows = [
+        row
+        for row in rows
+        if row["kind"] == db.TAG_KIND_SYSTEM
+        and (
+            row["system_key"] != db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW_KEY
+            or int(row["file_count"]) > 0
+        )
+    ]
     user_content = (
         f"""
         <div class="user-tag-table">

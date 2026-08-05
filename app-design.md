@@ -322,6 +322,9 @@ lagring uten å kreve en separat databaseserver.
   `system_key=NULL`. Både bruker- og systemtagger er fortsatt koblet til bilder
   med den lokale `tags.id` gjennom `file_tags`; navn og `name_key` er ikke
   systemtaggens varige identitet
+- engangstaggen `duplicate_repair_review` vises i bildebrowserens taggsidepanel
+  og på `/tags` bare når minst ett bilde har taggen. Andre systemtagger, som
+  `out_of_focus`, kan fortsatt vises uten taggede bilder
 - ny runtime-kode skal anta v23, med mindre oppgaven eksplisitt gjelder
   migrering
 - den separate OpenCLIP-databasen har schema v3 og er beskrevet i

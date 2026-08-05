@@ -1005,8 +1005,16 @@ def tag_control_rows(
         """
         SELECT name, name_key, system_key
         FROM tags
+        WHERE system_key IS NULL
+           OR system_key != ?
+           OR EXISTS (
+                SELECT 1
+                FROM file_tags
+                WHERE file_tags.tag_id = tags.id
+           )
         ORDER BY CASE kind WHEN 'system' THEN 0 ELSE 1 END, name_key
-        """
+        """,
+        (db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW_KEY,),
     )
     cached = tuple(
         (
