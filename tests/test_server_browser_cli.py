@@ -186,6 +186,10 @@ class ServerBrowserCliTests(unittest.TestCase):
                 "bildebank.server_endpoints_browser.imported_source_by_id",
                 return_value=SimpleNamespace(id=9, name="Telefon"),
             ),
+            patch(
+                "bildebank.server_endpoints_browser.db.db_path_for_target",
+                return_value=Path("missing-test-database"),
+            ),
             patch("bildebank.server_endpoints_browser.respond_browser_source") as respond_browser_source,
         ):
             server_endpoints_faces.respond_person(handler, "Ada/item/1")
@@ -4147,7 +4151,10 @@ class ServerBrowserCliTests(unittest.TestCase):
                 conn.close()
             self.assertIsNotNone(imported)
             imported_source = imported_source_browser_source(imported)
-            tag_source = tag_browser_source(db.SYSTEM_TAG_OUT_OF_FOCUS)
+            tag_source = tag_browser_source(
+                db.SYSTEM_TAG_OUT_OF_FOCUS,
+                system_key=db.SYSTEM_TAG_OUT_OF_FOCUS_KEY,
+            )
 
             hidden_browser_item = source_item_by_id(
                 target,

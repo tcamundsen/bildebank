@@ -58,7 +58,10 @@ from .server_browser_sources import (
 PageRenderer = Callable[[str, str], str]
 Breadcrumb = tuple[str, str | None] | tuple[str, str | None, str | None]
 TAG_CONTROL_ROWS_CACHE_MAX_SIZE = 8
-TAG_CONTROL_ROWS_CACHE: dict[tuple[str, int], tuple[tuple[str, str], ...]] = {}
+TAG_CONTROL_ROWS_CACHE: dict[
+    tuple[str, int],
+    tuple[tuple[str, str, str | None], ...],
+] = {}
 MONTH_NAMES = {
     "01": "Januar",
     "02": "Februar",
@@ -908,12 +911,12 @@ def item_side_panel_html(
             f'aria-pressed="{pressed}">Kommentar</button>'
         )
     for tag in defined_tags:
-        tag_name, tag_name_key = tag
+        tag_name, tag_name_key, system_key = tag
         active = tag_name_key in active_names
         pressed = "true" if active else "false"
         active_class = " active" if active else ""
         redirect_attr = ""
-        if tag_name == db.SYSTEM_TAG_OUT_OF_FOCUS and out_of_focus_redirect_url:
+        if system_key == db.SYSTEM_TAG_OUT_OF_FOCUS_KEY and out_of_focus_redirect_url:
             redirect_attr = f' data-tag-hide-redirect="{html.escape(out_of_focus_redirect_url)}"'
         buttons.append(
             f'<button class="tag-toggle{active_class}" type="button" '
@@ -985,7 +988,10 @@ def hotkey_date_hint_text(hotkey: BrowserHotkeyConfig) -> str:
 
 
 
-def tag_control_rows(target: Path, conn: sqlite3.Connection) -> tuple[tuple[str, str], ...]:
+def tag_control_rows(
+    target: Path,
+    conn: sqlite3.Connection,
+) -> tuple[tuple[str, str, str | None], ...]:
     db_path = db.db_path_for_target(target)
     try:
         mtime_ns = db_path.stat().st_mtime_ns
@@ -997,12 +1003,19 @@ def tag_control_rows(target: Path, conn: sqlite3.Connection) -> tuple[tuple[str,
         return cached
     rows = conn.execute(
         """
-        SELECT name, name_key
+        SELECT name, name_key, system_key
         FROM tags
         ORDER BY CASE kind WHEN 'system' THEN 0 ELSE 1 END, name_key
         """
     )
-    cached = tuple((str(row["name"]), str(row["name_key"])) for row in rows)
+    cached = tuple(
+        (
+            str(row["name"]),
+            str(row["name_key"]),
+            str(row["system_key"]) if row["system_key"] is not None else None,
+        )
+        for row in rows
+    )
     if len(TAG_CONTROL_ROWS_CACHE) >= TAG_CONTROL_ROWS_CACHE_MAX_SIZE:
         TAG_CONTROL_ROWS_CACHE.pop(next(iter(TAG_CONTROL_ROWS_CACHE)))
     TAG_CONTROL_ROWS_CACHE[cache_key] = cached

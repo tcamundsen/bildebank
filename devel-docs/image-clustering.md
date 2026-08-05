@@ -51,7 +51,7 @@ CLI-arbeidsflyt.
 
 ### `files` og `file_sources`
 
-Hoveddatabasen har schema v22. `files` inneholder én kanonisk rad per lagret
+Hoveddatabasen har schema v23. `files` inneholder én kanonisk rad per lagret
 fil. `file_sources` er importproveniens og kan ha flere rader som peker på den
 samme `files.id` når samme filinnhold er funnet i flere importer.
 

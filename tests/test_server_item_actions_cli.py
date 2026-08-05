@@ -598,7 +598,9 @@ class ServerItemActionsCliTests(unittest.TestCase):
                 ) -> None:
                     responses.append({"content": content, "status": status})
 
-                server.note_tag_navigation_change = tag_navigation_changes.append
+                server.note_tag_navigation_change = lambda tag_name, **_kwargs: (
+                    tag_navigation_changes.append(tag_name)
+                )
 
             server_endpoints_items.respond_hotkey_action(FakeHandler())  # type: ignore[arg-type]
             server_endpoints_items.respond_hotkey_action(FakeHandler())  # type: ignore[arg-type]
@@ -2060,9 +2062,16 @@ class ServerItemActionsCliTests(unittest.TestCase):
                     self.timings.append(name)
 
                 def __init__(self) -> None:
-                    self.server.note_tag_navigation_change = (
-                        self.tag_navigation_changes.append
-                    )
+                    self.server.note_tag_navigation_change = self.note_tag_change
+
+                def note_tag_change(
+                    self,
+                    tag_name: str,
+                    *,
+                    system_key: str | None = None,
+                ) -> None:
+                    self.tag_navigation_changes.append(tag_name)
+                    self.tag_system_key = system_key
 
             handler = FakeHandler()
             server_endpoints_items.respond_tag_item(handler)  # type: ignore[arg-type]
@@ -2089,6 +2098,7 @@ class ServerItemActionsCliTests(unittest.TestCase):
             handler.timings, ["tag_read_payload", "tag_validate", "tag_apply"]
         )
         self.assertEqual(handler.tag_navigation_changes, [db.SYSTEM_TAG_OUT_OF_FOCUS])
+        self.assertEqual(handler.tag_system_key, db.SYSTEM_TAG_OUT_OF_FOCUS_KEY)
         self.assertIn('class="tag-toggle active"', body)
         self.assertIn('aria-pressed="true"', body)
         self.assertIn("Ute av fokus", info_body)
@@ -2144,7 +2154,9 @@ class ServerItemActionsCliTests(unittest.TestCase):
 
                 def __init__(self) -> None:
                     self.server.note_tag_navigation_change = (
-                        self.tag_navigation_changes.append
+                        lambda tag_name, **_kwargs: self.tag_navigation_changes.append(
+                            tag_name
+                        )
                     )
 
             handler = FakeHandler()

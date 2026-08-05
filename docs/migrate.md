@@ -61,6 +61,15 @@ v19-reparasjon av duplikate bilder, fordi tilhørende ansiktsdata da ryddes.
 
 Hvis migreringen feiler, skal databasen ikke oppgraderes, og backupen beholdes.
 
+## Migrering til v23
+
+V23 gir systemtaggene stabile, interne nøkler. De synlige norske navnene og
+taggene på bildene endres ikke. Eksisterende `tags.id` og alle koblinger i
+`file_tags` beholdes.
+
+Endringen berører bare hoveddatabasen. Den leser, flytter eller sletter ingen
+bilder eller videoer.
+
 ## Migrering til v21
 
 V21 forbereder databasen for permanent sletting fra Bildebanks papirkurv.

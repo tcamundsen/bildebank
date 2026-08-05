@@ -289,7 +289,7 @@ lagring uten å kreve en separat databaseserver.
 
 ## Databaseversjoner
 
-- gjeldende schema er v22
+- gjeldende schema er v23
 - eldste hoveddatabaseformat som støttes av gjeldende migrator er v5
 - v1–v4 er historiske, utfasete formater; eldre hjelpegrener i koden er ikke
   et løfte om at disse formatene kan oppgraderes direkte
@@ -309,7 +309,8 @@ lagring uten å kreve en separat databaseserver.
   devel-docs/database-v18-migration.md og
   devel-docs/database-v19-migration.md,
   devel-docs/database-v20-migration.md,
-  devel-docs/database-v21-migration.md
+  devel-docs/database-v21-migration.md og
+  devel-docs/database-v23-migration.md
 - v21 oppretter `file_tombstones` og den restriktive journalen
   `pending_file_purges`. SQLite-triggere håndhever at samme SHA-256 ikke kan
   finnes i både `files` og `file_tombstones`
@@ -317,7 +318,11 @@ lagring uten å kreve en separat databaseserver.
   endrer ikke mediefiler og oppretter ikke tombstones fra eksisterende
   papirkurvinnhold eller manglende filer
 - v22 legger til kommentarer og kamerafelter på `files`
-- ny runtime-kode skal anta v22, med mindre oppgaven eksplisitt gjelder
+- v23 legger til en stabil `tags.system_key` for systemtagger. Brukertagger har
+  `system_key=NULL`. Både bruker- og systemtagger er fortsatt koblet til bilder
+  med den lokale `tags.id` gjennom `file_tags`; navn og `name_key` er ikke
+  systemtaggens varige identitet
+- ny runtime-kode skal anta v23, med mindre oppgaven eksplisitt gjelder
   migrering
 - den separate OpenCLIP-databasen har schema v3 og er beskrevet i
   devel-docs/openclip-database.md

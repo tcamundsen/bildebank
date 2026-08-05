@@ -3269,6 +3269,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  opprette pending_file_purges")
     if plan.creates_file_view_stats:
         print("  opprette file_view_stats")
+    if plan.adds_system_tag_keys:
+        print("  legge til stabile systemnøkler for systemtagger")
     if plan.adds_metadata_datetime_column:
         print("  legge til metadata_datetime i files")
     if plan.adds_comment_column:
@@ -3372,6 +3374,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Oppretter pending_file_purges.")
     if result.creates_file_view_stats:
         print("Oppretter file_view_stats.")
+    if result.adds_system_tag_keys:
+        print("Legger til stabile systemnøkler for systemtagger.")
     if result.adds_metadata_datetime_column:
         print("Legger til metadata_datetime i files.")
         print("Kjør bildebank refresh-metadata --rescan for å fylle tidspunkt for eksisterende filer.")

@@ -305,7 +305,14 @@ def respond_tag(handler: BildebankRequestHandler, raw_path: str) -> None:
     raw_tag_name, page_mode, raw_value = parse_source_path(raw_path)
     tag_name = urllib.parse.unquote(raw_tag_name).strip()
     try:
-        source = tag_browser_source(tag_name)
+        system_key = None
+        if db.db_path_for_target(handler.server.target).is_file():
+            conn = db.connect_read_only(handler.server.target)
+            try:
+                system_key = db.system_tag_key_for_name(conn, tag_name)
+            finally:
+                conn.close()
+        source = tag_browser_source(tag_name, system_key=system_key)
     except ValueError as exc:
         handler.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
         return

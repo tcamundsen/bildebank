@@ -447,6 +447,14 @@ class ServerSearchCliTests(unittest.TestCase):
             conn = db.connect(target)
             try:
                 db.tag_file(conn, file_id=1, tag_name=db.SYSTEM_TAG_OUT_OF_FOCUS)
+                conn.execute(
+                    """
+                    UPDATE tags
+                    SET name = 'Uskarpt', name_key = 'uskarpt'
+                    WHERE system_key = ?
+                    """,
+                    (db.SYSTEM_TAG_OUT_OF_FOCUS_KEY,),
+                )
                 conn.commit()
             finally:
                 conn.close()

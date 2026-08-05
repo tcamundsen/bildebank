@@ -24,6 +24,7 @@ class BrowserSource:
     geo_place_slug: str | None = None
     geo_place_cells: tuple[str, ...] = ()
     tag_name: str | None = None
+    tag_system_key: str | None = None
     text_filter: Any | None = None
     cluster_run_id: int | None = None
     cluster_id: int | None = None
@@ -128,12 +129,17 @@ def geo_place_browser_source(place: PredefinedGeoPlace) -> BrowserSource:
     )
 
 
-def tag_browser_source(tag_name: str) -> BrowserSource:
+def tag_browser_source(
+    tag_name: str,
+    *,
+    system_key: str | None = None,
+) -> BrowserSource:
     name = db.normalize_tag_name(tag_name)
     return BrowserSource(
         f"Tagg: {name}",
         "/tag/" + urllib.parse.quote(name, safe=""),
         tag_name=name,
+        tag_system_key=system_key,
     )
 
 

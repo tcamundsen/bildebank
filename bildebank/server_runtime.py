@@ -287,9 +287,22 @@ class BildebankServer(ThreadingHTTPServer):
             self._source_item_counts[cache_key] = cached
         return cached[1]
 
-    def note_tag_navigation_change(self, tag_name: str) -> None:
+    def note_tag_navigation_change(
+        self,
+        tag_name: str,
+        *,
+        system_key: str | None = None,
+    ) -> None:
         tag_key = db.tag_name_key(tag_name)
-        if tag_key == db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS) and self.hide_out_of_focus:
+        effective_system_key = (
+            system_key
+            if system_key is not None
+            else db.system_tag_key_for_default_name(tag_name)
+        )
+        if (
+            effective_system_key == db.SYSTEM_TAG_OUT_OF_FOCUS_KEY
+            and self.hide_out_of_focus
+        ):
             self.clear_browser_navigation_cache()
             return
         self._clear_source_navigation_cache_for_tag(tag_key)

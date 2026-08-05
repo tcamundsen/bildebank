@@ -53,10 +53,10 @@ NOT EXISTS (
     FROM file_tags hidden_file_tags
     JOIN tags hidden_tags ON hidden_tags.id = hidden_file_tags.tag_id
     WHERE hidden_file_tags.file_id = files.id
-      AND hidden_tags.name_key = ?
+      AND hidden_tags.system_key = ?
 )
 """
-OUT_OF_FOCUS_FILTER_PARAMS = (db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS),)
+OUT_OF_FOCUS_FILTER_PARAMS = (db.SYSTEM_TAG_OUT_OF_FOCUS_KEY,)
 
 
 def is_image_item(item: Any) -> bool:
@@ -469,7 +469,7 @@ def should_filter_out_of_focus(source: BrowserSource, hide_out_of_focus: bool) -
         return False
     if source.tag_name is None:
         return True
-    return db.tag_name_key(source.tag_name) != db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS)
+    return source.tag_system_key != db.SYSTEM_TAG_OUT_OF_FOCUS_KEY
 
 
 def all_source_where(
@@ -559,7 +559,7 @@ def out_of_focus_file_ids(target: Path) -> set[int]:
             SELECT file_tags.file_id
             FROM file_tags
             JOIN tags ON tags.id = file_tags.tag_id
-            WHERE tags.name_key = ?
+            WHERE tags.system_key = ?
             """,
             OUT_OF_FOCUS_FILTER_PARAMS,
         )

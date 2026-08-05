@@ -55,6 +55,8 @@ def test_v21_migrates_file_view_stats_without_changing_files(tmp_path: Path) -> 
     conn = db.connect(target)
     try:
         conn.execute("DROP TABLE file_view_stats")
+        conn.execute("DROP INDEX idx_tags_system_key_unique")
+        conn.execute("ALTER TABLE tags DROP COLUMN system_key")
         conn.execute("UPDATE meta SET value = '21' WHERE key = 'schema_version'")
         conn.commit()
     finally:
@@ -67,7 +69,7 @@ def test_v21_migrates_file_view_stats_without_changing_files(tmp_path: Path) -> 
     assert result.creates_file_view_stats
     conn = db.connect(target)
     try:
-        assert db.schema_version(conn) == 22
+        assert db.schema_version(conn) == 23
         assert conn.execute("SELECT id FROM files").fetchone()["id"] == file_id
         assert conn.execute("SELECT * FROM file_view_stats").fetchall() == []
     finally:
