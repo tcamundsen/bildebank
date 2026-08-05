@@ -11,3 +11,9 @@ approval_mode = "approve"
 
 [mcp_servers.bildebank_dev.tools.get_example_database_summaries]
 approval_mode = "approve"
+
+[sandbox_workspace_write]
+network_access = true
+
+[features.network_proxy]
+enabled = true

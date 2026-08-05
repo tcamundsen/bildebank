@@ -15,7 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "mcp",
+    "mcp>=2,<3",
     "mypy",
     "pyflakes",
     "pytest",

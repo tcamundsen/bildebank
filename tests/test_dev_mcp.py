@@ -1,12 +1,52 @@
 from __future__ import annotations
 
 import sqlite3
+import socket
+import sys
 from contextlib import closing
 
 import pytest
 
 
 pytest.importorskip("mcp")
+
+
+def test_stdio_server_initializes_and_lists_tools() -> None:
+    reader, writer = socket.socketpair()
+    try:
+        try:
+            writer.send(b"x")
+        except PermissionError:
+            pytest.skip("sandboxen blokkerer asyncio sin interne AF_UNIX-vekkesocket")
+    finally:
+        reader.close()
+        writer.close()
+
+    import anyio
+    from mcp import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
+
+    from bildebank import dev_mcp
+
+    async def check_server() -> None:
+        parameters = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "bildebank.dev_mcp"],
+            cwd=dev_mcp.REPO_ROOT,
+        )
+        with anyio.fail_after(10):
+            async with stdio_client(parameters) as streams:
+                async with ClientSession(*streams) as session:
+                    initialization = await session.initialize()
+                    tools = await session.list_tools()
+
+        assert initialization.server_info.name == "Bildebank dev"
+        assert {tool.name for tool in tools.tools} == {
+            "get_schema_summary",
+            "get_example_database_summaries",
+        }
+
+    anyio.run(check_server)
 
 
 def test_schema_summary_uses_generated_schema_when_example_database_is_stale(
