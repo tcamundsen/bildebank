@@ -176,6 +176,7 @@ def tag_row_actions_html(tag_id: int, name: str) -> str:
             <input type="hidden" name="tag_id" value="{tag_id}">
             <input name="name" value="{escaped_name}" autocomplete="off" aria-label="Nytt taggnavn">
             <button type="submit">Lagre</button>
+            <button type="button" data-cancel-tag-rename>Avbryt</button>
           </form>
         </details>
         <form action="/tags/delete" method="post">

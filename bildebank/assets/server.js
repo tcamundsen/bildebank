@@ -1683,6 +1683,14 @@
   });
 
   document.addEventListener("click", (event) => {
+    const cancelTagRenameButton = event.target instanceof Element
+      ? event.target.closest("[data-cancel-tag-rename]")
+      : null;
+    if (cancelTagRenameButton) {
+      cancelTagRenameButton.closest("form")?.reset();
+      cancelTagRenameButton.closest("details.tag-rename-details")?.removeAttribute("open");
+      return;
+    }
     const target = event.target;
     if (target instanceof Element && target.closest(".header-menu-content a")) {
       const dropdown = target.closest("details.header-menu-dropdown");

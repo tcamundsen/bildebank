@@ -8,7 +8,7 @@ from pathlib import Path
 from bildebank import db
 from bildebank.geo import h3_cells_for_point
 from bildebank.server_browser_sources import tag_browser_source
-from bildebank.server_assets import SERVER_CSS
+from bildebank.server_assets import SERVER_CSS, SERVER_JS
 from bildebank.server_browser_info_html import date_source_text, image_info_content_html
 from bildebank.server_browser_queries import (
     adjacent_browser_items,
@@ -293,6 +293,11 @@ class MetadataTagsCliTests(unittest.TestCase):
         self.assertIn('<details class="tag-rename-details">', tags_body)
         self.assertIn('<summary class="tag-rename-toggle">Endre navn</summary>', tags_body)
         self.assertIn('<button type="submit">Lagre</button>', tags_body)
+        self.assertIn('<button type="button" data-cancel-tag-rename>Avbryt</button>', tags_body)
+        self.assertLess(tags_body.index(">Lagre</button>"), tags_body.index(">Avbryt</button>"))
+        self.assertIn('closest("[data-cancel-tag-rename]")', SERVER_JS)
+        self.assertIn('closest("form")?.reset()', SERVER_JS)
+        self.assertIn('closest("details.tag-rename-details")?.removeAttribute("open")', SERVER_JS)
         self.assertNotIn('<button type="submit">Endre navn</button>', tags_body)
         self.assertIn('data-confirm-submit="Slette taggen Familie fra alle bilder?"', tags_body)
         self.assertLess(tags_body.index("<h2>Brukertagger</h2>"), tags_body.index("<h2>Systemtagger</h2>"))
