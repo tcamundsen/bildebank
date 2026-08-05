@@ -34,6 +34,16 @@ OpenCV også systembiblioteket `libGL`:
 sudo apt install libgl1
 ```
 
+For å lage preview av videoer som ikke kan vises i nettleseren trenger du FFmpeg.
+```bash
+sudo apt install ffmpeg
+```
+
+For å hente ut metadata fra bilder anbefales det at exiftool er installert:
+```bash
+sudo apt install exiftool
+```
+
 ## Installer programmet
 
 Velg en mappe for programkoden, klon repoet og installer Bildebank i en lokal `.venv`:
