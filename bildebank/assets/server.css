@@ -380,7 +380,7 @@
       font-weight: 600;
     }
     .user-tag-row {
-      align-items: start;
+      align-items: center;
       padding: 10px;
       border: 1px solid var(--border);
       border-radius: 6px;
@@ -389,7 +389,7 @@
     }
     .user-tag-field { min-width: 0; }
     .user-tag-field-label { display: none; }
-    .user-tag-action { display: flex; align-items: start; }
+    .user-tag-action { display: flex; align-items: center; }
     .system-tag-table {
       grid-template-columns: max-content max-content;
       display: grid;
@@ -674,7 +674,11 @@
     .faces-button { color: var(--accent); }
     .nav-button:hover, .server-search-link:hover, .person-link:hover, .faces-button:hover { background: #3a3a3a; text-decoration: none; }
     .tag-rail .person-link:hover { background: #252525; text-decoration: underline; }
-    .danger-button { color: var(--danger); }
+    .danger-button {
+      min-height: 32px;
+      padding: 4px 7px;
+      color: var(--danger);
+    }
     .danger-button:hover { background: rgb(255 138 128 / 12%); }
     .disabled { color: #777; cursor: default; }
     .stage-shell {
