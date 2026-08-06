@@ -110,7 +110,11 @@ def source_dropdown_menu_html(
     links = []
     if face_enabled:
         links.append('<a class="server-search-link" href="/people">Personer</a>')
-    links.append('<a class="server-search-link" href="/random">Tilfeldig bilde</a>')
+    links.append(
+        '<a class="server-search-link" href="/random" aria-keyshortcuts="T" '
+        'title="Tilfeldig bilde (hurtigtast T)">Tilfeldig bilde'
+        '<span class="menu-shortcut" aria-hidden="true">T</span></a>'
+    )
     links.append('<a class="server-search-link" href="/filter">Filtersøk</a>')
     links.append('<a class="server-search-link" href="/geo">Steder</a>')
     links.append('<a class="server-search-link" href="/tags">Tagger</a>')

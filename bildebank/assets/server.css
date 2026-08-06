@@ -323,7 +323,10 @@
       white-space: nowrap;
     }
     .header-menu-content .server-search-link {
-      display: block;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
       padding: 8px 16px;
       color: var(--text);
       text-decoration: none;
@@ -333,6 +336,10 @@
       background: transparent;
       width: 100%;
       box-sizing: border-box;
+    }
+    .menu-shortcut {
+      color: var(--muted);
+      font-size: 0.85em;
     }
     .header-menu-content .server-search-link:hover {
       background: #3a3a3a;

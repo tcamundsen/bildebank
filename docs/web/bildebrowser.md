@@ -26,6 +26,7 @@ Men aller enklest er det å bruke tastaturet:
 | Pil ned | Neste måned |
 | Page Up | Forrige år |
 | Page Down | Neste år |
+| T | Vis et tilfeldig bilde |
 
 
 Hold musepekeren over knapper og lenker, så får du i de fleste tilfellene opp

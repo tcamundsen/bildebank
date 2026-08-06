@@ -339,6 +339,8 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn("ArrowDown", SERVER_JS)
         self.assertIn("PageUp", SERVER_JS)
         self.assertIn("PageDown", SERVER_JS)
+        self.assertIn('event.key.toLowerCase() === "t"', SERVER_JS)
+        self.assertIn('window.location.href = "/random"', SERVER_JS)
         self.assertIn("function attachSwipeNavigation", SERVER_JS)
         self.assertIn("const minDistance = 40;", SERVER_JS)
         self.assertIn("const verticalDominanceRatio = 0.75;", SERVER_JS)

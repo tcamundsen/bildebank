@@ -1660,6 +1660,11 @@
       target instanceof HTMLButtonElement ||
       target?.isContentEditable
     ) return;
+    if (event.key.toLowerCase() === "t") {
+      event.preventDefault();
+      window.location.href = "/random";
+      return;
+    }
     if (["1", "2", "3", "4", "5"].includes(event.key)) {
       const itemRoot = document.querySelector("[data-browser-item-id]");
       if (itemRoot?.dataset.browserHotkeysEnabled !== "true") return;

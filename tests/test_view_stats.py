@@ -366,7 +366,10 @@ def test_random_endpoint_and_item_page_client_markup(tmp_path: Path) -> None:
     )
     assert 'data-view-registration-enabled="true"' in page
     assert "data-view-registration-enabled" not in read_only_page
-    assert 'href="/random">Tilfeldig bilde</a>' in page
+    assert 'href="/random" aria-keyshortcuts="T"' in page
+    assert 'Tilfeldig bilde<span class="menu-shortcut" aria-hidden="true">T</span>' in page
+    assert 'event.key.toLowerCase() === "t"' in SERVER_JS
+    assert 'window.location.href = "/random"' in SERVER_JS
     assert 'data-view-status hidden aria-live="polite">(sett)</span>' in page
     assert "/api/item-viewed" in SERVER_JS
     assert "payload?.recorded === true" in SERVER_JS
