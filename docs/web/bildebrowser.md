@@ -34,6 +34,10 @@ steder, tagger, innstillinger og andre oversikter. Når du er inne i et
 søkeresultat eller en annen avgrenset visning, bruker du **Alle bilder** for å
 gå tilbake til hele bildesamlingen.
 
+På **Dashboard** er samlingstallene lenker til de tilsvarende bildene eller
+oversiktene. Du kan for eksempel åpne alle bilder, alle videoer, filer uten
+dato, slettede bilder eller importerte mapper direkte fra tallene.
+
 ## Bildesiden
 
 Bildesiden viser ett bilde, én video eller én annen fil om gangen.

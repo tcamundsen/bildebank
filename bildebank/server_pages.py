@@ -124,6 +124,10 @@ def dashboard_page_html(server: Any) -> str:
         face_enabled=server.face_enabled,
         openclip_enabled=server.openclip_enabled,
         hide_local_paths=getattr(server, "lan_share", False),
+        read_only=(
+            getattr(server, "read_only", False)
+            or getattr(server, "lan_share", False)
+        ),
     )
 
 
