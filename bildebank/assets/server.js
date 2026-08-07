@@ -1740,7 +1740,10 @@
     ) return;
     if (event.key.toLowerCase() === "t") {
       event.preventDefault();
-      window.location.href = "/random";
+      const randomLink = document.querySelector("[data-random-link]");
+      window.location.href = randomLink instanceof HTMLAnchorElement
+        ? randomLink.href
+        : "/random";
       return;
     }
     if (["1", "2", "3", "4", "5"].includes(event.key)) {

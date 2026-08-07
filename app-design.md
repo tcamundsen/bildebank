@@ -544,6 +544,11 @@ bruke felles funksjoner for selve browseren, for eksempel
 utvalg får samme blaing, rotering, bildeinfo, sletting og lenkestruktur uten at
 det lages egne parallelle browsere for hvert tilfelle.
 
+Tilfeldig bilde skal bruke det aktive browserutvalget når handlingen startes
+fra et filtrert `BrowserSource`, og beholde utvalgets item-URL ved redirect.
+Utvalget skal bruke samme prioritering av usette og lenge siden sette filer som
+den globale tilfeldige bilde-funksjonen.
+
 I read-only-modus skal også direkte medieendepunkter bare gi tilgang til
 aktive `files`-rader. At innstillinger og siden for fjernede filer er skjult,
 er ikke i seg selv en tilstrekkelig tilgangsgrense. Før serveren åpner en

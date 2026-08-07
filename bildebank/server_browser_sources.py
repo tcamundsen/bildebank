@@ -39,7 +39,10 @@ def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
     source_part = raw_path.strip("/")
     page_mode = None
     raw_value = ""
-    if "/item/" in source_part:
+    if source_part.endswith("/random"):
+        source_part = source_part.removesuffix("/random")
+        page_mode = "random"
+    elif "/item/" in source_part:
         source_part, raw_value = source_part.split("/item/", 1)
         page_mode = "item"
     elif "/year/" in source_part:
@@ -318,6 +321,12 @@ def source_item_url(source: BrowserSource, file_id: int) -> str:
     if is_filtered_source(source):
         return f"{source.root_url}/item/{file_id}"
     return f"/item/{file_id}"
+
+
+def source_random_url(source: BrowserSource) -> str:
+    if is_filtered_source(source):
+        return f"{source.root_url}/random"
+    return "/random"
 
 
 def source_month_url(source: BrowserSource, month_key: str) -> str:

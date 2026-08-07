@@ -31,6 +31,7 @@ from .server_browser_sources import (
     imported_source_browser_source,
     parse_source_path,
     source_has_sql_filter,
+    source_item_url,
     tag_browser_source,
 )
 from .server_filter import text_filter_browser_source
@@ -58,9 +59,24 @@ def respond_browser_root(handler: BildebankRequestHandler) -> None:
     respond_years(handler)
 
 
-def respond_random_item(handler: BildebankRequestHandler) -> None:
-    browser_file_ids = handler.server.browser_item_ids(
-        hide_out_of_focus=handler.server.hide_out_of_focus
+def respond_random_item(
+    handler: BildebankRequestHandler,
+    source: BrowserSource | None = None,
+    *,
+    hide_out_of_focus: bool | None = None,
+) -> None:
+    hide_out_of_focus = (
+        handler.server.hide_out_of_focus
+        if hide_out_of_focus is None
+        else hide_out_of_focus
+    )
+    browser_file_ids = (
+        handler.server.browser_item_ids(hide_out_of_focus=hide_out_of_focus)
+        if source is None
+        else handler.server.source_item_order(
+            source,
+            hide_out_of_focus=hide_out_of_focus,
+        )[0]
     )
     browser_db_connection = getattr(handler, "browser_db_connection", None)
     conn, close_conn = (
@@ -78,11 +94,20 @@ def respond_random_item(handler: BildebankRequestHandler) -> None:
             conn.close()
     if file_id is None:
         handler.respond_text(
-            "Fant ingen aktive bilder eller videoer i bildesamlingen.",
+            (
+                "Fant ingen aktive bilder eller videoer i dette utvalget."
+                if source is not None
+                else "Fant ingen aktive bilder eller videoer i bildesamlingen."
+            ),
             status=HTTPStatus.NOT_FOUND,
         )
         return
-    handler.redirect(f"/item/{file_id}")
+    location = (
+        source_item_url(source, file_id)
+        if source is not None
+        else f"/item/{file_id}"
+    )
+    handler.redirect(location)
 
 
 def respond_item(handler: BildebankRequestHandler, raw_file_id: str) -> None:
@@ -420,6 +445,13 @@ def respond_browser_source(
     face_config: FaceRecognitionConfig | None = None,
     hide_out_of_focus: bool = False,
 ) -> None:
+    if page_mode == "random":
+        respond_random_item(
+            handler,
+            source,
+            hide_out_of_focus=hide_out_of_focus,
+        )
+        return
     if page_mode is None:
         handler.respond_html(
             source_years_page_html(

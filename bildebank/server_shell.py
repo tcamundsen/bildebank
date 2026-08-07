@@ -6,9 +6,11 @@ from typing import Any, Callable
 from .server_browser_sources import (
     BrowserSource,
     all_browser_source,
+    is_filtered_source,
     person_browser_source,
     source_item_url,
     source_month_url,
+    source_random_url,
     source_year_url,
 )
 
@@ -103,6 +105,7 @@ def source_all_items_link_html(
 
 
 def source_dropdown_menu_html(
+    source: BrowserSource,
     *,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
@@ -110,9 +113,16 @@ def source_dropdown_menu_html(
     links = []
     if face_enabled:
         links.append('<a class="server-search-link" href="/people">Personer</a>')
+    random_label = (
+        "Tilfeldig i utvalget"
+        if is_filtered_source(source)
+        else "Tilfeldig bilde"
+    )
+    random_url = source_random_url(source)
     links.append(
-        '<a class="server-search-link" href="/random" aria-keyshortcuts="T" '
-        'title="Tilfeldig bilde (hurtigtast T)">Tilfeldig bilde'
+        f'<a class="server-search-link" href="{html.escape(random_url)}" '
+        'data-random-link aria-keyshortcuts="T" '
+        f'title="{random_label} (hurtigtast T)">{random_label}'
         '<span class="menu-shortcut" aria-hidden="true">T</span></a>'
     )
     links.append('<a class="server-search-link" href="/filter">Filtersøk</a>')
@@ -170,6 +180,7 @@ def source_action_links_html(
         all_items_label=all_items_label,
     )
     dropdown_menu = source_dropdown_menu_html(
+        source,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
     )

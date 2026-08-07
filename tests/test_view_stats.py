@@ -16,7 +16,8 @@ from bildebank.server_browser_queries import (
     browser_item_ids,
     browser_month_navigation,
 )
-from bildebank.server_pages import item_page_html
+from bildebank.server_browser_sources import parse_source_path, tag_browser_source
+from bildebank.server_pages import item_page_html, source_item_page_html
 from tests.db_test_helpers import insert_test_file
 
 
@@ -366,12 +367,63 @@ def test_random_endpoint_and_item_page_client_markup(tmp_path: Path) -> None:
     )
     assert 'data-view-registration-enabled="true"' in page
     assert "data-view-registration-enabled" not in read_only_page
-    assert 'href="/random" aria-keyshortcuts="T"' in page
+    assert 'href="/random" data-random-link aria-keyshortcuts="T"' in page
     assert 'Tilfeldig bilde<span class="menu-shortcut" aria-hidden="true">T</span>' in page
     assert 'event.key.toLowerCase() === "t"' in SERVER_JS
-    assert 'window.location.href = "/random"' in SERVER_JS
+    assert 'document.querySelector("[data-random-link]")' in SERVER_JS
+    assert "randomLink.href" in SERVER_JS
     assert 'data-view-status hidden aria-live="polite">(sett)</span>' in page
     assert "/api/item-viewed" in SERVER_JS
     assert "payload?.recorded === true" in SERVER_JS
     assert "window.setTimeout(register, imageViewDelayMs())" in SERVER_JS
     assert "video.addEventListener(\"seeking\"" in SERVER_JS
+
+
+def test_random_endpoint_keeps_filtered_browser_source(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    db.init_database(target)
+    included_id = insert_test_file(target, "2024/01/included.png")
+    insert_test_file(target, "2024/01/excluded.png")
+    source = tag_browser_source("Favoritt")
+    response: dict[str, object] = {}
+    seen_sources: list[object] = []
+
+    def source_item_order(actual_source: object, *, hide_out_of_focus: bool):
+        seen_sources.append(actual_source)
+        assert hide_out_of_focus is True
+        return [included_id], {included_id: 0}
+
+    handler = SimpleNamespace(
+        server=SimpleNamespace(
+            target=target,
+            hide_out_of_focus=True,
+            source_item_order=source_item_order,
+        ),
+        redirect=lambda location: response.update(location=location),
+        respond_text=lambda content, *, status: response.update(
+            content=content,
+            status=status,
+        ),
+    )
+
+    server_endpoints_browser.respond_random_item(  # type: ignore[arg-type]
+        handler,
+        source,
+    )
+
+    assert seen_sources == [source]
+    assert response["location"] == f"/tag/Favoritt/item/{included_id}"
+    assert parse_source_path("Favoritt/random") == ("Favoritt", "random", "")
+
+    item = browser_item_by_id(target, included_id)
+    assert item is not None
+    page = source_item_page_html(
+        target,
+        source,
+        item,
+        None,
+        None,
+        browser_month_navigation(target, item),
+    )
+    assert 'href="/tag/Favoritt/random" data-random-link' in page
+    assert "Tilfeldig i utvalget" in page

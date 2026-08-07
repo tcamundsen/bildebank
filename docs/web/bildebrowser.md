@@ -83,6 +83,11 @@ Velg **Meny → Tilfeldig bilde**, eller trykk `T`. Dette er en enkel måte å g
 på oppdagelsesferd i samlingen på. Trykk `T` flere ganger for å fortsette med
 nye tilfeldige bilder.
 
+Hvis du står i et filtersøk eller blar i bilder for en tagg, person, kilde,
+gruppe eller et definert sted, heter menyvalget **Tilfeldig i utvalget**.
+Da velges bildet bare blant bildene i denne visningen, og du fortsetter å bla
+innenfor det samme utvalget.
+
 Bildebank foretrekker bilder som ikke er registrert som sett. Når alle er
 sett, velges det blant bildene som det er lengst siden du så. Et bilde regnes
 først som sett når den vanlige bildesiden har vært synlig en liten stund; det
