@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import re
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -17,15 +18,22 @@ from .openclip import (
     active_embedding_table,
     attach_main_database,
     connect_openclip_db,
+    connect_openclip_db_read_only,
     create_search_run,
     load_text_model,
     text_embedding,
 )
-from .server_browser_sources import all_browser_source, source_item_url
+from .server_browser_sources import (
+    BrowserSource,
+    all_browser_source,
+    search_results_browser_source,
+    source_item_url,
+)
 from .target_lock import TargetLock
 
 
 DEFAULT_SEARCH_LIMIT = 100
+SIMILAR_SEARCH_QUERY_RE = re.compile(r"similar:file_id=([1-9]\d*)\Z")
 ShellPageRenderer = Any
 
 
@@ -33,6 +41,7 @@ ShellPageRenderer = Any
 class ServerSearchStats:
     query: str
     results: tuple[ImageSearchResult, ...]
+    run_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -40,6 +49,29 @@ class ServerSimilarSearchStats:
     reference_file_id: int
     reference_target_path: Path
     results: tuple[ImageSearchResult, ...]
+    run_id: int | None = None
+
+
+@dataclass(frozen=True)
+class StoredVectorSearch:
+    run_id: int
+    results: tuple[ImageSearchResult, ...]
+
+
+@dataclass(frozen=True)
+class StoredSearchRun:
+    run_id: int
+    query: str
+    model_name: str
+    pretrained: str
+    result_limit: int
+    created_at: str
+    results: tuple[ImageSearchResult, ...]
+
+    @property
+    def similar_reference_file_id(self) -> int | None:
+        match = SIMILAR_SEARCH_QUERY_RE.fullmatch(self.query)
+        return int(match.group(1)) if match is not None else None
 
 
 @dataclass(frozen=True)
@@ -108,7 +140,7 @@ class OpenClipSearchCache:
         limit: int,
         *,
         hidden_file_ids: set[int] | None = None,
-    ) -> tuple[ImageSearchResult, ...]:
+    ) -> StoredVectorSearch:
         with self._lock:
             self._ensure_model_loaded()
             text_vector = normalized_search_vector(text_embedding(self._model, self._tokenizer, query))
@@ -136,7 +168,7 @@ class OpenClipSearchCache:
         limit: int = DEFAULT_SEARCH_LIMIT,
         *,
         hidden_file_ids: set[int] | None = None,
-    ) -> tuple[ImageSearchResult, ...]:
+    ) -> StoredVectorSearch:
         limit = min(max(1, limit), DEFAULT_SEARCH_LIMIT)
         with self._lock:
             conn = connect_openclip_db(target)
@@ -178,7 +210,7 @@ class OpenClipSearchCache:
         limit: int,
         search_vector: Any,
         excluded_file_ids: set[int] | None = None,
-    ) -> tuple[ImageSearchResult, ...]:
+    ) -> StoredVectorSearch:
         scores = search_scores(embeddings.matrix, search_vector)
         excluded_file_ids = excluded_file_ids or set()
         top_indexes = top_score_indexes(
@@ -211,7 +243,7 @@ class OpenClipSearchCache:
             if len(results) >= limit:
                 break
         conn.commit()
-        return tuple(results)
+        return StoredVectorSearch(run_id, tuple(results))
 
     def _cached_embeddings(self, conn: sqlite3.Connection) -> SearchEmbeddingCache:
         key = search_embedding_cache_key(conn, self.config.openclip.model_name, self.config.openclip.pretrained)
@@ -331,8 +363,8 @@ def search_server_images(server: Any, *, query: str, limit: int) -> ServerSearch
             from .server_browser_queries import out_of_focus_file_ids
 
             hidden_file_ids = out_of_focus_file_ids(server.target)
-        results = server.search_cache.search(server.target, clean_query, limit, hidden_file_ids=hidden_file_ids)
-        return ServerSearchStats(clean_query, results)
+        stored = server.search_cache.search(server.target, clean_query, limit, hidden_file_ids=hidden_file_ids)
+        return ServerSearchStats(clean_query, stored.results, stored.run_id)
 
 
 def search_server_similar_images(
@@ -353,7 +385,7 @@ def search_server_similar_images(
             from .server_browser_queries import out_of_focus_file_ids
 
             hidden_file_ids = out_of_focus_file_ids(server.target)
-        results = server.search_cache.similar(
+        stored = server.search_cache.similar(
             server.target,
             file_id,
             limit,
@@ -362,8 +394,78 @@ def search_server_similar_images(
         return ServerSimilarSearchStats(
             reference_file_id=file_id,
             reference_target_path=Path(str(reference_item["target_path"])),
+            results=stored.results,
+            run_id=stored.run_id,
+        )
+
+
+def load_stored_search_run(target: Path, run_id: int) -> StoredSearchRun | None:
+    if run_id <= 0:
+        return None
+    from .openclip import openclip_db_path
+
+    if not openclip_db_path(target).is_file():
+        return None
+    conn = connect_openclip_db_read_only(target)
+    try:
+        row = conn.execute(
+            """
+            SELECT id, query, model_name, pretrained, result_limit, created_at
+            FROM image_search_runs
+            WHERE id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        results = tuple(
+            ImageSearchResult(
+                rank=int(result["rank"]),
+                file_id=int(result["file_id"]),
+                target_path=Path(str(result["target_path"])),
+                similarity=float(result["similarity"]),
+            )
+            for result in conn.execute(
+                """
+                SELECT rank, file_id, target_path, similarity
+                FROM image_search_results
+                WHERE run_id = ?
+                ORDER BY rank
+                """,
+                (run_id,),
+            )
+        )
+        return StoredSearchRun(
+            run_id=int(row["id"]),
+            query=str(row["query"]),
+            model_name=str(row["model_name"]),
+            pretrained=str(row["pretrained"]),
+            result_limit=int(row["result_limit"]),
+            created_at=str(row["created_at"]),
             results=results,
         )
+    finally:
+        conn.close()
+
+
+def stored_search_browser_source(
+    target: Path,
+    run: StoredSearchRun,
+) -> BrowserSource:
+    reference_file_id = run.similar_reference_file_id
+    if reference_file_id is None:
+        title = f"Bildesøk: {run.query}"
+    else:
+        from .server_browser_queries import active_item_by_id_including_hidden
+
+        reference_item = active_item_by_id_including_hidden(target, reference_file_id)
+        reference_name = (
+            Path(str(reference_item["target_path"])).name
+            if reference_item is not None
+            else f"bilde-{reference_file_id}"
+        )
+        title = f"Lignende bilder: {reference_name}"
+    return search_results_browser_source(run.run_id, title)
 
 
 def search_start_html(
@@ -400,14 +502,20 @@ def search_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
 ) -> str:
+    source = (
+        search_results_browser_source(stats.run_id, f"Bildesøk: {stats.query}")
+        if stats.run_id is not None
+        else None
+    )
     return shell_page_html(
         f"Bildesøk: {stats.query}",
         f"""
         <h1>Bildesøk</h1>
         {search_form(stats.query, limit, model_loaded=model_loaded)}
         <p class="meta">{len(stats.results)} treff. Sortert med beste match først. Modell lastet: {'ja' if model_loaded else 'nei'}.</p>
-        {search_results_grid_html(target, stats.results)}
+        {search_results_grid_html(target, stats.results, source=source)}
         """,
+        source=source,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
     )
@@ -423,14 +531,23 @@ def similar_search_html(
 ) -> str:
     reference_name = stats.reference_target_path.name
     reference_url = source_item_url(all_browser_source(), stats.reference_file_id)
+    source = (
+        search_results_browser_source(
+            stats.run_id,
+            f"Lignende bilder: {reference_name}",
+        )
+        if stats.run_id is not None
+        else None
+    )
     return shell_page_html(
         f"Bilder som ligner på {reference_name}",
         f"""
         <h1>Bilder som ligner på {html.escape(reference_name)}</h1>
         <p><a href="{html.escape(reference_url)}">Tilbake til referansebildet</a></p>
         <p class="meta">{len(stats.results)} treff. Sortert med beste match først.</p>
-        {search_results_grid_html(target, stats.results)}
+        {search_results_grid_html(target, stats.results, source=source)}
         """,
+        source=source,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
     )
@@ -439,10 +556,17 @@ def similar_search_html(
 def search_results_grid_html(
     target: Path,
     results: tuple[ImageSearchResult, ...],
+    *,
+    source: BrowserSource | None = None,
 ) -> str:
     items_by_id = search_result_items_by_id(target, results)
     items = "\n".join(
-        result_html(target, result, items_by_id.get(result.file_id))
+        result_html(
+            target,
+            result,
+            items_by_id.get(result.file_id),
+            source=source,
+        )
         for result in results
     )
     return f"""
@@ -482,10 +606,16 @@ def search_result_items_by_id(target: Path, results: tuple[ImageSearchResult, ..
         return {}
 
 
-def result_html(target: Path, result: ImageSearchResult, item: Any | None = None) -> str:
+def result_html(
+    target: Path,
+    result: ImageSearchResult,
+    item: Any | None = None,
+    *,
+    source: BrowserSource | None = None,
+) -> str:
     relative = relative_to_target(target, result.target_path)
     url = f"/file/{result.file_id}"
-    item_url = source_item_url(all_browser_source(), result.file_id)
+    item_url = source_item_url(source or all_browser_source(), result.file_id)
     path_text = str(relative).replace("\\", "/")
     link_class = ""
     rotation_style = ""

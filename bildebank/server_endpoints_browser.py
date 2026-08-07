@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import urllib.parse
 from http import HTTPStatus
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import db
@@ -45,8 +46,16 @@ from .server_pages import (
     source_month_page_html,
     source_year_months_page_html,
     source_years_page_html,
+    search_html,
+    similar_search_html,
     year_months_page_html,
     years_page_html,
+)
+from .server_search import (
+    ServerSearchStats,
+    ServerSimilarSearchStats,
+    load_stored_search_run,
+    stored_search_browser_source,
 )
 from .server_request import first_param, nonnegative_int_param, parse_file_id, positive_int_param
 from .server_response import add_csrf_to_html, read_only_html
@@ -301,6 +310,69 @@ def respond_filter_source(handler: BildebankRequestHandler, raw_path: str) -> No
         hide_out_of_focus=handler.server.hide_out_of_focus,
         item_not_found_message="Filen finnes ikke for dette filtersøket.",
         invalid_page_message="Ugyldig filtersøkside.",
+    )
+
+
+def respond_search_run(handler: BildebankRequestHandler, raw_path: str) -> None:
+    raw_run_id, page_mode, raw_value = parse_source_path(raw_path)
+    if not raw_run_id.isdigit() or int(raw_run_id) <= 0:
+        handler.respond_text("Ugyldig søkejobb.", status=HTTPStatus.BAD_REQUEST)
+        return
+    run = load_stored_search_run(handler.server.target, int(raw_run_id))
+    if run is None:
+        handler.respond_text("Fant ikke søkejobben.", status=HTTPStatus.NOT_FOUND)
+        return
+    source = stored_search_browser_source(handler.server.target, run)
+    if page_mode is not None:
+        respond_browser_source(
+            handler,
+            source,
+            page_mode,
+            raw_value,
+            hide_out_of_focus=handler.server.hide_out_of_focus,
+            item_not_found_message="Filen finnes ikke i dette søkeresultatet.",
+            invalid_page_message="Ugyldig søkeresultatside.",
+        )
+        return
+
+    item_ids, _ = handler.server.source_item_order(
+        source,
+        hide_out_of_focus=handler.server.hide_out_of_focus,
+    )
+    visible_ids = set(item_ids)
+    results = tuple(result for result in run.results if result.file_id in visible_ids)
+    reference_file_id = run.similar_reference_file_id
+    if reference_file_id is None:
+        handler.respond_html(
+            search_html(
+                handler.server,
+                ServerSearchStats(run.query, results, run.run_id),
+                run.result_limit,
+            )
+        )
+        return
+
+    from .server_browser_queries import active_item_by_id_including_hidden
+
+    reference_item = active_item_by_id_including_hidden(
+        handler.server.target,
+        reference_file_id,
+    )
+    reference_path = (
+        Path(str(reference_item["target_path"]))
+        if reference_item is not None
+        else Path(f"bilde-{reference_file_id}")
+    )
+    handler.respond_html(
+        similar_search_html(
+            handler.server,
+            ServerSimilarSearchStats(
+                reference_file_id,
+                reference_path,
+                results,
+                run.run_id,
+            ),
+        )
     )
 
 

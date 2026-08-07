@@ -26,6 +26,7 @@ class BrowserSource:
     tag_name: str | None = None
     tag_system_key: str | None = None
     text_filter: Any | None = None
+    search_run_id: int | None = None
     cluster_run_id: int | None = None
     cluster_id: int | None = None
 
@@ -162,6 +163,14 @@ def cluster_browser_source(
     )
 
 
+def search_results_browser_source(run_id: int, title: str) -> BrowserSource:
+    return BrowserSource(
+        title,
+        f"/search/runs/{run_id}",
+        search_run_id=run_id,
+    )
+
+
 def is_filtered_source(source: BrowserSource) -> bool:
     return (
         source.person_name is not None
@@ -171,6 +180,7 @@ def is_filtered_source(source: BrowserSource) -> bool:
         or source.geo_place_slug is not None
         or source.tag_name is not None
         or source.text_filter is not None
+        or source.search_run_id is not None
         or source.cluster_id is not None
     )
 
@@ -181,6 +191,8 @@ def source_has_sql_filter(source: BrowserSource) -> bool:
 
         return not text_filter_has_runtime_filter(source.text_filter)
     if source.cluster_id is not None:
+        return True
+    if source.search_run_id is not None:
         return True
     return (
         source.person_name is not None
@@ -197,6 +209,17 @@ def source_includes_deleted(source: BrowserSource) -> bool:
 
 
 def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[object, ...]]:
+    if source.search_run_id is not None:
+        return (
+            """
+            files.id IN (
+                SELECT file_id
+                FROM openclip_db.image_search_results
+                WHERE run_id = ?
+            )
+            """,
+            (source.search_run_id,),
+        )
     if source.cluster_id is not None:
         if source.cluster_run_id is None:
             raise ValueError("Gruppekilden mangler run-ID.")

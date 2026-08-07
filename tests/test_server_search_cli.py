@@ -9,11 +9,18 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from bildebank import db
+from bildebank import db, server_endpoints_browser
 from bildebank.config import AppConfig, BrowserConfig, OpenClipConfig
 from bildebank.db import init_database
-from bildebank.openclip import ImageSearchResult, connect_openclip_db, embedding_blob, openclip_db_path
-from bildebank.server_browser_queries import item_by_id
+from bildebank.openclip import (
+    ImageSearchResult,
+    connect_openclip_db,
+    create_search_run,
+    embedding_blob,
+    openclip_db_path,
+)
+from bildebank.server_browser_queries import item_by_id, source_item_ids
+from bildebank.server_browser_sources import search_results_browser_source
 from bildebank.server_handler import BildebankRequestHandler
 from bildebank.server_pages import item_page_html, search_html, search_start_html, similar_search_html
 from bildebank.server_search import (
@@ -21,6 +28,7 @@ from bildebank.server_search import (
     OpenClipSearchCache,
     ServerSearchStats,
     ServerSimilarSearchStats,
+    load_stored_search_run,
     load_search_embedding_cache,
     search_server_images,
     search_server_similar_images,
@@ -61,6 +69,43 @@ class ServerSearchCliTests(unittest.TestCase):
                 ],
             )
             conn.commit()
+        finally:
+            conn.close()
+
+    def insert_search_run(
+        self,
+        target: Path,
+        query: str,
+        results: list[tuple[int, str, float]],
+    ) -> int:
+        config = OpenClipConfig()
+        conn = connect_openclip_db(target)
+        try:
+            run_id = create_search_run(conn, query, config, len(results))
+            conn.executemany(
+                """
+                INSERT INTO image_search_results(
+                    run_id, file_id, target_path, target_path_key,
+                    similarity, rank
+                ) VALUES(?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        run_id,
+                        file_id,
+                        target_path,
+                        target_path.casefold(),
+                        similarity,
+                        rank,
+                    )
+                    for rank, (file_id, target_path, similarity) in enumerate(
+                        results,
+                        start=1,
+                    )
+                ],
+            )
+            conn.commit()
+            return run_id
         finally:
             conn.close()
 
@@ -200,6 +245,7 @@ class ServerSearchCliTests(unittest.TestCase):
                 stats = search_server_images(server, query="test", limit=10)
 
             self.assertEqual(len(stats.results), 1)
+            self.assertIsNotNone(stats.run_id)
             conn = sqlite3.connect(openclip_db_path(target))
             try:
                 self.assertEqual(
@@ -260,6 +306,77 @@ class ServerSearchCliTests(unittest.TestCase):
         self.assertIn('name="limit" value="7"', handler.body)
         self.assertIn("Trykk Søk for å kjøre dette søket.", handler.body)
 
+    def test_stored_search_run_has_a_bookmarkable_get_page(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            result_id = insert_test_file(target, "2024/01/result.png")
+            run_id = self.insert_search_run(
+                target,
+                "a red cabin",
+                [(result_id, "2024/01/result.png", 0.91)],
+            )
+            config = AppConfig(openclip=OpenClipConfig(enabled=True))
+
+            class FakeHandler:
+                path = f"/search/runs/{run_id}"
+                server = SimpleNamespace(
+                    target=target,
+                    config=config,
+                    face_enabled=False,
+                    openclip_enabled=True,
+                    hide_out_of_focus=False,
+                    search_cache=SimpleNamespace(loaded=False),
+                    read_only=True,
+                    slideshow=None,
+                    lan_share=False,
+                    source_item_order=lambda source, *, hide_out_of_focus=False: (
+                        (ids := source_item_ids(target, source)),
+                        {file_id: index for index, file_id in enumerate(ids)},
+                    ),
+                )
+                response: tuple[str, HTTPStatus] | None = None
+
+                def read_only_get_blocked(self, path: str) -> bool:
+                    return BildebankRequestHandler.read_only_get_blocked(
+                        self,
+                        path,
+                    )
+
+                def respond_html(
+                    self,
+                    content: str,
+                    *,
+                    status: HTTPStatus = HTTPStatus.OK,
+                ) -> None:
+                    self.response = (content, status)
+
+                def respond_text(
+                    self,
+                    content: str,
+                    *,
+                    status: HTTPStatus = HTTPStatus.OK,
+                ) -> None:
+                    self.response = (content, status)
+
+            handler = FakeHandler()
+            with patch(
+                "bildebank.server_search.load_text_model",
+                side_effect=AssertionError("GET skal ikke laste søkemodellen"),
+            ):
+                BildebankRequestHandler.do_GET(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(
+            handler.response[1],
+            HTTPStatus.OK,
+            msg=handler.response[0],
+        )
+        self.assertIn("a red cabin", handler.response[0])
+        self.assertIn(
+            f'href="/search/runs/{run_id}/item/{result_id}"',
+            handler.response[0],
+        )
+
     def test_run_server_search_post_reports_target_lock_conflict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -295,6 +412,45 @@ class ServerSearchCliTests(unittest.TestCase):
 
         self.assertEqual(handler.status, HTTPStatus.CONFLICT)
         self.assertIn("Bildesamlingen er låst", handler.body)
+
+    def test_search_post_redirects_to_stored_result_page(self) -> None:
+        encoded = b"q=test&limit=10&csrf_token=test-token"
+
+        class FakeHandler:
+            path = "/search"
+            headers = {
+                "Content-Length": str(len(encoded)),
+                "Content-Type": "application/x-www-form-urlencoded",
+            }
+            rfile = BytesIO(encoded)
+            server = SimpleNamespace(
+                read_only=False,
+                slideshow=None,
+                csrf_token="test-token",
+                openclip_enabled=True,
+                face_enabled=False,
+            )
+            redirect_url: str | None = None
+
+            def redirect(self, url: str) -> None:
+                self.redirect_url = url
+
+            def respond_html(
+                self,
+                content: str,
+                *,
+                status: HTTPStatus = HTTPStatus.OK,
+            ) -> None:
+                raise AssertionError(f"Forventet redirect, fikk HTML ({status}): {content}")
+
+        handler = FakeHandler()
+        with patch(
+            "bildebank.server_handler.search_server_images",
+            return_value=ServerSearchStats("test", (), run_id=23),
+        ):
+            BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.redirect_url, "/search/runs/23")
 
     def test_run_server_image_search_reuses_embedding_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -570,6 +726,130 @@ class ServerSearchCliTests(unittest.TestCase):
         self.assertIn('src="/file/999"', body)
         self.assertIn('href="/item/999"', body)
 
+    def test_stored_search_is_a_ranked_browser_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            first_id = insert_test_file(target, "2024/01/first.png")
+            second_id = insert_test_file(target, "2024/01/second.png")
+            deleted_id = insert_test_file(
+                target,
+                "deleted/2024/01/deleted.png",
+                deleted=True,
+            )
+            run_id = self.insert_search_run(
+                target,
+                "a snowy mountain",
+                [
+                    (second_id, "2024/01/second.png", 0.9),
+                    (first_id, "2024/01/first.png", 0.8),
+                    (deleted_id, "deleted/2024/01/deleted.png", 0.7),
+                ],
+            )
+
+            run = load_stored_search_run(target, run_id)
+            source = search_results_browser_source(
+                run_id,
+                "Bildesøk: a snowy mountain",
+            )
+            ranked_ids = source_item_ids(target, source)
+
+        self.assertIsNotNone(run)
+        assert run is not None
+        self.assertEqual(run.query, "a snowy mountain")
+        self.assertEqual(
+            [result.file_id for result in run.results],
+            [second_id, first_id, deleted_id],
+        )
+        self.assertEqual(ranked_ids, [second_id, first_id])
+
+    def test_search_result_page_links_to_ranked_source_and_random_item(self) -> None:
+        target = Path("/tmp/target")
+        server = SimpleNamespace(
+            target=target,
+            config=AppConfig(openclip=OpenClipConfig(enabled=True)),
+            face_enabled=False,
+            openclip_enabled=True,
+            search_cache=SimpleNamespace(loaded=True),
+        )
+        result = ImageSearchResult(1, 42, Path("2025/07/result.png"), 0.9)
+
+        body = search_html(
+            server,
+            ServerSearchStats("mountain", (result,), run_id=17),
+            DEFAULT_SEARCH_LIMIT,
+        )
+
+        self.assertIn('href="/search/runs/17/item/42"', body)
+        self.assertIn('href="/search/runs/17/random"', body)
+        self.assertIn("Tilfeldig i utvalget", body)
+
+    def test_stored_search_item_uses_rank_for_previous_and_next(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            first_id = insert_test_file(target, "2024/01/first.png")
+            second_id = insert_test_file(target, "2024/01/second.png")
+            third_id = insert_test_file(target, "2024/01/third.png")
+            run_id = self.insert_search_run(
+                target,
+                "ranked",
+                [
+                    (second_id, "2024/01/second.png", 0.9),
+                    (first_id, "2024/01/first.png", 0.8),
+                    (third_id, "2024/01/third.png", 0.7),
+                ],
+            )
+            config = AppConfig(openclip=OpenClipConfig(enabled=True))
+
+            def source_order(source: object, *, hide_out_of_focus: bool = False):
+                ids = source_item_ids(target, source)  # type: ignore[arg-type]
+                return ids, {
+                    file_id: index for index, file_id in enumerate(ids)
+                }
+
+            class FakeHandler:
+                server = SimpleNamespace(
+                    target=target,
+                    config=config,
+                    face_enabled=False,
+                    openclip_enabled=True,
+                    hide_out_of_focus=False,
+                    read_only=True,
+                    lan_share=False,
+                    source_item_order=source_order,
+                    source_month_keys=lambda source, **kwargs: ["2024-01"],
+                    source_first_day_item_id=lambda source, day, **kwargs: None,
+                )
+                response = ""
+
+                def record_server_timing(self, name: str, start: float) -> None:
+                    pass
+
+                def respond_html(self, content: str, **kwargs: object) -> None:
+                    self.response = content
+
+                def respond_text(self, content: str, **kwargs: object) -> None:
+                    raise AssertionError(content)
+
+                def redirect(self, url: str) -> None:
+                    raise AssertionError(f"Uventet redirect: {url}")
+
+            handler = FakeHandler()
+            with patch(
+                "bildebank.server_endpoints_browser.source_item_page_html",
+                return_value="item page",
+            ) as item_page:
+                server_endpoints_browser.respond_search_run(
+                    handler,  # type: ignore[arg-type]
+                    f"{run_id}/item/{first_id}",
+                )
+
+        args = item_page.call_args.args
+        self.assertEqual(int(args[3]["id"]), second_id)
+        self.assertEqual(int(args[4]["id"]), third_id)
+        self.assertEqual(args[1].root_url, f"/search/runs/{run_id}")
+
     def test_run_server_image_search_rotates_rotated_results(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -661,6 +941,7 @@ class ServerSearchCliTests(unittest.TestCase):
                 )
 
             self.assertFalse(cache.loaded)
+            self.assertIsNotNone(stats.run_id)
             self.assertEqual(len(stats.results), 100)
             self.assertNotIn(reference_id, [result.file_id for result in stats.results])
             self.assertEqual(stats.results[0].file_id, candidate_ids[0])

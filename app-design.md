@@ -649,6 +649,14 @@ for «ute av fokus» og lagres i dagens søketabeller som
 flyten skal ikke laste tekstmodellen, og knappen skal ikke vises for videoer,
 når OpenCLIP er deaktivert eller i read-only-modus.
 
+Et fullført tekst- eller bildelikhetssøk skal redirecte til en stabil
+GET-adresse for den lagrede søkekjøringen. Resultatene skal modelleres som et
+filtrert `BrowserSource`, med lagret rang som bildeorden. Dermed gjenbruker de
+vanlig full bildevisning, forrige/neste, tilfeldig bilde i utvalget og en
+tydelig lenke tilbake til søkeresultatet. GET-visningen skal bare lese den
+lagrede kjøringen og skal også kunne åpnes i read-only-modus; den skal aldri
+laste modellen eller starte et nytt søk.
+
 OpenCLIP-embeddings kan også brukes til reversible forslag til bildegrupper.
 Den tunge grupperingen startes bare fra Verktøy-fanen i launcheren og kjøres
 som en avbrytbar underprosess. Webserveren viser og kan eksplisitt slette

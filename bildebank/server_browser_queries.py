@@ -734,6 +734,14 @@ def source_item_ids(
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
 ) -> list[int]:
+    if source.search_run_id is not None:
+        return search_result_source_item_ids(
+            target,
+            source,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+            conn=conn,
+        )
     if source_has_sql_filter(source):
         return sql_filtered_source_item_ids(
             target,
@@ -745,6 +753,58 @@ def source_item_ids(
     if source == all_browser_source():
         return browser_item_ids(target, hide_out_of_focus=hide_out_of_focus, conn=conn)
     return [int(item["id"]) for item in source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus)]
+
+
+def search_result_source_item_ids(
+    target: Path,
+    source: BrowserSource,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> list[int]:
+    if source.search_run_id is None:
+        return []
+    owned_conn = conn is None
+    conn = conn or db.connect_read_only(target)
+    try:
+        where_sql, params = with_motion_video_filter(
+            target,
+            "1 = 1",
+            (),
+            include_motion=False,
+            conn=conn,
+        )
+        where_sql, params = with_out_of_focus_filter(
+            source,
+            where_sql,
+            params,
+            hide_out_of_focus,
+        )
+        attach_source_sql_filter_databases(
+            conn,
+            target,
+            source,
+            face_config,
+        )
+        return [
+            int(row["id"])
+            for row in conn.execute(
+                f"""
+                SELECT files.id
+                FROM openclip_db.image_search_results AS results
+                JOIN files ON files.id = results.file_id
+                WHERE results.run_id = ?
+                  AND files.deleted_at IS NULL
+                  AND ({where_sql})
+                ORDER BY results.rank
+                """,
+                (source.search_run_id, *params),
+            )
+        ]
+    finally:
+        if owned_conn:
+            conn.close()
 
 
 def sql_filtered_source_item_ids(
@@ -1660,7 +1720,7 @@ def attach_source_sql_filter_databases(
     source: BrowserSource,
     face_config: FaceRecognitionConfig | None = None,
 ) -> None:
-    if source.cluster_id is not None:
+    if source.cluster_id is not None or source.search_run_id is not None:
         from .openclip import (
             connect_openclip_db_read_only,
             openclip_db_path,

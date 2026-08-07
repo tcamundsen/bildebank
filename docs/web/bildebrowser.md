@@ -159,9 +159,15 @@ bildene Bildebank mener ligner mest på beskrivelsen, også når ingen bilder
 passer særlig godt. Prøv en annen eller mer presis beskrivelse hvis treffene
 er dårlige.
 
+Søkeresultatet får sin egen adresse, som kan lagres som bokmerke eller deles.
+Klikk på et treff for å åpne den vanlige bildesiden. Der kan du bla til forrige
+og neste treff i rangert rekkefølge, gå tilbake til hele søkeresultatet eller
+velge **Tilfeldig i utvalget**.
+
 På en vanlig bildeside kan knappen **🔍≈** vises. Den finner andre bilder som
 ligner på bildet du ser på. Knappen vises bare når denne typen søk er
-tilgjengelig, og ikke på videosider.
+tilgjengelig, og ikke på videosider. Resultatet fungerer på samme måte som et
+vanlig bildesøk, med blaing mellom treffene og en egen adresse.
 
 ## Finn bilder via tagger, personer og steder
 

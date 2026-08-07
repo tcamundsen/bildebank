@@ -92,6 +92,7 @@ def source_all_items_link_html(
         or source.geo_place_slug is not None
         or source.tag_name is not None
         or source.text_filter is not None
+        or source.search_run_id is not None
         or source.cluster_id is not None
     ):
         all_url = all_items_url or (source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/")
