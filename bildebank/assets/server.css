@@ -737,7 +737,7 @@
       border-radius: 6px;
       background: #1c1c1c;
     }
-    .tag-picker > summary {
+    .tag-picker > summary, .hotkey-hints > summary {
       padding: 8px 9px;
       color: var(--text);
       cursor: pointer;
@@ -1425,13 +1425,18 @@
       min-width: 0;
     }
     .hotkey-hints {
+      margin-bottom: 8px;
+      border: 1px solid rgb(255 255 255 / 20%);
+      border-radius: 6px;
+      background: #1c1c1c;
+    }
+    .hotkey-hints-list {
       display: grid;
       gap: 4px;
-      margin-bottom: 8px;
+      padding: 0 9px 8px;
       color: var(--muted);
       font-size: 12px;
     }
-    .hotkey-hints-heading { color: var(--text); font-weight: 700; }
     .hotkey-hint span { color: var(--text); font-weight: 700; }
     .app-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
     .app-toggle input { position: absolute; opacity: 0; pointer-events: none; }
@@ -1631,7 +1636,7 @@
         border-right: 0;
         border-bottom: 1px solid var(--border);
       }
-      .active-tags, .tag-picker { flex: 1 1 100%; }
+      .active-tags, .tag-picker, .hotkey-hints { flex: 1 1 100%; }
       .active-tag-list { flex-flow: row wrap; }
       .tag-picker-list .tag-toggle { flex: 0 0 auto; justify-content: flex-start; text-align: left; }
       .tag-toggle { justify-content: center; text-align: center; flex: 1 1 auto; }

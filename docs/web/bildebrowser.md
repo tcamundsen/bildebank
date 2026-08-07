@@ -237,7 +237,9 @@ Under **Meny → Innstillinger** finnes noen valg som påvirker vanlig bruk:
   den aktuelle nettleseren.
 - **Hurtigtaster 1–5** kan brukes til ofte gjentatte handlinger, for eksempel å
   sette en tagg, rotere et bilde eller angi dato, sted eller person. Når de er
-  aktivert, vises en forklaring på de valgte tastene ved bildet.
+  aktivert, vises **Hurtigtaster aktivert** ved bildet. Klikk på overskriften
+  for å skjule eller vise forklaringene. På en smal skjerm er forklaringene
+  skjult til du åpner dem.
 
 `T` for tilfeldig bilde virker uavhengig av de konfigurerbare hurtigtastene
 `1` til `5`.

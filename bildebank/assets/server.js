@@ -1075,6 +1075,10 @@
   }
   tagFilter?.addEventListener("input", refreshTagPicker);
   refreshTagPicker();
+  const hotkeyHints = document.querySelector("[data-hotkey-hints]");
+  if (hotkeyHints && window.matchMedia("(min-width: 641px)").matches) {
+    hotkeyHints.open = true;
+  }
   document.querySelectorAll("[data-tag-toggle]").forEach(button => {
     button.addEventListener("click", async () => {
       const fileId = Number(button.dataset.tagToggle);

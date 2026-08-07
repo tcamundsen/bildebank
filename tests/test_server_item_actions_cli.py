@@ -927,10 +927,9 @@ class ServerItemActionsCliTests(unittest.TestCase):
         tag_rail_start = body.index('<aside class="tag-rail"')
         tag_rail_body = body[tag_rail_start : body.index("</aside>", tag_rail_start)]
         self.assertIn('class="hotkey-hints"', tag_rail_body)
-        self.assertIn(
-            '<div class="hotkey-hints-heading">Hurtigtaster aktivert:</div>',
-            tag_rail_body,
-        )
+        self.assertIn('<details class="hotkey-hints" data-hotkey-hints>', tag_rail_body)
+        self.assertIn("<summary>Hurtigtaster aktivert</summary>", tag_rail_body)
+        self.assertIn('class="hotkey-hints-list"', tag_rail_body)
         self.assertIn("<span>1:</span> Sett H3 til Brevik", tag_rail_body)
         self.assertIn("<span>2:</span> Roter til venstre", tag_rail_body)
         self.assertIn("<span>3:</span> Legg til Viljar", tag_rail_body)
@@ -941,11 +940,13 @@ class ServerItemActionsCliTests(unittest.TestCase):
             tag_rail_body.index("location-status-badge"),
             tag_rail_body.index('class="hotkey-hints"'),
         )
-        self.assertTrue(tag_rail_body.strip().endswith("</section>"))
+        self.assertTrue(tag_rail_body.strip().endswith("</details>"))
         self.assertIn('data-browser-hotkeys-enabled="true"', body)
         self.assertNotIn("data-browser-hotkeys-enabled", hidden_body)
         self.assertIn('itemRoot?.dataset.browserHotkeysEnabled === "true"', SERVER_JS)
         self.assertIn('itemRoot?.dataset.browserHotkeysEnabled !== "true"', SERVER_JS)
+        self.assertIn('window.matchMedia("(min-width: 641px)").matches', SERVER_JS)
+        self.assertIn("hotkeyHints.open = true;", SERVER_JS)
         self.assertNotIn('class="hotkey-hints"', hidden_body)
 
     def test_run_server_hotkey_action_rotates_item(self) -> None:
