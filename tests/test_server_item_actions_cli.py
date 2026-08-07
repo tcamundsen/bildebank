@@ -1945,7 +1945,7 @@ class ServerItemActionsCliTests(unittest.TestCase):
         self.assertIn("Bildesamlingen er låst", str(handler.body["error"]))
         self.assertEqual(row["gps_source"], "manual-h3")
 
-    def test_run_server_item_page_lists_defined_tags_before_geo_info(self) -> None:
+    def test_run_server_item_page_groups_active_tags_and_searches_available_tags(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -1969,7 +1969,10 @@ class ServerItemActionsCliTests(unittest.TestCase):
             )
             conn = db.connect(target)
             try:
-                db.ensure_tag(conn, "Familie")
+                db.set_file_tag(conn, file_id=1, tag_name="Familie", tagged=True)
+                db.ensure_tag(conn, "Ferie")
+                for index in range(1, 19):
+                    db.ensure_tag(conn, f"Tagg {index:02d}")
                 conn.commit()
             finally:
                 conn.close()
@@ -1986,15 +1989,28 @@ class ServerItemActionsCliTests(unittest.TestCase):
         self.assertIn('data-tag-toggle="1"', body)
         self.assertIn('data-tag-name="Ute av fokus"', body)
         self.assertIn('data-tag-name="Familie"', body)
+        self.assertIn('data-tag-name="Ferie"', body)
         self.assertNotIn(db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW, body)
         self.assertIn('aria-pressed="false"', body)
+        self.assertIn('data-tag-name="Familie" aria-pressed="true"', body)
+        self.assertIn('class="active-tags" data-active-tags', body)
+        self.assertIn('class="active-tag-list" data-active-tag-list', body)
+        self.assertIn('class="tag-picker" data-tag-picker', body)
+        self.assertIn('data-tag-picker-count>19</span>', body)
+        self.assertIn('placeholder="Søk i tagger" data-tag-filter', body)
+        self.assertIn('class="tag-picker-list" data-available-tag-list', body)
+        self.assertIn("Ingen tagger matcher søket.", body)
         self.assertLess(
             body.index('data-tag-name="Ute av fokus"'),
             body.index('data-tag-name="Familie"'),
         )
-        self.assertNotIn('class="date-status-badge"', body)
         self.assertLess(
             body.index('data-tag-name="Familie"'),
+            body.index('data-tag-name="Ferie"'),
+        )
+        self.assertNotIn('class="date-status-badge"', body)
+        self.assertLess(
+            body.index('data-tag-name="Ferie"'),
             body.index('class="location-status-badge"'),
         )
         self.assertIn("/api/item-tag", SERVER_JS)
@@ -2006,11 +2022,18 @@ class ServerItemActionsCliTests(unittest.TestCase):
         self.assertIn(
             'button.classList.toggle("active", Boolean(payload.tagged));', tag_handler
         )
+        self.assertIn("updateTagPlacement(button, Boolean(payload.tagged));", tag_handler)
         self.assertNotIn("window.location.reload();", tag_handler)
         self.assertIn("stage-shell", SERVER_CSS)
         self.assertIn("tag-rail", SERVER_CSS)
+        self.assertIn("overflow-y: auto;", SERVER_CSS)
+        self.assertIn("scrollbar-gutter: stable;", SERVER_CSS)
+        self.assertIn(".tag-picker-list", SERVER_CSS)
+        self.assertIn("max-height: min(42dvh, 360px);", SERVER_CSS)
         self.assertIn(".tag-toggle::before", SERVER_CSS)
         self.assertIn(".tag-toggle.active::before", SERVER_CSS)
+        self.assertIn('tagFilter?.addEventListener("input", refreshTagPicker);', SERVER_JS)
+        self.assertIn("tagFilterKey(button.dataset.tagName).includes(query)", SERVER_JS)
 
     def test_run_server_item_tag_endpoint_sets_system_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

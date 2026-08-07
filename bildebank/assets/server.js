@@ -1027,6 +1027,54 @@
       }
     });
   });
+  const activeTags = document.querySelector("[data-active-tags]");
+  const activeTagList = document.querySelector("[data-active-tag-list]");
+  const tagPicker = document.querySelector("[data-tag-picker]");
+  const tagPickerCount = document.querySelector("[data-tag-picker-count]");
+  const tagFilter = document.querySelector("[data-tag-filter]");
+  const availableTagList = document.querySelector("[data-available-tag-list]");
+  const tagPickerEmpty = document.querySelector("[data-tag-picker-empty]");
+  function tagFilterKey(value) {
+    return String(value || "").trim().toLocaleLowerCase("nb-NO");
+  }
+  function sortedTagButtons(container) {
+    if (!container) return;
+    Array.from(container.querySelectorAll(":scope > [data-tag-toggle]"))
+      .sort((left, right) => {
+        return (left.dataset.tagName || "").localeCompare(right.dataset.tagName || "", "nb-NO", {
+          sensitivity: "base",
+        });
+      })
+      .forEach(button => container.append(button));
+  }
+  function refreshTagPicker() {
+    const activeButtons = activeTagList?.querySelectorAll(":scope > [data-tag-toggle]") || [];
+    if (activeTags) activeTags.hidden = activeButtons.length === 0;
+    const availableButtons = Array.from(
+      availableTagList?.querySelectorAll(":scope > [data-tag-toggle]") || [],
+    );
+    const query = tagFilterKey(tagFilter?.value);
+    let visibleCount = 0;
+    availableButtons.forEach(button => {
+      const visible = !query || tagFilterKey(button.dataset.tagName).includes(query);
+      button.hidden = !visible;
+      if (visible) visibleCount += 1;
+    });
+    if (tagPickerCount) tagPickerCount.textContent = String(availableButtons.length);
+    if (tagPicker) tagPicker.hidden = availableButtons.length === 0;
+    if (tagPickerEmpty) tagPickerEmpty.hidden = visibleCount !== 0;
+  }
+  function updateTagPlacement(button, tagged) {
+    if (button.dataset.tagSystem === "true") return;
+    const destination = tagged ? activeTagList : availableTagList;
+    if (!destination) return;
+    button.hidden = false;
+    destination.append(button);
+    sortedTagButtons(destination);
+    refreshTagPicker();
+  }
+  tagFilter?.addEventListener("input", refreshTagPicker);
+  refreshTagPicker();
   document.querySelectorAll("[data-tag-toggle]").forEach(button => {
     button.addEventListener("click", async () => {
       const fileId = Number(button.dataset.tagToggle);
@@ -1053,6 +1101,7 @@
         }
         button.setAttribute("aria-pressed", payload.tagged ? "true" : "false");
         button.classList.toggle("active", Boolean(payload.tagged));
+        updateTagPlacement(button, Boolean(payload.tagged));
         button.disabled = false;
       } catch (error) {
         alert(error.message || "Kunne ikke lagre tagg.");

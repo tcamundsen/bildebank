@@ -900,12 +900,14 @@ def item_side_panel_html(
     finally:
         if owned_conn:
             conn.close()
-    buttons = []
+    primary_buttons = []
+    active_tag_buttons = []
+    available_tag_buttons = []
     if not read_only:
         comment = item_string_value(item, "comment")
         active_class = " active" if comment else ""
         pressed = "true" if comment else "false"
-        buttons.append(
+        primary_buttons.append(
             f'<button class="comment-button{active_class}" type="button" '
             f'data-open-item-comment data-comment-item="{file_id}" '
             f'aria-pressed="{pressed}">Kommentar</button>'
@@ -918,18 +920,50 @@ def item_side_panel_html(
         redirect_attr = ""
         if system_key == db.SYSTEM_TAG_OUT_OF_FOCUS_KEY and out_of_focus_redirect_url:
             redirect_attr = f' data-tag-hide-redirect="{html.escape(out_of_focus_redirect_url)}"'
-        buttons.append(
+        system_attr = ' data-tag-system="true"' if system_key is not None else ""
+        button = (
             f'<button class="tag-toggle{active_class}" type="button" '
             f'title="Klikk for å legge til eller fjerne taggen fra bildet" '
             f'data-tag-toggle="{file_id}" data-tag-name="{html.escape(tag_name)}" '
-            f'aria-pressed="{pressed}"{redirect_attr}>{html.escape(tag_name)}</button>'
+            f'aria-pressed="{pressed}"{redirect_attr}{system_attr}>{html.escape(tag_name)}</button>'
         )
+        if system_key is not None:
+            primary_buttons.append(button)
+        elif active:
+            active_tag_buttons.append(button)
+        else:
+            available_tag_buttons.append(button)
+    tag_controls = ""
+    if not read_only:
+        active_hidden = "" if active_tag_buttons else " hidden"
+        picker_hidden = "" if available_tag_buttons else " hidden"
+        filter_id = f"tagFilter{file_id}"
+        list_id = f"availableTags{file_id}"
+        tag_controls = f"""
+          <section class="active-tags" data-active-tags{active_hidden}>
+            <h2 class="tag-rail-heading">På bildet</h2>
+            <div class="active-tag-list" data-active-tag-list>{"".join(active_tag_buttons)}</div>
+          </section>
+          <details class="tag-picker" data-tag-picker{picker_hidden}>
+            <summary>Legg til tagg <span class="tag-picker-count" data-tag-picker-count>{len(available_tag_buttons)}</span></summary>
+            <div class="tag-picker-body">
+              <label for="{filter_id}">Finn tagg</label>
+              <input id="{filter_id}" type="search" autocomplete="off"
+                     placeholder="Søk i tagger" data-tag-filter aria-controls="{list_id}">
+              <div id="{list_id}" class="tag-picker-list" data-available-tag-list>{"".join(available_tag_buttons)}</div>
+              <p class="tag-picker-empty" data-tag-picker-empty role="status" hidden>Ingen tagger matcher søket.</p>
+            </div>
+          </details>
+        """
     location_status = (
         manual_h3_badge_html(manual_h3_name, manual_h3_cell_value, extra_html=location_controls)
         if gps_source_is_manual_h3(item)
         else gps_location_badge_html(item, extra_html=location_controls)
     )
-    return f'<aside class="tag-rail" aria-label="Tagger">{"".join(buttons)}{location_status}{extra_html}{suffix_html}</aside>'
+    return (
+        f'<aside class="tag-rail" aria-label="Tagger">'
+        f'{"".join(primary_buttons)}{tag_controls}{location_status}{extra_html}{suffix_html}</aside>'
+    )
 
 
 def hotkey_hints_panel_html(
