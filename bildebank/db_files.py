@@ -662,7 +662,9 @@ def duplicate_source_count(conn: sqlite3.Connection) -> int:
 def status_counts(conn: sqlite3.Connection) -> dict[str, dict[str, int] | int]:
     media = {"bilder": 0, "videoer": 0}
     for row in conn.execute("SELECT stored_filename FROM files WHERE deleted_at IS NULL"):
-        suffix = Path(str(row["stored_filename"])).suffix.lower()
+        filename = str(row["stored_filename"])
+        dot_index = filename.rfind(".")
+        suffix = filename[dot_index:].lower() if dot_index > 0 else ""
         if suffix in VIDEO_EXTENSIONS:
             media["videoer"] += 1
         else:

@@ -7,9 +7,14 @@ from http import HTTPStatus
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
-from bildebank import db, server_endpoints_browser, server_endpoints_items
+from bildebank import (
+    db,
+    server_browser_sidecars,
+    server_endpoints_browser,
+    server_endpoints_items,
+)
 from bildebank.server_assets import SERVER_JS
 from bildebank.server_browser_queries import (
     browser_item_by_id,
@@ -293,6 +298,54 @@ def test_random_candidate_uses_jpg_partners_instead_of_nef_and_psd(tmp_path: Pat
         ) == (0, 2)
     finally:
         conn.close()
+
+
+def test_raw_sidecar_scan_only_groups_jpegs_with_a_raw_filename_candidate(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    db.init_database(target)
+    image_id = insert_test_file(target, "2024/01/ÅB_0170.JPG")
+    raw_id = insert_test_file(target, "2024/01/åb_0170.NEF")
+    unrelated_ids = [
+        insert_test_file(target, f"2024/01/IMG_{index:04d}.JPG")
+        for index in range(20)
+    ]
+    conn = db.connect(target)
+    try:
+        source_id = db.add_named_source(conn, tmp_path / "source", "source")
+        for file_id in (image_id, raw_id, *unrelated_ids):
+            row = conn.execute(
+                "SELECT original_filename, sha256, size_bytes FROM files WHERE id = ?",
+                (file_id,),
+            ).fetchone()
+            source_path = f"C:/Users/Tom/Pictures/{row['original_filename']}"
+            db.insert_or_validate_file_source(
+                conn,
+                file_id=file_id,
+                source_id=source_id,
+                source_path=source_path,
+                source_path_key=source_path.casefold(),
+                sha256=str(row["sha256"]),
+                size_bytes=int(row["size_bytes"]),
+            )
+        conn.execute(
+            """
+            UPDATE files
+            SET date_source = 'metadata',
+                metadata_datetime = '2019-03-03 12:00:00'
+            """
+        )
+        conn.commit()
+
+        with patch(
+            "bildebank.server_browser_sidecars.raw_sidecar_group_keys",
+            wraps=server_browser_sidecars.raw_sidecar_group_keys,
+        ) as group_keys:
+            pairs = server_browser_sidecars.query_raw_sidecar_ids_by_image_id(conn)
+    finally:
+        conn.close()
+
+    assert pairs == {image_id: raw_id}
+    assert group_keys.call_count == 2
 
 
 def test_item_viewed_endpoint_records_a_view_and_hides_busy_database(tmp_path: Path) -> None:

@@ -164,7 +164,9 @@ def collection_size_totals(conn: sqlite3.Connection) -> dict[str, int]:
             totals["deleted"] += size_bytes
             continue
         totals["active"] += size_bytes
-        suffix = Path(str(row["stored_filename"])).suffix.lower()
+        filename = str(row["stored_filename"])
+        dot_index = filename.rfind(".")
+        suffix = filename[dot_index:].lower() if dot_index > 0 else ""
         totals["videos" if suffix in VIDEO_EXTENSIONS else "images"] += size_bytes
     return totals
 
