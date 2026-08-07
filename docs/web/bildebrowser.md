@@ -26,6 +26,8 @@ Klikk på dagen for å gå til det første bildet fra samme dag. Klikk på måne
 året eller **År** for å gå tilbake til den tilsvarende oversikten. Klikk på
 filnavnet for å åpne **Bildeinfo**. Der finner du blant annet dato, filtype,
 størrelse, kameraopplysninger og hvor filen er lagret i bildesamlingen.
+Filtypen og kameraet er lenker til tilsvarende filtersøk. Hver importkilde er
+en lenke til alle aktive bilder fra den kilden.
 
 **Meny** øverst til høyre gir tilgang til søk, tilfeldige bilder, personer,
 steder, tagger, innstillinger og andre oversikter. Når du er inne i et

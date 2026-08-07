@@ -1179,6 +1179,10 @@ class ServerBrowserCliTests(unittest.TestCase):
                     gps_source="test",
                     gps_error=None,
                 )
+                conn.execute(
+                    "UPDATE files SET camera_make = ?, camera_model = ? WHERE id = 1",
+                    ("Test", "Camera 100"),
+                )
                 conn.commit()
             finally:
                 conn.close()
@@ -1211,10 +1215,17 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn("2024-01-02 (fra filnavn)", info_body)
         self.assertNotIn("<dt>Klokkeslett</dt>", info_body)
         self.assertIn("Filstørrelse", info_body)
+        self.assertIn("<dt>Filtype</dt>", info_body)
+        self.assertIn('href="/filter/extension%3Apng">PNG</a>', info_body)
         self.assertIn("Oppløsning", info_body)
         self.assertIn("100 x 80", info_body)
         self.assertIn("Kamera", info_body)
+        self.assertIn(
+            'href="/filter/camera%3A%27Test%20Camera%20100%27">Test Camera 100</a>',
+            info_body,
+        )
         self.assertIn("Kilder", info_body)
+        self.assertIn('href="/source/1"', info_body)
         self.assertIn("<dt>Kart</dt>", info_body)
         self.assertIn(
             'href="https://www.google.com/maps/search/?api=1&amp;query=59.9127300,10.7460900"',
@@ -1316,6 +1327,7 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn(str(source / "IMG_20240102.png"), local_html)
         self.assertNotIn(str(source / "IMG_20240102.png"), lan_share_html)
         self.assertIn(source.name, lan_share_html)
+        self.assertIn('href="/source/1"', lan_share_html)
 
     def test_run_server_item_info_api_rejects_unknown_and_deleted_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
