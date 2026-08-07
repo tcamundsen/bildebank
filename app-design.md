@@ -657,6 +657,16 @@ tydelig lenke tilbake til søkeresultatet. GET-visningen skal bare lese den
 lagrede kjøringen og skal også kunne åpnes i read-only-modus; den skal aldri
 laste modellen eller starte et nytt søk.
 
+Når bildelikhetssøk startes fra et filtrert `BrowserSource`, skal det aktive
+utvalget være standard kandidatgrunnlag. Skjemaet sender utvalgets kanoniske
+rot-URL, og serveren skal rekonstruere og validere kilden før søket; klienten
+skal ikke få angi vilkårlige kandidat-ID-er. Referansebildet må fortsatt være
+medlem av utvalget. Kildens tittel og rot-URL lagres som en strukturert del av
+søkekjøringens eksisterende `query`-felt, slik at ingen skjemamigrering kreves
+og en bokmerket resultatside kan forklare omfanget. Resultatsiden skal tilby en
+sekundær POST-handling som kjører samme likhetssøk i hele bildesamlingen. Fra
+den globale bildebrowseren beholder knappen hele samlingen som kandidatgrunnlag.
+
 OpenCLIP-embeddings kan også brukes til reversible forslag til bildegrupper.
 Den tunge grupperingen startes bare fra Verktøy-fanen i launcheren og kjøres
 som en avbrytbar underprosess. Webserveren viser og kan eksplisitt slette

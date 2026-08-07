@@ -20,9 +20,18 @@ from bildebank.openclip import (
     openclip_db_path,
 )
 from bildebank.server_browser_queries import item_by_id, source_item_ids
-from bildebank.server_browser_sources import search_results_browser_source
+from bildebank.server_browser_sources import (
+    search_results_browser_source,
+    tag_browser_source,
+)
 from bildebank.server_handler import BildebankRequestHandler
-from bildebank.server_pages import item_page_html, search_html, search_start_html, similar_search_html
+from bildebank.server_pages import (
+    item_page_html,
+    search_html,
+    search_start_html,
+    similar_search_html,
+    source_item_page_html,
+)
 from bildebank.server_search import (
     DEFAULT_SEARCH_LIMIT,
     OpenClipSearchCache,
@@ -971,6 +980,74 @@ class ServerSearchCliTests(unittest.TestCase):
         self.assertEqual(stored_results[0], (candidate_ids[0], "2024/02/candidate-000.png", 1))
         self.assertEqual([row[2] for row in stored_results], list(range(1, 101)))
 
+    def test_similar_search_uses_and_stores_active_tag_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            config = OpenClipConfig()
+            reference_id = insert_test_file(
+                target,
+                "2024/01/reference.png",
+                sha256="sha-reference",
+            )
+            inside_id = insert_test_file(
+                target,
+                "2024/01/inside.png",
+                sha256="sha-inside",
+            )
+            outside_id = insert_test_file(
+                target,
+                "2024/01/outside.png",
+                sha256="sha-outside",
+            )
+            conn = db.connect(target)
+            try:
+                db.tag_file(conn, file_id=reference_id, tag_name="Familie")
+                db.tag_file(conn, file_id=inside_id, tag_name="Familie")
+                conn.commit()
+            finally:
+                conn.close()
+            self.insert_embeddings(
+                target,
+                config,
+                [
+                    (reference_id, "2024/01/reference.png", "sha-reference", [1.0, 0.0]),
+                    (inside_id, "2024/01/inside.png", "sha-inside", [0.6, 0.4]),
+                    (outside_id, "2024/01/outside.png", "sha-outside", [1.0, 0.0]),
+                ],
+            )
+            app_config = AppConfig(openclip=config)
+
+            def source_order(source: object, *, hide_out_of_focus: bool = False):
+                ids = source_item_ids(target, source)  # type: ignore[arg-type]
+                return ids, {
+                    file_id: index for index, file_id in enumerate(ids)
+                }
+
+            server = SimpleNamespace(
+                target=target,
+                config=app_config,
+                search_cache=OpenClipSearchCache(app_config),
+                source_item_order=source_order,
+            )
+
+            stats = search_server_similar_images(
+                server,
+                file_id=reference_id,
+                source_url="/tag/Familie",
+            )
+            run = load_stored_search_run(target, stats.run_id or 0)
+
+        self.assertEqual([result.file_id for result in stats.results], [inside_id])
+        self.assertNotIn(outside_id, [result.file_id for result in stats.results])
+        self.assertEqual(stats.scope_title, "Tagg: Familie")
+        self.assertEqual(stats.scope_root_url, "/tag/Familie")
+        self.assertIsNotNone(run)
+        assert run is not None
+        self.assertEqual(run.similar_reference_file_id, reference_id)
+        self.assertEqual(run.similar_scope_title, "Tagg: Familie")
+        self.assertEqual(run.similar_scope_root_url, "/tag/Familie")
+
     def test_similar_search_filters_deleted_orphaned_and_out_of_focus_images(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -1146,6 +1223,17 @@ class ServerSearchCliTests(unittest.TestCase):
             )
 
             body = similar_search_html(server, stats)
+            scoped_body = similar_search_html(
+                server,
+                ServerSimilarSearchStats(
+                    reference_file_id=reference_id,
+                    reference_target_path=Path("2024/01/reference & one.png"),
+                    results=stats.results,
+                    run_id=12,
+                    scope_title="Tagg: Familie",
+                    scope_root_url="/tag/Familie",
+                ),
+            )
 
         self.assertIn("Bilder som ligner på reference &amp; one.png", body)
         self.assertIn(f'href="/item/{reference_id}"', body)
@@ -1154,6 +1242,13 @@ class ServerSearchCliTests(unittest.TestCase):
         self.assertIn('class="media-link quarter-turn"', body)
         self.assertIn('data-view-rotation="90"', body)
         self.assertIn("score=0.750", body)
+        self.assertIn('href="/tag/Familie">«Tagg: Familie»</a>', scoped_body)
+        self.assertIn(
+            f'href="/tag/Familie/item/{reference_id}"',
+            scoped_body,
+        )
+        self.assertIn(">Søk i alle bilder</button>", scoped_body)
+        self.assertNotIn('name="source_url"', scoped_body)
 
     def test_similar_search_button_only_appears_for_writable_openclip_images(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1187,11 +1282,24 @@ class ServerSearchCliTests(unittest.TestCase):
                 read_only=True,
             )
             video_body = item_page_html(target, video, None, None, month_nav)
+            scoped_body = source_item_page_html(
+                target,
+                tag_browser_source("Familie"),
+                image,
+                None,
+                None,
+                month_nav,
+            )
 
         self.assertIn('action="/search/similar"', image_body)
         self.assertIn('name="file_id" value="1"', image_body)
         self.assertIn('name="limit" value="100"', image_body)
         self.assertIn('aria-label="Finn lignende bilder">🔍≈</button>', image_body)
+        self.assertIn('name="source_url" value="/tag/Familie"', scoped_body)
+        self.assertIn(
+            'aria-label="Finn lignende i utvalget «Tagg: Familie»"',
+            scoped_body,
+        )
         self.assertNotIn("🔍≈", disabled_body)
         self.assertNotIn("🔍≈", read_only_body)
         self.assertNotIn("🔍≈", video_body)
@@ -1283,7 +1391,10 @@ class ServerSearchCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             init_database(target)
-            encoded = b"file_id=7&limit=999&csrf_token=token"
+            encoded = (
+                b"file_id=7&limit=999&source_url=%2Ftag%2FFamilie"
+                b"&csrf_token=token"
+            )
 
             class FakeHandler:
                 path = "/search/similar"
@@ -1317,7 +1428,12 @@ class ServerSearchCliTests(unittest.TestCase):
             ) as similar_search:
                 BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
 
-        similar_search.assert_called_once_with(handler.server, file_id=7, limit=100)
+        similar_search.assert_called_once_with(
+            handler.server,
+            file_id=7,
+            limit=100,
+            source_url="/tag/Familie",
+        )
         self.assertEqual(handler.response[1], HTTPStatus.OK)
         self.assertIn("Bilder som ligner på reference.png", handler.response[0])
 

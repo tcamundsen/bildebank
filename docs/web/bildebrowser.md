@@ -169,6 +169,11 @@ ligner på bildet du ser på. Knappen vises bare når denne typen søk er
 tilgjengelig, og ikke på videosider. Resultatet fungerer på samme måte som et
 vanlig bildesøk, med blaing mellom treffene og en egen adresse.
 
+Hvis du bruker knappen mens du er inne i et utvalg, for eksempel en tagg, en
+person, en gruppe eller et filtersøk, leter Bildebank bare blant bildene i
+dette utvalget. Resultatsiden viser hvilket utvalg som ble brukt. Velg **Søk i
+alle bilder** der hvis du i stedet vil lete i hele bildesamlingen.
+
 ## Finn bilder via tagger, personer og steder
 
 ### Tagger

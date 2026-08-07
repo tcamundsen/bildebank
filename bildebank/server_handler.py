@@ -749,6 +749,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         self.server,
                         file_id=file_id,
                         limit=limit,
+                        source_url=first_param(params, "source_url").strip(),
                     )
                 except TargetLockError as exc:
                     self.respond_html(

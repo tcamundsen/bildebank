@@ -371,6 +371,8 @@ def respond_search_run(handler: BildebankRequestHandler, raw_path: str) -> None:
                 reference_path,
                 results,
                 run.run_id,
+                run.similar_scope_title,
+                run.similar_scope_root_url,
             ),
         )
     )

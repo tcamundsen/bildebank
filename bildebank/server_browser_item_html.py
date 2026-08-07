@@ -525,6 +525,7 @@ def source_item_page_html(
             video_original_button_html(target, item),
             similar_search_button_html(
                 item,
+                source=source,
                 openclip_enabled=openclip_enabled,
                 read_only=read_only,
             ),
@@ -643,17 +644,27 @@ def source_item_page_html(
 def similar_search_button_html(
     item: Any,
     *,
+    source: BrowserSource,
     openclip_enabled: bool,
     read_only: bool,
 ) -> str:
     if not openclip_enabled or read_only or not is_image_item(item):
         return ""
+    source_input = ""
+    label = "Finn lignende bilder"
+    if is_filtered_source(source):
+        source_input = (
+            '<input type="hidden" name="source_url" '
+            f'value="{html.escape(source.root_url)}">'
+        )
+        label = f"Finn lignende i utvalget «{source.title}»"
     return f"""
         <form action="/search/similar" method="post" class="similar-search-form">
           <input type="hidden" name="file_id" value="{int(item['id'])}">
           <input type="hidden" name="limit" value="100">
-          <button class="nav-button" type="submit" title="Finn lignende bilder"
-                  aria-label="Finn lignende bilder">🔍≈</button>
+          {source_input}
+          <button class="nav-button" type="submit" title="{html.escape(label)}"
+                  aria-label="{html.escape(label)}">🔍≈</button>
         </form>
     """
 
