@@ -151,6 +151,11 @@ def test_grouping_pages_render_runs_and_active_cluster_members(
     assert "Gruppe 1" in run_html
     assert "2 aktive bilder" in run_html
     assert f"/grouping/runs/{run_id}/clusters/{cluster_id}" in run_html
+    assert (
+        f'href="/grouping/runs/{run_id}/clusters/{cluster_id}/item/{first}"'
+        in run_html
+    )
+    assert 'title="Åpne bildet i gruppen"' in run_html
     assert f"/grouping/runs/{run_id}/delete" in run_html
     assert "Utvalg: year=2024" in run_html
     assert "Opprettet" in run_html

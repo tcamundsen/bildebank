@@ -1619,6 +1619,7 @@
       width: 72px;
       height: 72px;
     }
+    .grouping-preview { display: block; }
     .grouping-preview-missing {
       place-items: center;
       padding: 6px;

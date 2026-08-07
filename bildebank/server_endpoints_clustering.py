@@ -649,11 +649,13 @@ def _run_card_html(server: Any, row: Any) -> str:
 
 def _cluster_card_html(card: GroupingClusterCard) -> str:
     preview_html = "".join(
-        f'<span class="grouping-preview">'
+        f'<a class="grouping-preview" '
+        f'href="/grouping/runs/{card.run_id}/clusters/{card.id}/item/{file_id}" '
+        f'title="Åpne bildet i gruppen">'
         f'<img src="/thumbnail/{file_id}" alt="" loading="lazy" '
         f'onerror="this.hidden=true;this.nextElementSibling.hidden=false">'
         f'<span class="grouping-preview-missing" hidden>Ingen miniatyr</span>'
-        f'</span>'
+        f'</a>'
         for file_id in card.preview_file_ids
     )
     tag_text = ", ".join(

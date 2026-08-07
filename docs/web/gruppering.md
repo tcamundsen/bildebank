@@ -46,7 +46,9 @@ trinn som arbeider, men ikke beregnet gjenstående tid.
 Åpne **Gruppering** i bildebrowseren. Panelet for hver kjøring viser status,
 algoritme, de viktigste innstillingene og hvilket utvalg som ble brukt. Åpne
 en kjøring for å se alle lagrede parametere og gruppene i kjøringen. **Vis alle
-bildene** åpner den vanlige bildebrowseren for gruppen.
+bildene** åpner den vanlige bildebrowseren for gruppen. Du kan også klikke på
+et av eksempelbildene på gruppekortet for å åpne akkurat dette bildet i
+gruppen.
 
 Når et bilde inngår i én eller flere fullførte grupperingskjøringer, vises
 knappen **Grupperinger (antall)** ved bildet. Knappen åpner en kort liste over
