@@ -33,7 +33,8 @@ from bildebank.server_endpoints_clustering import (
     grouping_run_page_html,
 )
 from bildebank.server_handler import BildebankRequestHandler
-from bildebank.server_pages import source_year_months_page_html
+from bildebank.server_item_groupings import item_grouping_memberships
+from bildebank.server_pages import item_page_html, source_year_months_page_html
 from bildebank.server_endpoints_browser import respond_browser_source
 from tests.db_test_helpers import insert_basic_item_sidecar_fixture, insert_test_file
 
@@ -41,10 +42,12 @@ from tests.db_test_helpers import insert_basic_item_sidecar_fixture, insert_test
 def insert_completed_run(
     target: Path,
     file_ids: tuple[int, ...],
+    *,
+    insert_embeddings: bool = True,
 ) -> tuple[int, int]:
     conn = connect_openclip_db(target)
     try:
-        for file_id in file_ids:
+        for file_id in file_ids if insert_embeddings else ():
             row = db.connect_read_only(target)
             try:
                 file_row = row.execute(
@@ -177,6 +180,127 @@ def test_grouping_pages_render_runs_and_active_cluster_members(
     finally:
         conn.close()
     assert source_item_ids(target, source) == [second]
+
+
+def test_item_page_links_completed_ordinary_grouping_memberships(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    db.init_database(target)
+    first = insert_test_file(target, "2024/01/first.png", sha256="sha-1")
+    second = insert_test_file(target, "2024/01/second.png", sha256="sha-2")
+    first_run_id, first_cluster_id = insert_completed_run(target, (first, second))
+    second_run_id, second_cluster_id = insert_completed_run(
+        target,
+        (first, second),
+        insert_embeddings=False,
+    )
+
+    openclip_conn = connect_openclip_db(target)
+    try:
+        openclip_conn.execute(
+            "UPDATE image_clustering_runs SET algorithm = 'leiden' WHERE id = ?",
+            (second_run_id,),
+        )
+        openclip_conn.commit()
+    finally:
+        openclip_conn.close()
+    conn = db.connect(target)
+    try:
+        conn.execute(
+            "UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (second,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    memberships = item_grouping_memberships(target, first)
+    assert [membership.run_id for membership in memberships] == [
+        second_run_id,
+        first_run_id,
+    ]
+    assert [membership.active_member_count for membership in memberships] == [1, 1]
+
+    item = server_browser_queries.browser_item_by_id(target, first)
+    assert item is not None
+    body = item_page_html(
+        target,
+        item,
+        None,
+        None,
+        server_browser_queries.browser_month_navigation(target, item),
+        face_enabled=False,
+        openclip_enabled=True,
+        grouping_enabled=True,
+        read_only=True,
+    )
+
+    assert "Grupperinger (2)" in body
+    assert "Grupperingsresultater for bildet" in body
+    assert "Kjøring #" in body
+    assert "Leiden" in body
+    assert "1 bilde" in body
+    assert (
+        f'/grouping/runs/{second_run_id}/clusters/{second_cluster_id}/item/{first}'
+        in body
+    )
+    assert (
+        f'/grouping/runs/{first_run_id}/clusters/{first_cluster_id}/item/{first}'
+        in body
+    )
+    assert body.index(f"Kjøring #{second_run_id}") < body.index(
+        f"Kjøring #{first_run_id}"
+    )
+    assert 'action="/search/similar"' not in body
+
+    openclip_disabled_body = item_page_html(
+        target,
+        item,
+        None,
+        None,
+        server_browser_queries.browser_month_navigation(target, item),
+        face_enabled=False,
+        openclip_enabled=False,
+        grouping_enabled=True,
+    )
+    lan_body = item_page_html(
+        target,
+        item,
+        None,
+        None,
+        server_browser_queries.browser_month_navigation(target, item),
+        face_enabled=False,
+        openclip_enabled=True,
+        grouping_enabled=False,
+    )
+    assert "data-open-item-groupings" not in openclip_disabled_body
+    assert "data-open-item-groupings" not in lan_body
+
+    openclip_conn = connect_openclip_db(target)
+    try:
+        openclip_conn.execute(
+            "UPDATE image_clustering_runs SET status = 'failed' WHERE id = ?",
+            (second_run_id,),
+        )
+        openclip_conn.execute(
+            "UPDATE image_clusters SET kind = 'noise' WHERE id = ?",
+            (first_cluster_id,),
+        )
+        openclip_conn.commit()
+    finally:
+        openclip_conn.close()
+    assert item_grouping_memberships(target, first) == ()
+
+
+def test_item_grouping_memberships_without_openclip_sidecar(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    db.init_database(target)
+    file_id = insert_test_file(target, "2024/01/first.png", sha256="sha-1")
+
+    assert item_grouping_memberships(target, file_id) == ()
 
 
 def test_grouping_run_batches_card_metadata_without_per_cluster_connections(

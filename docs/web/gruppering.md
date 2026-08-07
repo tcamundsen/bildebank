@@ -48,6 +48,12 @@ algoritme, de viktigste innstillingene og hvilket utvalg som ble brukt. Åpne
 en kjøring for å se alle lagrede parametere og gruppene i kjøringen. **Vis alle
 bildene** åpner den vanlige bildebrowseren for gruppen.
 
+Når et bilde inngår i én eller flere fullførte grupperingskjøringer, vises
+knappen **Grupperinger (antall)** ved bildet. Knappen åpner en kort liste over
+kjøringene og gruppene bildet inngår i. Velg en rad for å åpne den aktuelle
+gruppen med bildet valgt. Ugrupperte bilder fra HDBSCAN og Leiden tas ikke med
+i denne listen.
+
 En kjøring kan slettes fra oversikten eller kjøringssiden etter bekreftelse.
 Bare selve gruppeforslaget slettes. Bilder, metadata og bildesøkdata beholdes.
 

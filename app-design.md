@@ -655,6 +655,11 @@ automatisk og lagrer støy som en egen gruppe som vises som «Ugrupperte
 bilder»; algoritmens effektive parametere og medlemsstyrke lagres med run-et.
 Oversikten viser algoritmen og de viktigste brukerinnstillingene på hvert
 run-panel; detaljsiden viser hele den lagrede parameter-JSON-en.
+Full bildevisning kan også vise hvilke ordinære grupper i fullførte kjøringer
+bildet inngår i, og lenke direkte til den eksisterende gruppebrowseren med
+bildet valgt. Dette er en historisk visning av avledede resultater, ikke en
+permanent egenskap ved bildet. Visningen skal fungere lokalt i read-only-modus,
+men skal skjules når OpenCLIP er deaktivert eller serveren deler over LAN.
 Grupperingssider er ikke tilgjengelige ved LAN-deling.
 Eksplisitt telling av thumbnails skal av samme grunn bruke beskyttet POST.
 Automatisk vedlikeholdsstatus kan forbli GET fordi den bare gjør read-only

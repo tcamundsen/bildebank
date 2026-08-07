@@ -53,6 +53,11 @@ from .server_browser_sources import (
     source_month_url,
     source_year_url,
 )
+from .server_item_groupings import (
+    ItemGroupingMembership,
+    grouping_algorithm_label,
+    item_grouping_memberships,
+)
 
 
 PageRenderer = Callable[[str, str], str]
@@ -142,6 +147,7 @@ def item_page_html(
     page_html: PageRenderer,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    grouping_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     manual_person_controls_enabled: bool = True,
     person_reference_links_enabled: bool = False,
@@ -159,6 +165,7 @@ def item_page_html(
         page_html=page_html,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+        grouping_enabled=grouping_enabled,
         face_config=face_config,
         manual_person_controls_enabled=manual_person_controls_enabled,
         person_reference_links_enabled=person_reference_links_enabled,
@@ -467,6 +474,7 @@ def source_item_page_html(
     page_html: PageRenderer,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    grouping_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     manual_person_controls_enabled: bool = True,
     person_reference_links_enabled: bool = False,
@@ -505,6 +513,11 @@ def source_item_page_html(
         timing_callback("html_hotkey_hints", start)
     start = time.perf_counter()
     motion_video, raw_sidecar = associated_files_for_item(target, item, conn=conn)
+    grouping_memberships = (
+        item_grouping_memberships(target, int(item["id"]))
+        if grouping_enabled and openclip_enabled and is_image_item(item)
+        else ()
+    )
     associated_file_buttons = "\n".join(
         button
         for button in (
@@ -515,6 +528,7 @@ def source_item_page_html(
                 openclip_enabled=openclip_enabled,
                 read_only=read_only,
             ),
+            item_groupings_button_html(grouping_memberships),
         )
         if button
     )
@@ -543,6 +557,10 @@ def source_item_page_html(
     manual_date_overlay = "" if read_only else manual_date_overlay_html()
     manual_h3_overlay = "" if read_only else manual_h3_overlay_html(item, named_h3_cells)
     comment_dialog = "" if read_only else comment_dialog_html(item)
+    item_groupings_dialog = item_groupings_dialog_html(
+        int(item["id"]),
+        grouping_memberships,
+    )
     face_suggest_dialog = ""
     if face_enabled and not read_only:
         from .server_faces import face_suggest_dialog_html
@@ -613,6 +631,7 @@ def source_item_page_html(
         {manual_date_overlay}
         {manual_h3_overlay}
         {comment_dialog}
+        {item_groupings_dialog}
         {face_suggest_dialog}
         """,
     )
@@ -636,6 +655,67 @@ def similar_search_button_html(
           <button class="nav-button" type="submit" title="Finn lignende bilder"
                   aria-label="Finn lignende bilder">🔍≈</button>
         </form>
+    """
+
+
+def item_groupings_button_html(
+    memberships: Sequence[ItemGroupingMembership],
+) -> str:
+    if not memberships:
+        return ""
+    count = len(memberships)
+    return (
+        '<button class="nav-button" type="button" '
+        'data-open-item-groupings aria-haspopup="dialog" '
+        'title="Vis grupperingsresultater for bildet">'
+        f"Grupperinger ({count})</button>"
+    )
+
+
+def item_groupings_dialog_html(
+    file_id: int,
+    memberships: Sequence[ItemGroupingMembership],
+) -> str:
+    if not memberships:
+        return ""
+    rows = "\n".join(
+        _item_grouping_membership_html(file_id, membership)
+        for membership in memberships
+    )
+    return f"""
+    <div id="itemGroupingsDialog" class="modal-overlay" hidden>
+      <section class="modal-panel item-groupings-panel" role="dialog"
+               aria-modal="true" aria-labelledby="itemGroupingsDialogTitle">
+        <h2 id="itemGroupingsDialogTitle">Grupperingsresultater for bildet</h2>
+        <p class="meta">
+          Resultater fra fullførte grupperingskjøringer. Bildet, taggene og
+          filplasseringen blir ikke endret.
+        </p>
+        <div class="item-groupings-list">{rows}</div>
+        <div class="dialog-actions">
+          <button type="button" data-close-item-groupings>Lukk</button>
+        </div>
+      </section>
+    </div>
+    """
+
+
+def _item_grouping_membership_html(
+    file_id: int,
+    membership: ItemGroupingMembership,
+) -> str:
+    algorithm = html.escape(grouping_algorithm_label(membership.algorithm))
+    image_label = "bilde" if membership.active_member_count == 1 else "bilder"
+    url = (
+        f"/grouping/runs/{membership.run_id}/clusters/"
+        f"{membership.cluster_id}/item/{file_id}"
+    )
+    return f"""
+      <a class="item-grouping-link" href="{url}">
+        <strong>Kjøring #{membership.run_id} · {algorithm}</strong>
+        <span>Gruppe {membership.display_order} ·
+              {membership.active_member_count} {image_label}</span>
+      </a>
     """
 
 

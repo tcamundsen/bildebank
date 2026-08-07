@@ -119,6 +119,8 @@
   const clearManualDateButton = document.querySelector("[data-clear-manual-date]");
   const manualDateFields = document.querySelectorAll("[data-manual-date-field]");
   const itemCommentDialog = document.getElementById("itemCommentDialog");
+  const itemGroupingsDialog = document.getElementById("itemGroupingsDialog");
+  const openItemGroupingsButton = document.querySelector("[data-open-item-groupings]");
   const itemCommentForm = document.querySelector("[data-item-comment-form]");
   const itemCommentInput = itemCommentForm?.querySelector('textarea[name="comment"]');
   const itemCommentStatus = document.querySelector("[data-item-comment-status]");
@@ -831,6 +833,22 @@
   });
   itemCommentDialog?.addEventListener("click", event => {
     if (event.target === itemCommentDialog) closeItemCommentDialog();
+  });
+  function closeItemGroupingsDialog() {
+    if (!itemGroupingsDialog) return;
+    itemGroupingsDialog.hidden = true;
+    openItemGroupingsButton?.focus();
+  }
+  openItemGroupingsButton?.addEventListener("click", () => {
+    if (!itemGroupingsDialog) return;
+    itemGroupingsDialog.hidden = false;
+    itemGroupingsDialog.querySelector("[data-close-item-groupings]")?.focus();
+  });
+  document.querySelectorAll("[data-close-item-groupings]").forEach(button => {
+    button.addEventListener("click", closeItemGroupingsDialog);
+  });
+  itemGroupingsDialog?.addEventListener("click", event => {
+    if (event.target === itemGroupingsDialog) closeItemGroupingsDialog();
   });
   async function saveItemComment(comment) {
     const fileId = Number(itemCommentForm?.dataset.fileId);
@@ -1694,6 +1712,13 @@
       if (event.key === "Escape") {
         event.preventDefault();
         closeItemCommentDialog();
+      }
+      return;
+    }
+    if (itemGroupingsDialog && !itemGroupingsDialog.hidden) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeItemGroupingsDialog();
       }
       return;
     }

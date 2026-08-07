@@ -1177,6 +1177,28 @@
       line-height: 1.4;
     }
     .item-comment-panel { width: min(620px, 100%); }
+    .item-groupings-panel {
+      width: min(620px, 100%);
+      max-height: calc(100vh - 48px);
+      overflow: auto;
+    }
+    .item-groupings-panel .meta { margin: 0; }
+    .item-groupings-list { display: grid; gap: 8px; }
+    .item-grouping-link {
+      display: grid;
+      gap: 3px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .item-grouping-link:hover,
+    .item-grouping-link:focus-visible {
+      border-color: var(--accent);
+      background: rgb(255 255 255 / 5%);
+    }
+    .item-grouping-link span { color: var(--muted); font-size: 13px; }
     .manual-date-panel { align-self: start; justify-self: center; margin-top: 36px; }
     .manual-h3-panel {
       align-self: start;
