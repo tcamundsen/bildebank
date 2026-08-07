@@ -1003,7 +1003,7 @@ Leveranse: ferdige launcher-runs kan brukes og slettes i webgrensesnittet.
   en offentlig CLI-side for workerkommandoen.
 - [x] Kjør fokuserte tester uten xdist.
 - [x] Kjør full suite med `python -m pytest -n auto`.
-- [ ] Test en disponibel Windows-samling med et lite filter og omtrent 20 000
+- [x] Test en disponibel Windows-samling med et lite filter og omtrent 20 000
   embeddings før funksjonen brukes på hovedsamlingen.
 
 Leveranse: dokumentert og verifisert første versjon.

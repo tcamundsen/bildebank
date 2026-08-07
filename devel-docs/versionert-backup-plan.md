@@ -1,6 +1,6 @@
 # Plan for snapshots
 
-Status: **snapshot implementert – Windows-pilot gjenstår**
+Status: **snapshot implementert**
 
 Dette dokumentet beskriver sikkerhetsmodellen, lagringsformatet og
 gjenopprettingsflyten for versjonerte snapshots. Under det tidlige designarbeidet
