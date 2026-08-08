@@ -246,10 +246,9 @@ større enn null. Det skal ikke innføres profiler før egnede verdier er målt 
 en representativ del av bildesamlingen med den valgte grafmodusen og
 vektsettingen.
 
-Implementeringsplanen skal inneholde et eksplisitt kalibreringssteg som velger
-en foreløpig standardverdi. Verdien og begrunnelsen dokumenteres før
-implementeringen regnes som ferdig. Bibliotekets standard skal ikke brukes
-skjult.
+Den foreløpige standardverdien for CPM-oppløsning er `0.2`. Verdien skal
+kalibreres manuelt på den faktiske samlingen før funksjonen regnes som ferdig
+verifisert. Bibliotekets standard skal ikke brukes skjult.
 
 ### Iterasjoner, seed og bibliotekversjon
 
@@ -261,12 +260,12 @@ Alle effektive Leiden-parametere skal angis eksplisitt i kode og lagres i
 - antall iterasjoner eller eksplisitt «til stabilt resultat»
 - tilfeldig seed
 - vektmodus
+- beta
 
-Launcher-dialogen eksponerer ikke seed eller iterasjonsvalg i første
-brukergrensesnitt. De får dokumenterte interne standarder; seed er `0`. Hvis
-det valgte biblioteket bruker en negativ verdi for «til stabilt resultat», skal
-domenemodellen bruke et forståelig navn og bare oversette til råverdien i
-bibliotekadapteren.
+Launcher-dialogen eksponerer ikke seed, iterasjonsvalg eller beta i første
+brukergrensesnitt. De dokumenterte interne standardene er seed `0`,
+`n_iterations=-1` for kjøring til stabilt resultat og `beta=0.01`. Alle tre
+verdiene lagres i kjøringens parametere.
 
 Navn og versjon for graf- og Leiden-biblioteket lagres i en validert
 `library_versions_json`. Reproduksjon er et best mulig mål, ikke et løfte på

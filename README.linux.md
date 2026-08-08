@@ -141,3 +141,10 @@ cd ~/kode/bildebank
 git pull --ff-only
 ./.venv/bin/python -m pip install -e .
 ```
+
+## Utviklere
+
+For å installere alt utviklere trenger kjøres:
+
+python -m pip install -e ".[dev]"
+python -m pytest

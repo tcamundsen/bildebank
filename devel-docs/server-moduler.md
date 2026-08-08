@@ -95,4 +95,4 @@ enklere; testen skal importere funksjonen fra eiermodulen.
 - Fil- og databaseendringer skal fortsatt eies av domenemoduler og holde
   target-låsen. HTTP-laget skal ikke implementere egen filflytting eller SQL.
 - Etter endringer i handler eller runtime: kjør hele kontrollsettet og prøv
-  serverstart mot en testsamling. Se også `server-oppsplitting.md`.
+  serverstart mot en testsamling.
