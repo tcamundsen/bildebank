@@ -15,7 +15,8 @@ under import kan fortsatt ligge på en Windows-disk.
 
 Du trenger Git og Python 3.13 eller nyere.
 
-På Debian/Ubuntu/WSL kan det typisk installeres slik:
+På Debian og distribusjoner som er basert på Debian, kan dette vanligvis
+installeres slik:
 
 ```bash
 sudo apt update
@@ -27,11 +28,11 @@ Hvis `python3 --version` viser eldre enn 3.13, må du installere Python 3.13
 eller nyere før du fortsetter. Hvis du er usikker på hvordan, er dette et godt
 sted å be om hjelp.
 
-Hvis du skal bruke ansiktsgjenkjenning med InsightFace i Linux/WSL, trenger
-OpenCV også systembiblioteket `libGL`:
+Hvis du skal bruke ansiktsgjenkjenning med InsightFace, trenger
+OpenCV også systembibliotekene `libGL` og `GLib`:
 
 ```bash
-sudo apt install libgl1
+sudo apt install libgl1 libglib2.0-0
 ```
 
 ## Installer programmet
@@ -46,6 +47,32 @@ cd bildebank
 python3 -m venv .venv
 ./.venv/bin/python -m pip install -e .
 ```
+
+## Kjør Bildebank
+
+Fra programmappen kan du alltid starte Bildebank direkte fra `.venv`:
+
+```bash
+cd ~/kode/bildebank
+./.venv/bin/bildebank start
+```
+
+For å kunne skrive bare `bildebank`, legg programmets `.venv/bin` i `PATH`:
+
+```bash
+export PATH="$HOME/kode/bildebank/.venv/bin:$PATH"
+bildebank start
+```
+
+Denne linjen gjelder bare i terminalvinduet du står i nå. Legg samme
+`export`-linje i `~/.bashrc` hvis den skal gjelde i nye terminaler også:
+
+```bash
+echo 'export PATH="$HOME/kode/bildebank/.venv/bin:$PATH"' >> ~/.bashrc
+```
+
+Neste gang du åpner terminalen, skal `bildebank start` virke uten den lange
+stien.
 
 ## Valgfrie AI-funksjoner
 
@@ -69,33 +96,7 @@ bildebank doctor
 
 ## Konvertering av .avi-filer
 
-Bruke må installere `ffmpeg` med pakkemanager. Programmet bruker `ffmpeg` og `ffprobe`.
-
-## Kjør Bildebank
-
-Du kan alltid kjøre programmet med Python fra `.venv`:
-
-```bash
-cd ~/kode/bildebank
-./.venv/bin/python -m bildebank --help
-```
-
-For å kunne skrive bare `bildebank`, legg programmets `.venv/bin` i `PATH`:
-
-```bash
-export PATH="$HOME/kode/bildebank/.venv/bin:$PATH"
-bildebank --help
-```
-
-Denne linjen gjelder bare i terminalvinduet du står i nå. Legg samme
-`export`-linje i `~/.bashrc` hvis den skal gjelde i nye terminaler også:
-
-```bash
-echo 'export PATH="$HOME/kode/bildebank/.venv/bin:$PATH"' >> ~/.bashrc
-```
-
-Neste gang du åpner terminalen, skal `bildebank --help` virke uten den lange
-stien.
+Brukermå installere `ffmpeg` med pakkemanager. Programmet bruker `ffmpeg` og `ffprobe`.
 
 ## Eksempel
 
