@@ -610,7 +610,7 @@ class ToolsTab:
                 return
             if not messagebox.askyesno(
                 "Installer grupperingsstøtte?",
-                "Gruppering krever OpenCLIP og scikit-learn. Vil du "
+                "Gruppering krever OpenCLIP, scikit-learn og igraph. Vil du "
                 "installere OpenCLIP-pakken nå?",
                 parent=self.root,
             ):
@@ -665,6 +665,11 @@ class ToolsTab:
                 random_seed=values.random_seed,
                 min_cluster_size=values.min_cluster_size,
                 min_samples=values.min_samples,
+                neighbor_count=values.neighbor_count,
+                neighbor_mode=values.neighbor_mode,
+                minimum_similarity=values.minimum_similarity,
+                weight_mode=values.weight_mode,
+                resolution=values.resolution,
                 hide_out_of_focus=values.hide_out_of_focus,
             ),
             running_message="Grupperer bilder ...",

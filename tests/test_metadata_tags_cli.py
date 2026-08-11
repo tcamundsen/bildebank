@@ -8,7 +8,7 @@ from pathlib import Path
 from bildebank import db
 from bildebank.geo import h3_cells_for_point
 from bildebank.server_browser_sources import tag_browser_source
-from bildebank.server_assets import SERVER_CSS
+from bildebank.server_assets import SERVER_CSS, SERVER_JS
 from bildebank.server_browser_info_html import date_source_text, image_info_content_html
 from bildebank.server_browser_queries import (
     adjacent_browser_items,
@@ -290,15 +290,93 @@ class MetadataTagsCliTests(unittest.TestCase):
         self.assertIn('<div class="system-tag-row">', tags_body)
         self.assertIn('class="tag-actions"', tags_body)
         self.assertIn(".tag-actions", SERVER_CSS)
+        self.assertIn(".user-tag-row {\n      align-items: center;", SERVER_CSS)
+        self.assertIn(".user-tag-action { display: flex; align-items: center; }", SERVER_CSS)
+        self.assertIn(".danger-button {\n      min-height: 32px;\n      padding: 4px 7px;", SERVER_CSS)
         self.assertIn('<details class="tag-rename-details">', tags_body)
         self.assertIn('<summary class="tag-rename-toggle">Endre navn</summary>', tags_body)
         self.assertIn('<button type="submit">Lagre</button>', tags_body)
+        self.assertIn('<button type="button" data-cancel-tag-rename>Avbryt</button>', tags_body)
+        self.assertLess(tags_body.index(">Lagre</button>"), tags_body.index(">Avbryt</button>"))
+        self.assertIn('closest("[data-cancel-tag-rename]")', SERVER_JS)
+        self.assertIn('closest("form")?.reset()', SERVER_JS)
+        self.assertIn('closest("details.tag-rename-details")?.removeAttribute("open")', SERVER_JS)
         self.assertNotIn('<button type="submit">Endre navn</button>', tags_body)
         self.assertIn('data-confirm-submit="Slette taggen Familie fra alle bilder?"', tags_body)
         self.assertLess(tags_body.index("<h2>Brukertagger</h2>"), tags_body.index("<h2>Systemtagger</h2>"))
         self.assertIn('<a class="person-link" href="/tag/Ute%20av%20fokus">0 bilder</a>', tags_body)
+        self.assertNotIn(db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW, item_body)
+        self.assertNotIn(db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW, tags_body)
         self.assertNotIn("systemtagg kan ikke endres", tags_body)
         self.assertNotIn("opprettet:", tags_body)
+
+    def test_duplicate_repair_system_tag_is_shown_only_when_used(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+
+            empty_item_body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+            )
+            empty_tags_body = tags_page_html(target)
+
+            conn = db.connect(target)
+            try:
+                db.tag_file(
+                    conn,
+                    file_id=1,
+                    tag_name=db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW,
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            used_item_body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+            )
+            used_tags_body = tags_page_html(target)
+
+        self.assertNotIn(
+            db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW,
+            empty_item_body,
+        )
+        self.assertNotIn(
+            db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW,
+            empty_tags_body,
+        )
+        self.assertIn(
+            f'data-tag-name="{db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW}"',
+            used_item_body,
+        )
+        self.assertIn(
+            db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW,
+            used_tags_body,
+        )
 
     def test_non_metadata_lists_files_not_placed_by_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

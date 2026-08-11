@@ -11,6 +11,7 @@ from .config import CONFIG_FILENAME, load_config
 from .image_clustering import (
     ClusteringParameters,
     HdbscanParameters,
+    LeidenParameters,
     run_image_clustering,
 )
 from .openclip import (
@@ -48,15 +49,24 @@ class ImageClusteringProgressPrinter:
             f"{key}={value}"
             for key, value in values.items()
         )
-        if stage == "algorithm":
-            self.output("Image-clustering: Grupperer bilder ... forløpt=0s")
-            self._start_heartbeat()
+        active_stage_text = {
+            "algorithm": "Grupperer bilder",
+            "neighbors": "Finner nærmeste naboer",
+            "graph": "Bygger graf",
+            "leiden": "Grupperer grafen med Leiden",
+            "ranking": "Rangerer gruppemedlemmer",
+        }.get(stage)
+        if active_stage_text is not None:
+            self.output(
+                f"Image-clustering: {active_stage_text} ... forløpt=0s"
+            )
+            self._start_heartbeat(active_stage_text)
         elif details:
             self.output(f"Image-clustering: {stage}: {details}")
         else:
             self.output(f"Image-clustering: {stage}")
 
-    def _start_heartbeat(self) -> None:
+    def _start_heartbeat(self, stage_text: str) -> None:
         stop_event = threading.Event()
         self._stop_event = stop_event
         self._started_at = time.monotonic()
@@ -65,7 +75,7 @@ class ImageClusteringProgressPrinter:
             while not stop_event.wait(self.interval_seconds):
                 elapsed_seconds = max(0, int(time.monotonic() - self._started_at))
                 self.output(
-                    "Image-clustering: Grupperer bilder ... "
+                    f"Image-clustering: {stage_text} ... "
                     f"forløpt={elapsed_seconds}s"
                 )
 
@@ -101,6 +111,11 @@ def run_image_command(args: argparse.Namespace, target: Path, *, repo_root: Path
             random_seed=args.seed,
             min_cluster_size=args.min_cluster_size,
             min_samples=args.min_samples,
+            neighbor_count=args.neighbors,
+            neighbor_mode=args.neighbor_mode,
+            minimum_similarity=args.minimum_similarity,
+            weight_mode=args.weight_mode,
+            resolution=args.resolution,
         )
     if args.command == "image-scan":
         return run_image_scan(target, repo_root=repo_root, limit=args.limit)
@@ -124,13 +139,27 @@ def run_image_clustering_worker(
     random_seed: int,
     min_cluster_size: int,
     min_samples: int | None,
+    neighbor_count: int,
+    neighbor_mode: str,
+    minimum_similarity: float,
+    weight_mode: str,
+    resolution: float,
 ) -> int:
     config = load_config(repo_root).openclip
-    parameters: ClusteringParameters | HdbscanParameters
+    parameters: ClusteringParameters | HdbscanParameters | LeidenParameters
     if algorithm == "hdbscan":
         parameters = HdbscanParameters(
             min_cluster_size=min_cluster_size,
             min_samples=min_samples,
+        )
+    elif algorithm == "leiden":
+        parameters = LeidenParameters(
+            requested_k=neighbor_count,
+            neighbor_mode=neighbor_mode,
+            minimum_similarity=minimum_similarity,
+            weight_mode=weight_mode,
+            resolution=resolution,
+            random_seed=random_seed,
         )
     else:
         parameters = ClusteringParameters(

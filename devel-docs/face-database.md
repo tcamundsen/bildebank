@@ -13,6 +13,45 @@ tidkrevende å bygge på nytt:
 - bekreftede ansiktskoblinger
 - forslag fra `face-suggest`
 
+Personer, bekreftelser og forslag er manuelt kuraterte data selv om de ligger
+i samme database som regenererbare scanresultater. Hver database tilhører
+nøyaktig én bildesamling og én InsightFace-modell. Databasene skal aldri deles
+mellom samlinger.
+
+## Modellvalg og databaseidentitet
+
+Brukeren velger aktiv modell, men ikke plasseringen av face-databasene:
+
+```toml
+[face_recognition]
+model_name = "buffalo_l"
+```
+
+Aktiv database velges fra `model_name`:
+
+```text
+bildesamling/
+  .bilder.sqlite3
+  .bildebank-faces/
+    buffalo_l.sqlite3
+    antelopev2.sqlite3
+```
+
+Modellnavnet må bare inneholde bokstaver, tall, punktum, bindestrek og
+understrek. Andre tegn avvises før navnet brukes som databasefilnavn.
+
+Hver face-database lagrer modellen den tilhører i `meta.model_name`. En ny
+database som mangler verdien, får aktivt modellnavn. Hvis en eksisterende
+database oppgir et annet modellnavn enn aktiv config, stoppes åpningen med en
+tydelig feil. Embeddings eller kuraterte data skal aldri migreres eller blandes
+mellom modeller.
+
+`face-scan`, `face-suggest` og personvisningene bruker bare databasen til den
+aktive modellen. Bytte av modell bevarer tidligere scanresultater, personer,
+bekreftelser og forslag i den andre modellens database. Samlingsoperasjoner
+som `remove`, `unimport`, migrering og snapshot behandler derimot alle
+eksisterende modelldatabaser.
+
 ## Dagens versjon
 
 Dagens face-schema er `FACE_SCHEMA_VERSION = 5` i `bildebank/face.py`.
@@ -68,6 +107,15 @@ med `deleted_at` og for `file_id` som mangler i hoveddatabasen, og lager en
 integritetskontrollert backup av hver eksisterende InsightFace-database før
 slettingen. Se `devel-docs/database-v17-migration.md`.
 
+`refresh-metadata` og recovery etter en avbrutt metadataflytting oppdaterer
+kopierte stier i `scanned_files` og `faces` i alle eksisterende
+modelldatabaser. De scanner ikke inaktive modeller på nytt og endrer ikke
+embeddings, personer, bekreftelser eller forslag. Før en ny flytting må
+`scanned_files.sha256` stemme med hoveddatabasen. Ved avvik under recovery
+beholdes den ventende flyttingen for manuell kontroll. Historiske, rene
+stiavvik kan repareres med den modell-uavhengige kommandoen
+`repair-face-paths`, også når ansiktsgjenkjenning er slått av.
+
 `person_files` har disse kolonnene:
 
 ```sql
@@ -86,8 +134,11 @@ bilder”, fordi den visningen brukes som grunnlag for forslag.
 ## Stier
 
 Face-databasene ligger alltid under `.bildebank-faces/` i den samlingen de
-tilhører. Plasseringen kan ikke konfigureres. Katalogen og databasefilene skal
-ikke være symlinker, hardlinker eller Windows reparse points.
+tilhører. Plasseringen kan ikke konfigureres. Eldre config kan fortsatt
+inneholde den eksakte standardverdien
+`database_dir = ".bildebank-faces"`; andre verdier avvises, og feltet skal
+ikke skrives i ny config. Katalogen og databasefilene skal ikke være
+symlinker, hardlinker eller Windows reparse points.
 
 Stier til filer inne i bildesamlingen skal lagres relativt til aktiv
 samlingsrot.
@@ -108,6 +159,44 @@ target_root / relative_path
 
 Dette er nødvendig for at en bildesamling skal kunne flyttes eller få nytt
 mappenavn uten at face-databasen slutter å virke.
+
+## InsightFace-modellfiler
+
+InsightFace-modellene ligger som standard under `.bildebank-insightface` i
+programmappen, adskilt fra de samlingsspesifikke face-databasene. Automatisk
+nedlasting er begrenset til modellpakker med fast URL, arkivstørrelse, SHA-256
+og forventede ONNX-filer. Utpakking skjer i staging, og modellen publiseres
+først etter full kontroll. En eksisterende, ikke-tom modellmappe som er
+ufullstendig eller avvikende, beholdes uendret fordi eksisterende embeddings
+kan være avhengige av akkurat denne modellutgaven.
+
+Noen InsightFace-pakker kan få et ekstra mappenivå:
+
+```text
+.bildebank-insightface/models/antelopev2/antelopev2/*.onnx
+```
+
+Ved modellinnlasting kan Bildebank normalisere dette til:
+
+```text
+.bildebank-insightface/models/antelopev2/*.onnx
+```
+
+Normaliseringen skjer bare når den ytre modellmappen ikke allerede inneholder
+ONNX-filer, den indre mappen inneholder slike filer, og ingen målfil finnes.
+Uklare eller kolliderende oppsett skal bevares og gi en tydelig feil fremfor å
+bli overskrevet.
+
+## Kompatibilitet med gammel databaseplassering
+
+Den historiske databasen `.bilder-faces.sqlite3` ble opprettet før modellvalg
+og regnes som en `buffalo_l`-database. Når denne filen finnes og
+`.bildebank-faces/buffalo_l.sqlite3` mangler, flytter Bildebank den gamle
+databasen til den modellspesifikke plasseringen før åpning. En eksisterende
+database på den nye plasseringen overskrives aldri.
+
+Dette er en midlertidig kompatibilitetsregel i kode og kan fjernes når alle
+eksisterende samlinger er migrert.
 
 ## Path-forutsetning
 

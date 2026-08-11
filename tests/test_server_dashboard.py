@@ -98,15 +98,16 @@ class ServerDashboardTests(unittest.TestCase):
                 )
 
         self.assertIn("Samlingsoversikt", body)
-        self.assertRegex(body, r"<dt>Aktive filer</dt>\s*<dd>3 \(6\.0 KB\)</dd>")
-        self.assertRegex(body, r"<dt>Bilder</dt>\s*<dd>2 \(4\.0 KB\)</dd>")
-        self.assertRegex(body, r"<dt>Videoer</dt>\s*<dd>1 \(2\.0 KB\)</dd>")
-        self.assertRegex(body, r"<dt>Registrert sett</dt>\s*<dd>1 av 3</dd>")
-        self.assertRegex(body, r"<dt>Slettede bilder</dt>\s*<dd>1 \(4\.0 KB\)</dd>")
+        self.assertIn('<dt>Aktive filer</dt>\n      <dd><a href="/">3 (6.0 KB)</a></dd>', body)
+        self.assertIn('<a href="/filter/type%3Aimage">2 (4.0 KB)</a>', body)
+        self.assertIn('<a href="/filter/type%3Avideo">1 (2.0 KB)</a>', body)
+        self.assertIn('<a href="/random">1 av 3</a>', body)
+        self.assertIn('<a href="/settings/removed">1 (4.0 KB)</a>', body)
         self.assertIn("<dt>Kilder: error</dt>", body)
         self.assertIn("<dt>Kilder: imported</dt>", body)
         self.assertIn("<dt>Registrerte kildefiler</dt>", body)
         self.assertIn("<dt>Duplikatkilder</dt>", body)
+        self.assertIn('href="/sources"', body)
         self.assertIn("Uløste feil", body)
         self.assertIn("bildebank errors", body)
         self.assertIn("bildebank doctor", body)
@@ -114,6 +115,7 @@ class ServerDashboardTests(unittest.TestCase):
         self.assertIn("Ufarlig: Bildebank er designet for å håndtere dette.", body)
         self.assertIn('href="/help/show-conflict.md"', body)
         self.assertIn("bildebank refresh-metadata", body)
+        self.assertIn('href="/filter/missing%3Adate"', body)
         self.assertNotIn("bildebank geo-scan", body)
         self.assertNotIn("bildebank face-scan", body)
         self.assertNotIn("bildebank image-scan", body)
@@ -279,6 +281,49 @@ class ServerDashboardTests(unittest.TestCase):
 
         self.assertEqual(summary.total_active, 0)
 
+    def test_dashboard_undated_count_matches_missing_date_filter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id = insert_test_file(target, "udatert/image.jpg")
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET taken_date = NULL,
+                        date_source = 'unknown',
+                        manual_date_from = '1980-01-01',
+                        manual_date_to = '1980-12-31'
+                    WHERE id = ?
+                    """,
+                    (file_id,),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            summary = dashboard_summary(target)
+
+        self.assertEqual(summary.undated_files, 0)
+
+    def test_read_only_dashboard_does_not_link_to_write_only_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            insert_test_file(target, "deleted/image.jpg", deleted=True)
+
+            body = dashboard_page_html(
+                target,
+                AppConfig(),
+                shell_page_html=lambda title, content, **kwargs: content,
+                read_only=True,
+            )
+
+        self.assertIn("Slettede bilder", body)
+        self.assertNotIn('href="/settings"', body)
+        self.assertNotIn('href="/settings/removed"', body)
+
     def test_run_server_dashboard_actions_defer_scan_counts_to_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -359,6 +404,7 @@ class ServerDashboardTests(unittest.TestCase):
             face_enabled=True,
             openclip_enabled=True,
             lan_share=True,
+            read_only=True,
         )
         with patch(
             "bildebank.server_pages.server_dashboard.dashboard_page_html",
@@ -368,3 +414,4 @@ class ServerDashboardTests(unittest.TestCase):
 
         self.assertEqual(body, "<h1>Dashboard</h1>")
         self.assertTrue(render_dashboard.call_args.kwargs["hide_local_paths"])
+        self.assertTrue(render_dashboard.call_args.kwargs["read_only"])

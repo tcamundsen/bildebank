@@ -53,12 +53,20 @@ from .server_browser_sources import (
     source_month_url,
     source_year_url,
 )
+from .server_item_groupings import (
+    ItemGroupingMembership,
+    grouping_algorithm_label,
+    item_grouping_memberships,
+)
 
 
 PageRenderer = Callable[[str, str], str]
 Breadcrumb = tuple[str, str | None] | tuple[str, str | None, str | None]
 TAG_CONTROL_ROWS_CACHE_MAX_SIZE = 8
-TAG_CONTROL_ROWS_CACHE: dict[tuple[str, int], tuple[tuple[str, str], ...]] = {}
+TAG_CONTROL_ROWS_CACHE: dict[
+    tuple[str, int],
+    tuple[tuple[str, str, str | None], ...],
+] = {}
 MONTH_NAMES = {
     "01": "Januar",
     "02": "Februar",
@@ -139,6 +147,7 @@ def item_page_html(
     page_html: PageRenderer,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    grouping_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     manual_person_controls_enabled: bool = True,
     person_reference_links_enabled: bool = False,
@@ -156,6 +165,7 @@ def item_page_html(
         page_html=page_html,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+        grouping_enabled=grouping_enabled,
         face_config=face_config,
         manual_person_controls_enabled=manual_person_controls_enabled,
         person_reference_links_enabled=person_reference_links_enabled,
@@ -464,6 +474,7 @@ def source_item_page_html(
     page_html: PageRenderer,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    grouping_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     manual_person_controls_enabled: bool = True,
     person_reference_links_enabled: bool = False,
@@ -502,6 +513,11 @@ def source_item_page_html(
         timing_callback("html_hotkey_hints", start)
     start = time.perf_counter()
     motion_video, raw_sidecar = associated_files_for_item(target, item, conn=conn)
+    grouping_memberships = (
+        item_grouping_memberships(target, int(item["id"]))
+        if grouping_enabled and openclip_enabled and is_image_item(item)
+        else ()
+    )
     associated_file_buttons = "\n".join(
         button
         for button in (
@@ -509,9 +525,11 @@ def source_item_page_html(
             video_original_button_html(target, item),
             similar_search_button_html(
                 item,
+                source=source,
                 openclip_enabled=openclip_enabled,
                 read_only=read_only,
             ),
+            item_groupings_button_html(grouping_memberships),
         )
         if button
     )
@@ -540,6 +558,10 @@ def source_item_page_html(
     manual_date_overlay = "" if read_only else manual_date_overlay_html()
     manual_h3_overlay = "" if read_only else manual_h3_overlay_html(item, named_h3_cells)
     comment_dialog = "" if read_only else comment_dialog_html(item)
+    item_groupings_dialog = item_groupings_dialog_html(
+        int(item["id"]),
+        grouping_memberships,
+    )
     face_suggest_dialog = ""
     if face_enabled and not read_only:
         from .server_faces import face_suggest_dialog_html
@@ -610,6 +632,7 @@ def source_item_page_html(
         {manual_date_overlay}
         {manual_h3_overlay}
         {comment_dialog}
+        {item_groupings_dialog}
         {face_suggest_dialog}
         """,
     )
@@ -621,18 +644,89 @@ def source_item_page_html(
 def similar_search_button_html(
     item: Any,
     *,
+    source: BrowserSource,
     openclip_enabled: bool,
     read_only: bool,
 ) -> str:
     if not openclip_enabled or read_only or not is_image_item(item):
         return ""
+    source_input = ""
+    label = "Finn lignende bilder"
+    if is_filtered_source(source):
+        source_input = (
+            '<input type="hidden" name="source_url" '
+            f'value="{html.escape(source.root_url)}">'
+        )
+        label = f"Finn lignende i utvalget «{source.title}»"
     return f"""
         <form action="/search/similar" method="post" class="similar-search-form">
           <input type="hidden" name="file_id" value="{int(item['id'])}">
           <input type="hidden" name="limit" value="100">
-          <button class="nav-button" type="submit" title="Finn lignende bilder"
-                  aria-label="Finn lignende bilder">🔍≈</button>
+          {source_input}
+          <button class="nav-button" type="submit" title="{html.escape(label)}"
+                  aria-label="{html.escape(label)}">🔍≈</button>
         </form>
+    """
+
+
+def item_groupings_button_html(
+    memberships: Sequence[ItemGroupingMembership],
+) -> str:
+    if not memberships:
+        return ""
+    count = len(memberships)
+    return (
+        '<button class="nav-button" type="button" '
+        'data-open-item-groupings aria-haspopup="dialog" '
+        'title="Vis grupperingsresultater for bildet">'
+        f"Grupperinger ({count})</button>"
+    )
+
+
+def item_groupings_dialog_html(
+    file_id: int,
+    memberships: Sequence[ItemGroupingMembership],
+) -> str:
+    if not memberships:
+        return ""
+    rows = "\n".join(
+        _item_grouping_membership_html(file_id, membership)
+        for membership in memberships
+    )
+    return f"""
+    <div id="itemGroupingsDialog" class="modal-overlay" hidden>
+      <section class="modal-panel item-groupings-panel" role="dialog"
+               aria-modal="true" aria-labelledby="itemGroupingsDialogTitle">
+        <h2 id="itemGroupingsDialogTitle">Grupperingsresultater for bildet</h2>
+        <p class="meta">
+          Resultater fra fullførte grupperingskjøringer. Bildet, taggene og
+          filplasseringen blir ikke endret.
+        </p>
+        <div class="item-groupings-list">{rows}</div>
+        <div class="dialog-actions">
+          <button type="button" data-close-item-groupings>Lukk</button>
+        </div>
+      </section>
+    </div>
+    """
+
+
+def _item_grouping_membership_html(
+    file_id: int,
+    membership: ItemGroupingMembership,
+) -> str:
+    algorithm = html.escape(grouping_algorithm_label(membership.algorithm))
+    image_label = "bilde" if membership.active_member_count == 1 else "bilder"
+    url = (
+        f"/grouping/runs/{membership.run_id}/clusters/"
+        f"{membership.cluster_id}/item/{file_id}"
+    )
+    return f"""
+      <a class="item-grouping-link" href="{url}">
+        <strong>Kjøring #{membership.run_id} · {algorithm}</strong>
+        <span>Gruppe {membership.display_order} ·
+              {membership.active_member_count} {image_label}</span>
+      </a>
     """
 
 
@@ -897,36 +991,70 @@ def item_side_panel_html(
     finally:
         if owned_conn:
             conn.close()
-    buttons = []
+    primary_buttons = []
+    active_tag_buttons = []
+    available_tag_buttons = []
     if not read_only:
         comment = item_string_value(item, "comment")
         active_class = " active" if comment else ""
         pressed = "true" if comment else "false"
-        buttons.append(
+        primary_buttons.append(
             f'<button class="comment-button{active_class}" type="button" '
             f'data-open-item-comment data-comment-item="{file_id}" '
             f'aria-pressed="{pressed}">Kommentar</button>'
         )
     for tag in defined_tags:
-        tag_name, tag_name_key = tag
+        tag_name, tag_name_key, system_key = tag
         active = tag_name_key in active_names
         pressed = "true" if active else "false"
         active_class = " active" if active else ""
         redirect_attr = ""
-        if tag_name == db.SYSTEM_TAG_OUT_OF_FOCUS and out_of_focus_redirect_url:
+        if system_key == db.SYSTEM_TAG_OUT_OF_FOCUS_KEY and out_of_focus_redirect_url:
             redirect_attr = f' data-tag-hide-redirect="{html.escape(out_of_focus_redirect_url)}"'
-        buttons.append(
+        system_attr = ' data-tag-system="true"' if system_key is not None else ""
+        button = (
             f'<button class="tag-toggle{active_class}" type="button" '
             f'title="Klikk for å legge til eller fjerne taggen fra bildet" '
             f'data-tag-toggle="{file_id}" data-tag-name="{html.escape(tag_name)}" '
-            f'aria-pressed="{pressed}"{redirect_attr}>{html.escape(tag_name)}</button>'
+            f'aria-pressed="{pressed}"{redirect_attr}{system_attr}>{html.escape(tag_name)}</button>'
         )
+        if system_key is not None:
+            primary_buttons.append(button)
+        elif active:
+            active_tag_buttons.append(button)
+        else:
+            available_tag_buttons.append(button)
+    tag_controls = ""
+    if not read_only:
+        active_hidden = "" if active_tag_buttons else " hidden"
+        picker_hidden = "" if available_tag_buttons else " hidden"
+        filter_id = f"tagFilter{file_id}"
+        list_id = f"availableTags{file_id}"
+        tag_controls = f"""
+          <section class="active-tags" data-active-tags{active_hidden}>
+            <h2 class="tag-rail-heading">På bildet</h2>
+            <div class="active-tag-list" data-active-tag-list>{"".join(active_tag_buttons)}</div>
+          </section>
+          <details class="tag-picker" data-tag-picker{picker_hidden}>
+            <summary>Legg til tagg <span class="tag-picker-count" data-tag-picker-count>{len(available_tag_buttons)}</span></summary>
+            <div class="tag-picker-body">
+              <label for="{filter_id}">Finn tagg</label>
+              <input id="{filter_id}" type="search" autocomplete="off"
+                     placeholder="Søk i tagger" data-tag-filter aria-controls="{list_id}">
+              <div id="{list_id}" class="tag-picker-list" data-available-tag-list>{"".join(available_tag_buttons)}</div>
+              <p class="tag-picker-empty" data-tag-picker-empty role="status" hidden>Ingen tagger matcher søket.</p>
+            </div>
+          </details>
+        """
     location_status = (
         manual_h3_badge_html(manual_h3_name, manual_h3_cell_value, extra_html=location_controls)
         if gps_source_is_manual_h3(item)
         else gps_location_badge_html(item, extra_html=location_controls)
     )
-    return f'<aside class="tag-rail" aria-label="Tagger">{"".join(buttons)}{location_status}{extra_html}{suffix_html}</aside>'
+    return (
+        f'<aside class="tag-rail" aria-label="Tagger">'
+        f'{"".join(primary_buttons)}{tag_controls}{location_status}{extra_html}{suffix_html}</aside>'
+    )
 
 
 def hotkey_hints_panel_html(
@@ -942,8 +1070,12 @@ def hotkey_hints_panel_html(
             rows.append(f'<div class="hotkey-hint"><span>{html.escape(key)}:</span> {html.escape(label)}</div>')
     if not rows:
         return ""
-    heading = '<div class="hotkey-hints-heading">Hurtigtaster aktivert:</div>'
-    return '<section class="hotkey-hints" aria-label="Hurtigtaster">' + heading + "".join(rows) + "</section>"
+    return (
+        '<details class="hotkey-hints" data-hotkey-hints>'
+        '<summary>Hurtigtaster aktivert</summary>'
+        f'<div class="hotkey-hints-list">{"".join(rows)}</div>'
+        "</details>"
+    )
 
 
 def hotkey_hint_label(
@@ -985,7 +1117,10 @@ def hotkey_date_hint_text(hotkey: BrowserHotkeyConfig) -> str:
 
 
 
-def tag_control_rows(target: Path, conn: sqlite3.Connection) -> tuple[tuple[str, str], ...]:
+def tag_control_rows(
+    target: Path,
+    conn: sqlite3.Connection,
+) -> tuple[tuple[str, str, str | None], ...]:
     db_path = db.db_path_for_target(target)
     try:
         mtime_ns = db_path.stat().st_mtime_ns
@@ -997,12 +1132,27 @@ def tag_control_rows(target: Path, conn: sqlite3.Connection) -> tuple[tuple[str,
         return cached
     rows = conn.execute(
         """
-        SELECT name, name_key
+        SELECT name, name_key, system_key
         FROM tags
+        WHERE system_key IS NULL
+           OR system_key != ?
+           OR EXISTS (
+                SELECT 1
+                FROM file_tags
+                WHERE file_tags.tag_id = tags.id
+           )
         ORDER BY CASE kind WHEN 'system' THEN 0 ELSE 1 END, name_key
-        """
+        """,
+        (db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW_KEY,),
     )
-    cached = tuple((str(row["name"]), str(row["name_key"])) for row in rows)
+    cached = tuple(
+        (
+            str(row["name"]),
+            str(row["name_key"]),
+            str(row["system_key"]) if row["system_key"] is not None else None,
+        )
+        for row in rows
+    )
     if len(TAG_CONTROL_ROWS_CACHE) >= TAG_CONTROL_ROWS_CACHE_MAX_SIZE:
         TAG_CONTROL_ROWS_CACHE.pop(next(iter(TAG_CONTROL_ROWS_CACHE)))
     TAG_CONTROL_ROWS_CACHE[cache_key] = cached

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import shlex
 import sqlite3
 import urllib.parse
 import datetime as dt
@@ -57,12 +58,27 @@ def image_info_rows(
     target_path = Path(str(item["target_path"]))
     absolute_path = db.absolute_target_path(target, target_path)
     dimensions = cached_image_dimensions(target, absolute_path) if not read_only else cached_item_dimensions(item)
+    camera_text = camera_text_from_item(item)
+    extension = target_path.suffix.removeprefix(".").casefold()
     rows = [
         info_row_html("Filnavn", display_relative_path(target, target_path)),
+        info_row_html(
+            "Filtype",
+            filter_value_link_html("extension", extension, extension.upper())
+            if extension
+            else "-",
+            raw_html=bool(extension),
+        ),
         info_row_html("Dato", image_date_text(item)),
         info_row_html("Filstørrelse", f"{format_bytes(int(item['size_bytes']))} ({int(item['size_bytes'])} bytes)"),
         info_row_html("Oppløsning", f"{dimensions.width} x {dimensions.height}" if dimensions else "-"),
-        info_row_html("Kamera", camera_text_from_item(item)),
+        info_row_html(
+            "Kamera",
+            filter_value_link_html("camera", camera_text, camera_text)
+            if camera_text != "-"
+            else "-",
+            raw_html=camera_text != "-",
+        ),
     ]
     metadata_time = metadata_time_text(item)
     if metadata_time:
@@ -77,7 +93,7 @@ def image_info_rows(
         hide_local_paths=hide_local_paths,
     )
     if sources:
-        rows.append(info_row_html("Kilder", "\n\n".join(sources), multiline=True))
+        rows.append(info_row_html("Kilder", "<br><br>".join(sources), raw_html=True))
     else:
         rows.append(info_row_html("Kilder", "-"))
     tags = image_tag_links_html(target, int(item["id"]))
@@ -336,10 +352,24 @@ def image_source_rows(
             or (None if hide_local_paths else row["source_root"])
             or f"Kilde #{row['source_id']}"
         )
-        value = source_name if hide_local_paths else f"{source_name}: {row['source_path']}"
+        source_url = f"/source/{int(row['source_id'])}"
+        linked_name = (
+            f'<a href="{source_url}">{html.escape(source_name)}</a>'
+        )
+        value = (
+            linked_name
+            if hide_local_paths
+            else f"{linked_name}: {html.escape(str(row['source_path']))}"
+        )
         if value not in result:
             result.append(value)
     return result
+
+
+def filter_value_link_html(key: str, value: str, label: str) -> str:
+    query = f"{key}:{shlex.quote(value)}"
+    url = "/filter/" + urllib.parse.quote(query, safe="")
+    return f'<a href="{html.escape(url)}">{html.escape(label)}</a>'
 
 
 def image_geo_area_links_html(target: Path, item: Any) -> str:

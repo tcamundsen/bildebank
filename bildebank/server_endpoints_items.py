@@ -261,11 +261,19 @@ def respond_tag_item(handler: BildebankRequestHandler) -> None:
     if not tag_name:
         handler.respond_json({"ok": False, "error": "Taggnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
         return
+    conn = db.connect_read_only(handler.server.target)
+    try:
+        tag_system_key = db.system_tag_key_for_name(conn, tag_name)
+    finally:
+        conn.close()
     record_timing("tag_validate", start)
     try:
         start = time.perf_counter()
         server_actions.set_tag_on_file(handler.server.target, file_id, tag_name, tagged)
-        handler.server.note_tag_navigation_change(tag_name)
+        handler.server.note_tag_navigation_change(
+            tag_name,
+            system_key=tag_system_key,
+        )
         record_timing("tag_apply", start)
     except TargetLockError as exc:
         handler.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
@@ -519,6 +527,16 @@ def respond_hotkey_action(handler: BildebankRequestHandler) -> None:
     if hotkey.action == "person" and not handler.server.face_enabled:
         handler.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
         return
+    hotkey_tag_system_key = None
+    if hotkey.action == "tag":
+        conn = db.connect_read_only(handler.server.target)
+        try:
+            hotkey_tag_system_key = db.system_tag_key_for_name(
+                conn,
+                hotkey.tag_name,
+            )
+        finally:
+            conn.close()
     record_timing("hotkey_validate", start)
 
     start = time.perf_counter()
@@ -579,7 +597,10 @@ def respond_hotkey_action(handler: BildebankRequestHandler) -> None:
     if hotkey.action in {"rotate_left", "rotate_right"}:
         note_navigation_change(handler.server, "note_rotation_navigation_change")
     if hotkey.action == "tag":
-        handler.server.note_tag_navigation_change(str(result.get("tag_name") or hotkey.tag_name))
+        handler.server.note_tag_navigation_change(
+            str(result.get("tag_name") or hotkey.tag_name),
+            system_key=hotkey_tag_system_key,
+        )
     if hotkey.action == "person":
         clear_face_caches()
         result["person_url"] = person_item_url(str(result["person_name"]), file_id, show_faces=False)

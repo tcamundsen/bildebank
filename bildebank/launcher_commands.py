@@ -87,8 +87,13 @@ def image_clustering_command(
     random_seed: int = 0,
     min_cluster_size: int | None = None,
     min_samples: int | None = None,
+    neighbor_count: int | None = None,
+    neighbor_mode: str = "union",
+    minimum_similarity: float = 0.0,
+    weight_mode: str = "cosine",
+    resolution: float | None = None,
 ) -> list[str]:
-    if algorithm not in {"minibatch_kmeans", "hdbscan"}:
+    if algorithm not in {"minibatch_kmeans", "hdbscan", "leiden"}:
         raise ValueError(f"Ukjent grupperingsalgoritme: {algorithm}")
     command = bildebank_command(
         "--target",
@@ -105,6 +110,25 @@ def image_clustering_command(
         command.extend(["--min-cluster-size", str(min_cluster_size)])
         if min_samples is not None:
             command.extend(["--min-samples", str(min_samples)])
+    elif algorithm == "leiden":
+        if neighbor_count is None or resolution is None:
+            raise ValueError("Leiden krever antall naboer og CPM-oppløsning.")
+        command.extend(
+            [
+                "--neighbors",
+                str(neighbor_count),
+                "--neighbor-mode",
+                neighbor_mode,
+                "--minimum-similarity",
+                str(minimum_similarity),
+                "--weight-mode",
+                weight_mode,
+                "--resolution",
+                str(resolution),
+                "--seed",
+                str(random_seed),
+            ]
+        )
     else:
         if n_clusters is None:
             raise ValueError("MiniBatchKMeans krever antall grupper.")

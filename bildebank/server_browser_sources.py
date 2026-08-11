@@ -24,7 +24,9 @@ class BrowserSource:
     geo_place_slug: str | None = None
     geo_place_cells: tuple[str, ...] = ()
     tag_name: str | None = None
+    tag_system_key: str | None = None
     text_filter: Any | None = None
+    search_run_id: int | None = None
     cluster_run_id: int | None = None
     cluster_id: int | None = None
 
@@ -38,7 +40,10 @@ def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
     source_part = raw_path.strip("/")
     page_mode = None
     raw_value = ""
-    if "/item/" in source_part:
+    if source_part.endswith("/random"):
+        source_part = source_part.removesuffix("/random")
+        page_mode = "random"
+    elif "/item/" in source_part:
         source_part, raw_value = source_part.split("/item/", 1)
         page_mode = "item"
     elif "/year/" in source_part:
@@ -128,12 +133,17 @@ def geo_place_browser_source(place: PredefinedGeoPlace) -> BrowserSource:
     )
 
 
-def tag_browser_source(tag_name: str) -> BrowserSource:
+def tag_browser_source(
+    tag_name: str,
+    *,
+    system_key: str | None = None,
+) -> BrowserSource:
     name = db.normalize_tag_name(tag_name)
     return BrowserSource(
         f"Tagg: {name}",
         "/tag/" + urllib.parse.quote(name, safe=""),
         tag_name=name,
+        tag_system_key=system_key,
     )
 
 
@@ -153,6 +163,14 @@ def cluster_browser_source(
     )
 
 
+def search_results_browser_source(run_id: int, title: str) -> BrowserSource:
+    return BrowserSource(
+        title,
+        f"/search/runs/{run_id}",
+        search_run_id=run_id,
+    )
+
+
 def is_filtered_source(source: BrowserSource) -> bool:
     return (
         source.person_name is not None
@@ -162,6 +180,7 @@ def is_filtered_source(source: BrowserSource) -> bool:
         or source.geo_place_slug is not None
         or source.tag_name is not None
         or source.text_filter is not None
+        or source.search_run_id is not None
         or source.cluster_id is not None
     )
 
@@ -172,6 +191,8 @@ def source_has_sql_filter(source: BrowserSource) -> bool:
 
         return not text_filter_has_runtime_filter(source.text_filter)
     if source.cluster_id is not None:
+        return True
+    if source.search_run_id is not None:
         return True
     return (
         source.person_name is not None
@@ -188,6 +209,17 @@ def source_includes_deleted(source: BrowserSource) -> bool:
 
 
 def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[object, ...]]:
+    if source.search_run_id is not None:
+        return (
+            """
+            files.id IN (
+                SELECT file_id
+                FROM openclip_db.image_search_results
+                WHERE run_id = ?
+            )
+            """,
+            (source.search_run_id,),
+        )
     if source.cluster_id is not None:
         if source.cluster_run_id is None:
             raise ValueError("Gruppekilden mangler run-ID.")
@@ -312,6 +344,12 @@ def source_item_url(source: BrowserSource, file_id: int) -> str:
     if is_filtered_source(source):
         return f"{source.root_url}/item/{file_id}"
     return f"/item/{file_id}"
+
+
+def source_random_url(source: BrowserSource) -> str:
+    if is_filtered_source(source):
+        return f"{source.root_url}/random"
+    return "/random"
 
 
 def source_month_url(source: BrowserSource, month_key: str) -> str:

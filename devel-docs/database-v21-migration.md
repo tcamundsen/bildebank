@@ -1,8 +1,7 @@
 # Database v21: tombstones og purge-journal
 
-Status: Implementert. Skjemaet ble innført i kontrollpunkt A og brukes av den
-ferdige purge-flyten fra kontrollpunkt B og C i
-`devel-docs/tombstone-implementasjonsplan.md`.
+Status: Implementert. Skjemaet brukes av den ferdige purge-flyten som er
+beskrevet i `devel-docs/sletting-med-toombstone.md`.
 
 ## Formål
 

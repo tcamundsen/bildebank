@@ -460,6 +460,17 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     self, parsed.path.removeprefix("/person/")
                 )
                 return
+            if parsed.path.startswith("/search/runs/"):
+                if not self.server.openclip_enabled:
+                    self.respond_text(
+                        "Tekstbasert bildesøk er av.", status=HTTPStatus.NOT_FOUND
+                    )
+                    return
+                server_endpoints_browser.respond_search_run(
+                    self,
+                    parsed.path.removeprefix("/search/runs/"),
+                )
+                return
             if parsed.path == "/search":
                 if not self.server.openclip_enabled:
                     self.respond_text(
@@ -708,7 +719,10 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         status=HTTPStatus.INTERNAL_SERVER_ERROR,
                     )
                     return
-                self.respond_html(search_html(self.server, stats, limit))
+                if stats.run_id is not None:
+                    self.redirect(f"/search/runs/{stats.run_id}")
+                else:
+                    self.respond_html(search_html(self.server, stats, limit))
                 return
             if parsed.path == "/search/similar":
                 if not self.server.openclip_enabled:
@@ -735,6 +749,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         self.server,
                         file_id=file_id,
                         limit=limit,
+                        source_url=first_param(params, "source_url").strip(),
                     )
                 except TargetLockError as exc:
                     self.respond_html(
@@ -766,9 +781,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         status=HTTPStatus.INTERNAL_SERVER_ERROR,
                     )
                     return
-                self.respond_html(
-                    similar_search_html(self.server, similar_stats)
-                )
+                if similar_stats.run_id is not None:
+                    self.redirect(f"/search/runs/{similar_stats.run_id}")
+                else:
+                    self.respond_html(
+                        similar_search_html(self.server, similar_stats)
+                    )
                 return
             if parsed.path == "/api/search-preload":
                 self.respond_search_preload()

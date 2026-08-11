@@ -598,7 +598,9 @@ class ServerItemActionsCliTests(unittest.TestCase):
                 ) -> None:
                     responses.append({"content": content, "status": status})
 
-                server.note_tag_navigation_change = tag_navigation_changes.append
+                server.note_tag_navigation_change = lambda tag_name, **_kwargs: (
+                    tag_navigation_changes.append(tag_name)
+                )
 
             server_endpoints_items.respond_hotkey_action(FakeHandler())  # type: ignore[arg-type]
             server_endpoints_items.respond_hotkey_action(FakeHandler())  # type: ignore[arg-type]
@@ -925,10 +927,9 @@ class ServerItemActionsCliTests(unittest.TestCase):
         tag_rail_start = body.index('<aside class="tag-rail"')
         tag_rail_body = body[tag_rail_start : body.index("</aside>", tag_rail_start)]
         self.assertIn('class="hotkey-hints"', tag_rail_body)
-        self.assertIn(
-            '<div class="hotkey-hints-heading">Hurtigtaster aktivert:</div>',
-            tag_rail_body,
-        )
+        self.assertIn('<details class="hotkey-hints" data-hotkey-hints>', tag_rail_body)
+        self.assertIn("<summary>Hurtigtaster aktivert</summary>", tag_rail_body)
+        self.assertIn('class="hotkey-hints-list"', tag_rail_body)
         self.assertIn("<span>1:</span> Sett H3 til Brevik", tag_rail_body)
         self.assertIn("<span>2:</span> Roter til venstre", tag_rail_body)
         self.assertIn("<span>3:</span> Legg til Viljar", tag_rail_body)
@@ -939,11 +940,13 @@ class ServerItemActionsCliTests(unittest.TestCase):
             tag_rail_body.index("location-status-badge"),
             tag_rail_body.index('class="hotkey-hints"'),
         )
-        self.assertTrue(tag_rail_body.strip().endswith("</section>"))
+        self.assertTrue(tag_rail_body.strip().endswith("</details>"))
         self.assertIn('data-browser-hotkeys-enabled="true"', body)
         self.assertNotIn("data-browser-hotkeys-enabled", hidden_body)
         self.assertIn('itemRoot?.dataset.browserHotkeysEnabled === "true"', SERVER_JS)
         self.assertIn('itemRoot?.dataset.browserHotkeysEnabled !== "true"', SERVER_JS)
+        self.assertIn('window.matchMedia("(min-width: 641px)").matches', SERVER_JS)
+        self.assertIn("hotkeyHints.open = true;", SERVER_JS)
         self.assertNotIn('class="hotkey-hints"', hidden_body)
 
     def test_run_server_hotkey_action_rotates_item(self) -> None:
@@ -1943,7 +1946,7 @@ class ServerItemActionsCliTests(unittest.TestCase):
         self.assertIn("Bildesamlingen er låst", str(handler.body["error"]))
         self.assertEqual(row["gps_source"], "manual-h3")
 
-    def test_run_server_item_page_lists_defined_tags_before_geo_info(self) -> None:
+    def test_run_server_item_page_groups_active_tags_and_searches_available_tags(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -1967,7 +1970,10 @@ class ServerItemActionsCliTests(unittest.TestCase):
             )
             conn = db.connect(target)
             try:
-                db.ensure_tag(conn, "Familie")
+                db.set_file_tag(conn, file_id=1, tag_name="Familie", tagged=True)
+                db.ensure_tag(conn, "Ferie")
+                for index in range(1, 19):
+                    db.ensure_tag(conn, f"Tagg {index:02d}")
                 conn.commit()
             finally:
                 conn.close()
@@ -1984,14 +1990,28 @@ class ServerItemActionsCliTests(unittest.TestCase):
         self.assertIn('data-tag-toggle="1"', body)
         self.assertIn('data-tag-name="Ute av fokus"', body)
         self.assertIn('data-tag-name="Familie"', body)
+        self.assertIn('data-tag-name="Ferie"', body)
+        self.assertNotIn(db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW, body)
         self.assertIn('aria-pressed="false"', body)
+        self.assertIn('data-tag-name="Familie" aria-pressed="true"', body)
+        self.assertIn('class="active-tags" data-active-tags', body)
+        self.assertIn('class="active-tag-list" data-active-tag-list', body)
+        self.assertIn('class="tag-picker" data-tag-picker', body)
+        self.assertIn('data-tag-picker-count>19</span>', body)
+        self.assertIn('placeholder="Søk i tagger" data-tag-filter', body)
+        self.assertIn('class="tag-picker-list" data-available-tag-list', body)
+        self.assertIn("Ingen tagger matcher søket.", body)
         self.assertLess(
             body.index('data-tag-name="Ute av fokus"'),
             body.index('data-tag-name="Familie"'),
         )
-        self.assertNotIn('class="date-status-badge"', body)
         self.assertLess(
             body.index('data-tag-name="Familie"'),
+            body.index('data-tag-name="Ferie"'),
+        )
+        self.assertNotIn('class="date-status-badge"', body)
+        self.assertLess(
+            body.index('data-tag-name="Ferie"'),
             body.index('class="location-status-badge"'),
         )
         self.assertIn("/api/item-tag", SERVER_JS)
@@ -2003,11 +2023,18 @@ class ServerItemActionsCliTests(unittest.TestCase):
         self.assertIn(
             'button.classList.toggle("active", Boolean(payload.tagged));', tag_handler
         )
+        self.assertIn("updateTagPlacement(button, Boolean(payload.tagged));", tag_handler)
         self.assertNotIn("window.location.reload();", tag_handler)
         self.assertIn("stage-shell", SERVER_CSS)
         self.assertIn("tag-rail", SERVER_CSS)
+        self.assertIn("overflow-y: auto;", SERVER_CSS)
+        self.assertIn("scrollbar-gutter: stable;", SERVER_CSS)
+        self.assertIn(".tag-picker-list", SERVER_CSS)
+        self.assertIn("max-height: min(42dvh, 360px);", SERVER_CSS)
         self.assertIn(".tag-toggle::before", SERVER_CSS)
         self.assertIn(".tag-toggle.active::before", SERVER_CSS)
+        self.assertIn('tagFilter?.addEventListener("input", refreshTagPicker);', SERVER_JS)
+        self.assertIn("tagFilterKey(button.dataset.tagName).includes(query)", SERVER_JS)
 
     def test_run_server_item_tag_endpoint_sets_system_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2060,9 +2087,16 @@ class ServerItemActionsCliTests(unittest.TestCase):
                     self.timings.append(name)
 
                 def __init__(self) -> None:
-                    self.server.note_tag_navigation_change = (
-                        self.tag_navigation_changes.append
-                    )
+                    self.server.note_tag_navigation_change = self.note_tag_change
+
+                def note_tag_change(
+                    self,
+                    tag_name: str,
+                    *,
+                    system_key: str | None = None,
+                ) -> None:
+                    self.tag_navigation_changes.append(tag_name)
+                    self.tag_system_key = system_key
 
             handler = FakeHandler()
             server_endpoints_items.respond_tag_item(handler)  # type: ignore[arg-type]
@@ -2089,6 +2123,7 @@ class ServerItemActionsCliTests(unittest.TestCase):
             handler.timings, ["tag_read_payload", "tag_validate", "tag_apply"]
         )
         self.assertEqual(handler.tag_navigation_changes, [db.SYSTEM_TAG_OUT_OF_FOCUS])
+        self.assertEqual(handler.tag_system_key, db.SYSTEM_TAG_OUT_OF_FOCUS_KEY)
         self.assertIn('class="tag-toggle active"', body)
         self.assertIn('aria-pressed="true"', body)
         self.assertIn("Ute av fokus", info_body)
@@ -2144,7 +2179,9 @@ class ServerItemActionsCliTests(unittest.TestCase):
 
                 def __init__(self) -> None:
                     self.server.note_tag_navigation_change = (
-                        self.tag_navigation_changes.append
+                        lambda tag_name, **_kwargs: self.tag_navigation_changes.append(
+                            tag_name
+                        )
                     )
 
             handler = FakeHandler()

@@ -19,7 +19,9 @@ from bildebank.image_clustering import (
     ClusteringParameters,
     ClusteringResult,
     HdbscanParameters,
+    LeidenParameters,
     cluster_embedding_matrix,
+    clustering_input_fingerprint,
     parse_clustering_selection,
     run_image_clustering,
 )
@@ -30,6 +32,20 @@ from bildebank.openclip import (
     get_meta,
 )
 from tests.db_test_helpers import insert_test_file
+
+
+OPENCLIP_V3_RUN_COLUMNS = (
+    "input_fingerprint",
+    "input_fingerprint_version",
+    "effective_neighbor_count",
+    "graph_node_count",
+    "graph_edge_count",
+    "isolated_file_count",
+    "threshold_removed_edge_count",
+    "nearest_similarity_median",
+    "kth_similarity_median",
+    "library_versions_json",
+)
 
 
 def memory_embedding_connection() -> sqlite3.Connection:
@@ -71,6 +87,15 @@ def clusterable_target(tmp_path: Path) -> Path:
     finally:
         conn.close()
     return target
+
+
+def downgrade_openclip_to_v2(conn: sqlite3.Connection) -> None:
+    for column in OPENCLIP_V3_RUN_COLUMNS:
+        conn.execute(
+            f"ALTER TABLE image_clustering_runs DROP COLUMN {column}"
+        )
+    conn.execute("UPDATE meta SET value = '2' WHERE key = 'schema_version'")
+    conn.commit()
 
 
 @pytest.mark.parametrize(
@@ -195,6 +220,111 @@ def test_hdbscan_groups_dense_points_and_keeps_noise_separate() -> None:
     assert result.clusters[-1].members[0].file_id == 99
     assert result.clusters[-1].members[0].distance_to_center is None
     assert result.clusters[-1].members[0].membership_score == 0.0
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"requested_k": 0}, "mellom 1 og 200"),
+        ({"neighbor_mode": "ukjent"}, "Nabomodus"),
+        ({"minimum_similarity": -0.1}, "Minste likhet"),
+        ({"weight_mode": "ukjent"}, "Kantvekter"),
+        ({"resolution": 0.0}, "CPM-oppløsning"),
+        ({"n_iterations": 0}, "iterasjoner"),
+    ],
+)
+def test_leiden_parameters_reject_invalid_values(
+    kwargs: dict[str, object],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        LeidenParameters(**kwargs)  # type: ignore[arg-type]
+
+
+def test_leiden_union_is_deterministic_with_duplicate_embeddings() -> None:
+    matrix = np.asarray(
+        [[1.0, 0.0], [1.0, 0.0], [1.0, 0.0]],
+        dtype=np.float32,
+    )
+    parameters = LeidenParameters(requested_k=1, resolution=0.2)
+
+    first = cluster_embedding_matrix(matrix, (10, 11, 12), parameters)
+    second = cluster_embedding_matrix(matrix, (10, 11, 12), parameters)
+
+    assert first == second
+    assert first.leiden_graph_stats is not None
+    assert first.leiden_graph_stats.edge_count == 2
+    assert first.leiden_graph_stats.isolated_file_count == 0
+    assert sorted(
+        member.file_id
+        for cluster in first.clusters
+        for member in cluster.members
+    ) == [10, 11, 12]
+
+
+def test_leiden_mutual_keeps_nonreciprocal_node_as_noise() -> None:
+    matrix = np.asarray(
+        [[1.0, 0.0], [1.0, 0.0], [1.0, 0.0]],
+        dtype=np.float32,
+    )
+
+    result = cluster_embedding_matrix(
+        matrix,
+        (10, 11, 12),
+        LeidenParameters(
+            requested_k=1,
+            neighbor_mode="mutual",
+            resolution=0.2,
+        ),
+    )
+
+    assert result.leiden_graph_stats is not None
+    assert result.leiden_graph_stats.edge_count == 1
+    assert result.leiden_graph_stats.isolated_file_count == 1
+    assert result.clusters[-1].kind == "noise"
+    assert [member.file_id for member in result.clusters[-1].members] == [12]
+
+
+def test_leiden_all_isolated_completes_with_only_noise() -> None:
+    result = cluster_embedding_matrix(
+        np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32),
+        (10, 20),
+        LeidenParameters(requested_k=20, resolution=0.2),
+    )
+
+    assert result.actual_cluster_count == 0
+    assert result.warning_message is not None
+    assert "alle bildene ble ugrupperte" in result.warning_message
+    assert len(result.clusters) == 1
+    assert result.clusters[0].kind == "noise"
+    assert [member.file_id for member in result.clusters[0].members] == [10, 20]
+    assert result.leiden_graph_stats is not None
+    assert result.leiden_graph_stats.effective_neighbor_count == 1
+    assert result.leiden_graph_stats.edge_count == 0
+    assert result.leiden_graph_stats.isolated_file_count == 2
+
+
+def test_leiden_input_fingerprint_uses_model_ids_and_matrix_bytes() -> None:
+    matrix = np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+    first = clustering_input_fingerprint(
+        matrix,
+        (10, 20),
+        model_name="model",
+        pretrained="weights",
+    )
+
+    assert first == clustering_input_fingerprint(
+        matrix.copy(),
+        (10, 20),
+        model_name="model",
+        pretrained="weights",
+    )
+    assert first != clustering_input_fingerprint(
+        matrix,
+        (10, 20),
+        model_name="other-model",
+        pretrained="weights",
+    )
 
 
 def test_clustering_progress_printer_emits_and_stops_elapsed_heartbeat() -> None:
@@ -419,6 +549,178 @@ def test_run_service_persists_hdbscan_noise_and_membership_scores(
         conn.close()
 
 
+def test_run_service_persists_leiden_fingerprint_and_graph_stats(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    target.mkdir()
+    db.init_database(target)
+    vectors = (
+        [1.0, 0.0],
+        [0.99, 0.1],
+        [0.0, 1.0],
+        [0.1, 0.99],
+    )
+    file_ids = [
+        insert_test_file(target, f"2024/01/{index}.png", sha256=f"sha-{index}")
+        for index in range(len(vectors))
+    ]
+    conn = connect_openclip_db(target)
+    try:
+        for index, (file_id, vector) in enumerate(
+            zip(file_ids, vectors, strict=True)
+        ):
+            conn.execute(
+                """
+                INSERT INTO image_embeddings(
+                    file_id, target_path, target_path_key, sha256,
+                    model_name, pretrained, embedding
+                ) VALUES(?, ?, ?, ?, 'model', 'weights', ?)
+                """,
+                (
+                    file_id,
+                    f"2024/01/{index}.png",
+                    f"2024/01/{index}.png",
+                    f"sha-{index}",
+                    embedding_blob(vector),
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = run_image_clustering(
+        target,
+        OpenClipConfig(
+            enabled=True,
+            model_name="model",
+            pretrained="weights",
+        ),
+        parameters=LeidenParameters(
+            requested_k=1,
+            resolution=0.2,
+            random_seed=7,
+        ),
+    )
+
+    assert result.status == "completed"
+    assert result.clustered_file_count == 4
+    assert result.actual_cluster_count == 2
+    conn = connect_openclip_db(target)
+    try:
+        row = conn.execute(
+            "SELECT * FROM image_clustering_runs WHERE id = ?",
+            (result.run_id,),
+        ).fetchone()
+        assert row["algorithm"] == "leiden"
+        assert row["input_fingerprint_version"] == 1
+        assert len(row["input_fingerprint"]) == 64
+        assert row["effective_neighbor_count"] == 1
+        assert row["graph_node_count"] == 4
+        assert row["graph_edge_count"] == 2
+        assert row["isolated_file_count"] == 0
+        assert row["threshold_removed_edge_count"] == 0
+        assert '"igraph":"1.0.0"' in row["library_versions_json"]
+        assert conn.execute(
+            "SELECT COUNT(*) FROM image_cluster_members WHERE run_id = ?",
+            (result.run_id,),
+        ).fetchone()[0] == 4
+    finally:
+        conn.close()
+
+
+def test_v2_migration_preserves_old_run_with_nullable_v3_fields(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    target.mkdir()
+    conn = connect_openclip_db(target)
+    try:
+        run_id = int(
+            conn.execute(
+                """
+                INSERT INTO image_clustering_runs(
+                    selection_kind, selection_json, model_name, pretrained,
+                    algorithm, parameters_json, random_seed, status
+                ) VALUES('all', '{"kind":"all"}', 'model', 'weights',
+                         'minibatch_kmeans', '{"n_clusters":2}', 0,
+                         'completed') RETURNING id
+                """
+            ).fetchone()[0]
+        )
+        downgrade_openclip_to_v2(conn)
+    finally:
+        conn.close()
+
+    migrated = connect_openclip_db(target)
+    try:
+        assert get_meta(migrated, "schema_version") == "3"
+        row = migrated.execute(
+            "SELECT * FROM image_clustering_runs WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+        assert all(row[column] is None for column in OPENCLIP_V3_RUN_COLUMNS)
+    finally:
+        migrated.close()
+
+
+def test_read_only_open_rejects_v2_without_migrating(tmp_path: Path) -> None:
+    target = tmp_path / "collection"
+    target.mkdir()
+    conn = connect_openclip_db(target)
+    try:
+        downgrade_openclip_to_v2(conn)
+    finally:
+        conn.close()
+
+    with pytest.raises(ValueError, match="schema_version=2"):
+        connect_openclip_db_read_only(target)
+
+    raw = sqlite3.connect(target / ".bilder-openclip.sqlite3")
+    try:
+        assert raw.execute(
+            "SELECT value FROM meta WHERE key = 'schema_version'"
+        ).fetchone()[0] == "2"
+        columns = {
+            str(row[1])
+            for row in raw.execute("PRAGMA table_info(image_clustering_runs)")
+        }
+        assert "input_fingerprint" not in columns
+    finally:
+        raw.close()
+
+
+def test_v2_migration_rolls_back_columns_and_version_on_health_failure(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    target.mkdir()
+    conn = connect_openclip_db(target)
+    try:
+        downgrade_openclip_to_v2(conn)
+    finally:
+        conn.close()
+
+    with patch(
+        "bildebank.openclip.db.validate_database_health",
+        side_effect=ValueError("health failure"),
+    ), pytest.raises(ValueError, match="health failure"):
+        connect_openclip_db(target)
+
+    raw = sqlite3.connect(target / ".bilder-openclip.sqlite3")
+    try:
+        assert raw.execute(
+            "SELECT value FROM meta WHERE key = 'schema_version'"
+        ).fetchone()[0] == "2"
+        columns = {
+            str(row[1])
+            for row in raw.execute("PRAGMA table_info(image_clustering_runs)")
+        }
+        assert "input_fingerprint" not in columns
+    finally:
+        raw.close()
+
+
 def test_v1_migration_preserves_embeddings(tmp_path: Path) -> None:
     target = tmp_path / "collection"
     target.mkdir()
@@ -450,7 +752,7 @@ def test_v1_migration_preserves_embeddings(tmp_path: Path) -> None:
 
     migrated = connect_openclip_db(target)
     try:
-        assert get_meta(migrated, "schema_version") == "2"
+        assert get_meta(migrated, "schema_version") == "3"
         assert bytes(
             migrated.execute(
                 "SELECT embedding FROM image_embeddings"

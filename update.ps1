@@ -172,7 +172,7 @@ function Install-And-Test {
         foreach ($profile in $Profiles) {
             $smokeTest = switch ($profile) {
                 "face" { "import insightface; import onnxruntime" }
-                "openclip" { "import open_clip; import torch" }
+                "openclip" { "import igraph; import open_clip; import sklearn; import torch" }
             }
             Invoke-Native -FilePath $venvPython -ArgumentList @("-c", $smokeTest)
         }

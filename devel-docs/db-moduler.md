@@ -81,6 +81,7 @@ forstås samlet.
 Eier tags:
 
 - tag-konstanter og systemtagg-navn
+- stabile `system_key`-verdier for systemtagger
 - tag-normalisering og `name_key`
 - oppretting, endring og sletting av brukertagger
 - tagging/untagging av filer

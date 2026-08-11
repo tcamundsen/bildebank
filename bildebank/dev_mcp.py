@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from . import db
 
@@ -21,7 +21,7 @@ EXAMPLE_INSIGHTFACE_DATABASES = {
     "antelopev2": REPO_ROOT / "example-db" / "antelopev2.sqlite3",
 }
 
-mcp = FastMCP("Bildebank dev")
+mcp = MCPServer("Bildebank dev")
 
 
 def _connect_readonly(database_path: Path) -> sqlite3.Connection:

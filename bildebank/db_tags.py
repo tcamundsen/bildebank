@@ -9,6 +9,15 @@ TAG_KIND_USER = "user"
 TAG_KIND_SYSTEM = "system"
 SYSTEM_TAG_OUT_OF_FOCUS = "Ute av fokus"
 SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW = "Bildebank: kontroller duplikatreparasjon"
+SYSTEM_TAG_OUT_OF_FOCUS_KEY = "out_of_focus"
+SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW_KEY = "duplicate_repair_review"
+SYSTEM_TAG_DEFINITIONS = (
+    (SYSTEM_TAG_OUT_OF_FOCUS_KEY, SYSTEM_TAG_OUT_OF_FOCUS),
+    (
+        SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW_KEY,
+        SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW,
+    ),
+)
 SYSTEM_TAG_NAMES = (
     SYSTEM_TAG_OUT_OF_FOCUS,
     SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW,
@@ -39,21 +48,57 @@ def is_system_tag_name(name: str) -> bool:
     return tag_kind_for_name(name) == TAG_KIND_SYSTEM
 
 
+def system_tag_key_for_default_name(name: str) -> str | None:
+    name_key = tag_name_key(name)
+    for system_key, default_name in SYSTEM_TAG_DEFINITIONS:
+        if tag_name_key(default_name) == name_key:
+            return system_key
+    return None
+
+
+def system_tag_id(conn: sqlite3.Connection, system_key: str) -> int:
+    row = conn.execute(
+        "SELECT id FROM tags WHERE system_key = ? AND kind = ?",
+        (system_key, TAG_KIND_SYSTEM),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"Databasen mangler systemtaggen med system_key={system_key!r}.")
+    return int(row["id"])
+
+
+def system_tag_key_for_name(conn: sqlite3.Connection, name: str) -> str | None:
+    row = conn.execute(
+        "SELECT system_key FROM tags WHERE name_key = ?",
+        (tag_name_key(name),),
+    ).fetchone()
+    if row is None or row["system_key"] is None:
+        return None
+    return str(row["system_key"])
+
+
 def ensure_tag(conn: sqlite3.Connection, name: str) -> int:
     clean_name = normalize_tag_name(name)
     name_key = clean_name.casefold()
     kind = tag_kind_for_name(clean_name)
+    system_key = system_tag_key_for_default_name(clean_name)
+    if system_key is not None:
+        row = conn.execute(
+            "SELECT id FROM tags WHERE system_key = ?",
+            (system_key,),
+        ).fetchone()
+        if row is not None:
+            return int(row["id"])
     row = conn.execute("SELECT id, kind FROM tags WHERE name_key = ?", (name_key,)).fetchone()
     if row is not None:
         if kind == TAG_KIND_SYSTEM and row["kind"] != TAG_KIND_SYSTEM:
             conn.execute(
-                "UPDATE tags SET name = ?, kind = ? WHERE id = ?",
-                (clean_name, TAG_KIND_SYSTEM, int(row["id"])),
+                "UPDATE tags SET name = ?, kind = ?, system_key = ? WHERE id = ?",
+                (clean_name, TAG_KIND_SYSTEM, system_key, int(row["id"])),
             )
         return int(row["id"])
     cursor = conn.execute(
-        "INSERT INTO tags(name, name_key, kind) VALUES(?, ?, ?)",
-        (clean_name, name_key, kind),
+        "INSERT INTO tags(name, name_key, kind, system_key) VALUES(?, ?, ?, ?)",
+        (clean_name, name_key, kind, system_key),
     )
     tag_id = optional_int(cursor.lastrowid, "tag-id")
     if tag_id is None:
@@ -147,7 +192,8 @@ def untag_file(conn: sqlite3.Connection, *, file_id: int, tag_name: str) -> bool
 def tags(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     return conn.execute(
         """
-        SELECT tags.id, tags.name, tags.name_key, tags.kind, tags.created_at, COUNT(file_tags.file_id) AS file_count
+        SELECT tags.id, tags.name, tags.name_key, tags.kind, tags.system_key,
+               tags.created_at, COUNT(file_tags.file_id) AS file_count
         FROM tags
         LEFT JOIN file_tags ON file_tags.tag_id = tags.id
         GROUP BY tags.id
@@ -160,7 +206,7 @@ def tags_for_file(conn: sqlite3.Connection, file_id: int) -> list[sqlite3.Row]:
     return list(
         conn.execute(
             """
-            SELECT tags.id, tags.name, tags.name_key, tags.kind
+            SELECT tags.id, tags.name, tags.name_key, tags.kind, tags.system_key
             FROM tags
             JOIN file_tags ON file_tags.tag_id = tags.id
             WHERE file_tags.file_id = ?

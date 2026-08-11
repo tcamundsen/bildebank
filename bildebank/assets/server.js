@@ -119,6 +119,8 @@
   const clearManualDateButton = document.querySelector("[data-clear-manual-date]");
   const manualDateFields = document.querySelectorAll("[data-manual-date-field]");
   const itemCommentDialog = document.getElementById("itemCommentDialog");
+  const itemGroupingsDialog = document.getElementById("itemGroupingsDialog");
+  const openItemGroupingsButton = document.querySelector("[data-open-item-groupings]");
   const itemCommentForm = document.querySelector("[data-item-comment-form]");
   const itemCommentInput = itemCommentForm?.querySelector('textarea[name="comment"]');
   const itemCommentStatus = document.querySelector("[data-item-comment-status]");
@@ -832,6 +834,22 @@
   itemCommentDialog?.addEventListener("click", event => {
     if (event.target === itemCommentDialog) closeItemCommentDialog();
   });
+  function closeItemGroupingsDialog() {
+    if (!itemGroupingsDialog) return;
+    itemGroupingsDialog.hidden = true;
+    openItemGroupingsButton?.focus();
+  }
+  openItemGroupingsButton?.addEventListener("click", () => {
+    if (!itemGroupingsDialog) return;
+    itemGroupingsDialog.hidden = false;
+    itemGroupingsDialog.querySelector("[data-close-item-groupings]")?.focus();
+  });
+  document.querySelectorAll("[data-close-item-groupings]").forEach(button => {
+    button.addEventListener("click", closeItemGroupingsDialog);
+  });
+  itemGroupingsDialog?.addEventListener("click", event => {
+    if (event.target === itemGroupingsDialog) closeItemGroupingsDialog();
+  });
   async function saveItemComment(comment) {
     const fileId = Number(itemCommentForm?.dataset.fileId);
     if (!fileId) return;
@@ -1027,6 +1045,58 @@
       }
     });
   });
+  const activeTags = document.querySelector("[data-active-tags]");
+  const activeTagList = document.querySelector("[data-active-tag-list]");
+  const tagPicker = document.querySelector("[data-tag-picker]");
+  const tagPickerCount = document.querySelector("[data-tag-picker-count]");
+  const tagFilter = document.querySelector("[data-tag-filter]");
+  const availableTagList = document.querySelector("[data-available-tag-list]");
+  const tagPickerEmpty = document.querySelector("[data-tag-picker-empty]");
+  function tagFilterKey(value) {
+    return String(value || "").trim().toLocaleLowerCase("nb-NO");
+  }
+  function sortedTagButtons(container) {
+    if (!container) return;
+    Array.from(container.querySelectorAll(":scope > [data-tag-toggle]"))
+      .sort((left, right) => {
+        return (left.dataset.tagName || "").localeCompare(right.dataset.tagName || "", "nb-NO", {
+          sensitivity: "base",
+        });
+      })
+      .forEach(button => container.append(button));
+  }
+  function refreshTagPicker() {
+    const activeButtons = activeTagList?.querySelectorAll(":scope > [data-tag-toggle]") || [];
+    if (activeTags) activeTags.hidden = activeButtons.length === 0;
+    const availableButtons = Array.from(
+      availableTagList?.querySelectorAll(":scope > [data-tag-toggle]") || [],
+    );
+    const query = tagFilterKey(tagFilter?.value);
+    let visibleCount = 0;
+    availableButtons.forEach(button => {
+      const visible = !query || tagFilterKey(button.dataset.tagName).includes(query);
+      button.hidden = !visible;
+      if (visible) visibleCount += 1;
+    });
+    if (tagPickerCount) tagPickerCount.textContent = String(availableButtons.length);
+    if (tagPicker) tagPicker.hidden = availableButtons.length === 0;
+    if (tagPickerEmpty) tagPickerEmpty.hidden = visibleCount !== 0;
+  }
+  function updateTagPlacement(button, tagged) {
+    if (button.dataset.tagSystem === "true") return;
+    const destination = tagged ? activeTagList : availableTagList;
+    if (!destination) return;
+    button.hidden = false;
+    destination.append(button);
+    sortedTagButtons(destination);
+    refreshTagPicker();
+  }
+  tagFilter?.addEventListener("input", refreshTagPicker);
+  refreshTagPicker();
+  const hotkeyHints = document.querySelector("[data-hotkey-hints]");
+  if (hotkeyHints && window.matchMedia("(min-width: 641px)").matches) {
+    hotkeyHints.open = true;
+  }
   document.querySelectorAll("[data-tag-toggle]").forEach(button => {
     button.addEventListener("click", async () => {
       const fileId = Number(button.dataset.tagToggle);
@@ -1053,6 +1123,7 @@
         }
         button.setAttribute("aria-pressed", payload.tagged ? "true" : "false");
         button.classList.toggle("active", Boolean(payload.tagged));
+        updateTagPlacement(button, Boolean(payload.tagged));
         button.disabled = false;
       } catch (error) {
         alert(error.message || "Kunne ikke lagre tagg.");
@@ -1644,6 +1715,13 @@
       }
       return;
     }
+    if (itemGroupingsDialog && !itemGroupingsDialog.hidden) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeItemGroupingsDialog();
+      }
+      return;
+    }
     if (personRenameDialog && !personRenameDialog.hidden) {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -1660,6 +1738,14 @@
       target instanceof HTMLButtonElement ||
       target?.isContentEditable
     ) return;
+    if (event.key.toLowerCase() === "t") {
+      event.preventDefault();
+      const randomLink = document.querySelector("[data-random-link]");
+      window.location.href = randomLink instanceof HTMLAnchorElement
+        ? randomLink.href
+        : "/random";
+      return;
+    }
     if (["1", "2", "3", "4", "5"].includes(event.key)) {
       const itemRoot = document.querySelector("[data-browser-item-id]");
       if (itemRoot?.dataset.browserHotkeysEnabled !== "true") return;
@@ -1680,4 +1766,34 @@
     if (!(link instanceof HTMLAnchorElement)) return;
     event.preventDefault();
     window.location.href = link.href;
+  });
+
+  document.addEventListener("click", (event) => {
+    const cancelTagRenameButton = event.target instanceof Element
+      ? event.target.closest("[data-cancel-tag-rename]")
+      : null;
+    if (cancelTagRenameButton) {
+      cancelTagRenameButton.closest("form")?.reset();
+      cancelTagRenameButton.closest("details.tag-rename-details")?.removeAttribute("open");
+      return;
+    }
+    const target = event.target;
+    if (target instanceof Element && target.closest(".header-menu-content a")) {
+      const dropdown = target.closest("details.header-menu-dropdown");
+      if (dropdown) dropdown.removeAttribute("open");
+    } else {
+      document.querySelectorAll("details.header-menu-dropdown[open]").forEach((menu) => {
+        if (target instanceof Node && !menu.contains(target)) {
+          menu.removeAttribute("open");
+        }
+      });
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      document.querySelectorAll("details.header-menu-dropdown[open]").forEach((menu) => {
+        menu.removeAttribute("open");
+      });
+    }
   });

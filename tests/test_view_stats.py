@@ -7,16 +7,22 @@ from http import HTTPStatus
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
-from bildebank import db, server_endpoints_browser, server_endpoints_items
+from bildebank import (
+    db,
+    server_browser_sidecars,
+    server_endpoints_browser,
+    server_endpoints_items,
+)
 from bildebank.server_assets import SERVER_JS
 from bildebank.server_browser_queries import (
     browser_item_by_id,
     browser_item_ids,
     browser_month_navigation,
 )
-from bildebank.server_pages import item_page_html
+from bildebank.server_browser_sources import parse_source_path, tag_browser_source
+from bildebank.server_pages import item_page_html, source_item_page_html
 from tests.db_test_helpers import insert_test_file
 
 
@@ -55,6 +61,8 @@ def test_v21_migrates_file_view_stats_without_changing_files(tmp_path: Path) -> 
     conn = db.connect(target)
     try:
         conn.execute("DROP TABLE file_view_stats")
+        conn.execute("DROP INDEX idx_tags_system_key_unique")
+        conn.execute("ALTER TABLE tags DROP COLUMN system_key")
         conn.execute("UPDATE meta SET value = '21' WHERE key = 'schema_version'")
         conn.commit()
     finally:
@@ -67,7 +75,7 @@ def test_v21_migrates_file_view_stats_without_changing_files(tmp_path: Path) -> 
     assert result.creates_file_view_stats
     conn = db.connect(target)
     try:
-        assert db.schema_version(conn) == 22
+        assert db.schema_version(conn) == 23
         assert conn.execute("SELECT id FROM files").fetchone()["id"] == file_id
         assert conn.execute("SELECT * FROM file_view_stats").fetchall() == []
     finally:
@@ -292,6 +300,54 @@ def test_random_candidate_uses_jpg_partners_instead_of_nef_and_psd(tmp_path: Pat
         conn.close()
 
 
+def test_raw_sidecar_scan_only_groups_jpegs_with_a_raw_filename_candidate(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    db.init_database(target)
+    image_id = insert_test_file(target, "2024/01/ÅB_0170.JPG")
+    raw_id = insert_test_file(target, "2024/01/åb_0170.NEF")
+    unrelated_ids = [
+        insert_test_file(target, f"2024/01/IMG_{index:04d}.JPG")
+        for index in range(20)
+    ]
+    conn = db.connect(target)
+    try:
+        source_id = db.add_named_source(conn, tmp_path / "source", "source")
+        for file_id in (image_id, raw_id, *unrelated_ids):
+            row = conn.execute(
+                "SELECT original_filename, sha256, size_bytes FROM files WHERE id = ?",
+                (file_id,),
+            ).fetchone()
+            source_path = f"C:/Users/Tom/Pictures/{row['original_filename']}"
+            db.insert_or_validate_file_source(
+                conn,
+                file_id=file_id,
+                source_id=source_id,
+                source_path=source_path,
+                source_path_key=source_path.casefold(),
+                sha256=str(row["sha256"]),
+                size_bytes=int(row["size_bytes"]),
+            )
+        conn.execute(
+            """
+            UPDATE files
+            SET date_source = 'metadata',
+                metadata_datetime = '2019-03-03 12:00:00'
+            """
+        )
+        conn.commit()
+
+        with patch(
+            "bildebank.server_browser_sidecars.raw_sidecar_group_keys",
+            wraps=server_browser_sidecars.raw_sidecar_group_keys,
+        ) as group_keys:
+            pairs = server_browser_sidecars.query_raw_sidecar_ids_by_image_id(conn)
+    finally:
+        conn.close()
+
+    assert pairs == {image_id: raw_id}
+    assert group_keys.call_count == 2
+
+
 def test_item_viewed_endpoint_records_a_view_and_hides_busy_database(tmp_path: Path) -> None:
     target = tmp_path / "target"
     db.init_database(target)
@@ -364,9 +420,63 @@ def test_random_endpoint_and_item_page_client_markup(tmp_path: Path) -> None:
     )
     assert 'data-view-registration-enabled="true"' in page
     assert "data-view-registration-enabled" not in read_only_page
-    assert 'href="/random">Tilfeldig bilde</a>' in page
+    assert 'href="/random" data-random-link aria-keyshortcuts="T"' in page
+    assert 'Tilfeldig bilde<span class="menu-shortcut" aria-hidden="true">T</span>' in page
+    assert 'event.key.toLowerCase() === "t"' in SERVER_JS
+    assert 'document.querySelector("[data-random-link]")' in SERVER_JS
+    assert "randomLink.href" in SERVER_JS
     assert 'data-view-status hidden aria-live="polite">(sett)</span>' in page
     assert "/api/item-viewed" in SERVER_JS
     assert "payload?.recorded === true" in SERVER_JS
     assert "window.setTimeout(register, imageViewDelayMs())" in SERVER_JS
     assert "video.addEventListener(\"seeking\"" in SERVER_JS
+
+
+def test_random_endpoint_keeps_filtered_browser_source(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    db.init_database(target)
+    included_id = insert_test_file(target, "2024/01/included.png")
+    insert_test_file(target, "2024/01/excluded.png")
+    source = tag_browser_source("Favoritt")
+    response: dict[str, object] = {}
+    seen_sources: list[object] = []
+
+    def source_item_order(actual_source: object, *, hide_out_of_focus: bool):
+        seen_sources.append(actual_source)
+        assert hide_out_of_focus is True
+        return [included_id], {included_id: 0}
+
+    handler = SimpleNamespace(
+        server=SimpleNamespace(
+            target=target,
+            hide_out_of_focus=True,
+            source_item_order=source_item_order,
+        ),
+        redirect=lambda location: response.update(location=location),
+        respond_text=lambda content, *, status: response.update(
+            content=content,
+            status=status,
+        ),
+    )
+
+    server_endpoints_browser.respond_random_item(  # type: ignore[arg-type]
+        handler,
+        source,
+    )
+
+    assert seen_sources == [source]
+    assert response["location"] == f"/tag/Favoritt/item/{included_id}"
+    assert parse_source_path("Favoritt/random") == ("Favoritt", "random", "")
+
+    item = browser_item_by_id(target, included_id)
+    assert item is not None
+    page = source_item_page_html(
+        target,
+        source,
+        item,
+        None,
+        None,
+        browser_month_navigation(target, item),
+    )
+    assert 'href="/tag/Favoritt/random" data-random-link' in page
+    assert "Tilfeldig i utvalget" in page

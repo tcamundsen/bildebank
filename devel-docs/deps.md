@@ -130,12 +130,16 @@ Scriptet installerer den komplette OpenCLIP-låsen:
 .\.venv\Scripts\python.exe -m pip install --require-hashes --only-binary=:all: -r .\requirements\windows-py313-openclip.lock
 ```
 
-`openclip` extra inneholder:
+`openclip` extra inneholder blant annet:
 
 - `open_clip_torch`
+- `scikit-learn`
+- `igraph`
 
-Denne pakken trekker inn større ML-avhengigheter, blant annet PyTorch. Koden
-sjekker også eksplisitt etter `torch`.
+OpenCLIP trekker inn større ML-avhengigheter, blant annet PyTorch.
+Scikit-learn brukes av MiniBatchKMeans og HDBSCAN, mens igraph brukes av
+Leiden-grupperingen. Koden sjekker eksplisitt etter alle disse delene før
+OpenCLIP-profilen regnes som komplett.
 
 `install-openclip.ps1` installerer og importtester bare avhengighetene.
 `bildebank download-openclip-model` laster ned modellen som er valgt i config

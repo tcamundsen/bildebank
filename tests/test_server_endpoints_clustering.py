@@ -3,8 +3,11 @@ from __future__ import annotations
 from io import BytesIO
 from http import HTTPStatus
 from pathlib import Path
+import sqlite3
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
 
 from bildebank import db
 from bildebank import server_browser_overview_html
@@ -30,7 +33,8 @@ from bildebank.server_endpoints_clustering import (
     grouping_run_page_html,
 )
 from bildebank.server_handler import BildebankRequestHandler
-from bildebank.server_pages import source_year_months_page_html
+from bildebank.server_item_groupings import item_grouping_memberships
+from bildebank.server_pages import item_page_html, source_year_months_page_html
 from bildebank.server_endpoints_browser import respond_browser_source
 from tests.db_test_helpers import insert_basic_item_sidecar_fixture, insert_test_file
 
@@ -38,10 +42,12 @@ from tests.db_test_helpers import insert_basic_item_sidecar_fixture, insert_test
 def insert_completed_run(
     target: Path,
     file_ids: tuple[int, ...],
+    *,
+    insert_embeddings: bool = True,
 ) -> tuple[int, int]:
     conn = connect_openclip_db(target)
     try:
-        for file_id in file_ids:
+        for file_id in file_ids if insert_embeddings else ():
             row = db.connect_read_only(target)
             try:
                 file_row = row.execute(
@@ -145,6 +151,11 @@ def test_grouping_pages_render_runs_and_active_cluster_members(
     assert "Gruppe 1" in run_html
     assert "2 aktive bilder" in run_html
     assert f"/grouping/runs/{run_id}/clusters/{cluster_id}" in run_html
+    assert (
+        f'href="/grouping/runs/{run_id}/clusters/{cluster_id}/item/{first}"'
+        in run_html
+    )
+    assert 'title="Åpne bildet i gruppen"' in run_html
     assert f"/grouping/runs/{run_id}/delete" in run_html
     assert "Utvalg: year=2024" in run_html
     assert "Opprettet" in run_html
@@ -174,6 +185,127 @@ def test_grouping_pages_render_runs_and_active_cluster_members(
     finally:
         conn.close()
     assert source_item_ids(target, source) == [second]
+
+
+def test_item_page_links_completed_ordinary_grouping_memberships(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    db.init_database(target)
+    first = insert_test_file(target, "2024/01/first.png", sha256="sha-1")
+    second = insert_test_file(target, "2024/01/second.png", sha256="sha-2")
+    first_run_id, first_cluster_id = insert_completed_run(target, (first, second))
+    second_run_id, second_cluster_id = insert_completed_run(
+        target,
+        (first, second),
+        insert_embeddings=False,
+    )
+
+    openclip_conn = connect_openclip_db(target)
+    try:
+        openclip_conn.execute(
+            "UPDATE image_clustering_runs SET algorithm = 'leiden' WHERE id = ?",
+            (second_run_id,),
+        )
+        openclip_conn.commit()
+    finally:
+        openclip_conn.close()
+    conn = db.connect(target)
+    try:
+        conn.execute(
+            "UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (second,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    memberships = item_grouping_memberships(target, first)
+    assert [membership.run_id for membership in memberships] == [
+        second_run_id,
+        first_run_id,
+    ]
+    assert [membership.active_member_count for membership in memberships] == [1, 1]
+
+    item = server_browser_queries.browser_item_by_id(target, first)
+    assert item is not None
+    body = item_page_html(
+        target,
+        item,
+        None,
+        None,
+        server_browser_queries.browser_month_navigation(target, item),
+        face_enabled=False,
+        openclip_enabled=True,
+        grouping_enabled=True,
+        read_only=True,
+    )
+
+    assert "Grupperinger (2)" in body
+    assert "Grupperingsresultater for bildet" in body
+    assert "Kjøring #" in body
+    assert "Leiden" in body
+    assert "1 bilde" in body
+    assert (
+        f'/grouping/runs/{second_run_id}/clusters/{second_cluster_id}/item/{first}'
+        in body
+    )
+    assert (
+        f'/grouping/runs/{first_run_id}/clusters/{first_cluster_id}/item/{first}'
+        in body
+    )
+    assert body.index(f"Kjøring #{second_run_id}") < body.index(
+        f"Kjøring #{first_run_id}"
+    )
+    assert 'action="/search/similar"' not in body
+
+    openclip_disabled_body = item_page_html(
+        target,
+        item,
+        None,
+        None,
+        server_browser_queries.browser_month_navigation(target, item),
+        face_enabled=False,
+        openclip_enabled=False,
+        grouping_enabled=True,
+    )
+    lan_body = item_page_html(
+        target,
+        item,
+        None,
+        None,
+        server_browser_queries.browser_month_navigation(target, item),
+        face_enabled=False,
+        openclip_enabled=True,
+        grouping_enabled=False,
+    )
+    assert "data-open-item-groupings" not in openclip_disabled_body
+    assert "data-open-item-groupings" not in lan_body
+
+    openclip_conn = connect_openclip_db(target)
+    try:
+        openclip_conn.execute(
+            "UPDATE image_clustering_runs SET status = 'failed' WHERE id = ?",
+            (second_run_id,),
+        )
+        openclip_conn.execute(
+            "UPDATE image_clusters SET kind = 'noise' WHERE id = ?",
+            (first_cluster_id,),
+        )
+        openclip_conn.commit()
+    finally:
+        openclip_conn.close()
+    assert item_grouping_memberships(target, first) == ()
+
+
+def test_item_grouping_memberships_without_openclip_sidecar(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    db.init_database(target)
+    file_id = insert_test_file(target, "2024/01/first.png", sha256="sha-1")
+
+    assert item_grouping_memberships(target, file_id) == ()
 
 
 def test_grouping_run_batches_card_metadata_without_per_cluster_connections(
@@ -490,31 +622,98 @@ def test_hdbscan_run_renders_noise_as_ungrouped_images(tmp_path: Path) -> None:
     ).title == "Ugrupperte bilder"
 
 
-def test_delete_run_cascades_only_grouping_data(tmp_path: Path) -> None:
+def test_leiden_run_renders_parameters_graph_stats_and_noise(
+    tmp_path: Path,
+) -> None:
     target = tmp_path / "collection"
     db.init_database(target)
-    file_id = insert_test_file(
+    file_id = insert_test_file(target, "2024/01/noise.png", sha256="sha-1")
+    run_id, cluster_id = insert_completed_run(target, (file_id,))
+    conn = connect_openclip_db(target)
+    try:
+        conn.execute(
+            """
+            UPDATE image_clustering_runs
+            SET algorithm = 'leiden',
+                parameters_json = '{"requested_k":20,"neighbor_mode":"union","resolution":0.2}',
+                random_seed = 42,
+                actual_cluster_count = 0,
+                effective_neighbor_count = 1,
+                graph_node_count = 1,
+                graph_edge_count = 0,
+                isolated_file_count = 1,
+                threshold_removed_edge_count = 0,
+                nearest_similarity_median = 0.5,
+                kth_similarity_median = 0.5
+            WHERE id = ?
+            """,
+            (run_id,),
+        )
+        conn.execute(
+            """
+            UPDATE image_clusters
+            SET algorithm_label = -1, kind = 'noise'
+            WHERE id = ?
+            """,
+            (cluster_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    server = SimpleNamespace(
+        target=target,
+        config=AppConfig(),
+        face_enabled=False,
+        openclip_enabled=True,
+        read_only=True,
+    )
+
+    list_html = grouping_page_html(server)
+    run_html = grouping_run_page_html(server, run_id)
+
+    assert run_html is not None
+    assert "Leiden" in list_html
+    assert "Naboer: 20 · Åpen graf · CPM-oppløsning: 0.2" in list_html
+    assert "<dt>Seed</dt><dd>42</dd>" in run_html
+    assert "<dt>Grafnoder</dt><dd>1</dd>" in run_html
+    assert "<dt>Grafkanter</dt><dd>0</dd>" in run_html
+    assert "Ugrupperte bilder" in run_html
+
+
+def test_delete_run_removes_only_targeted_grouping_data(tmp_path: Path) -> None:
+    target = tmp_path / "collection"
+    db.init_database(target)
+    deleted_file_id = insert_test_file(
         target,
         "2024/01/first.png",
         sha256="sha-1",
     )
-    run_id, _cluster_id = insert_completed_run(target, (file_id,))
+    retained_file_id = insert_test_file(
+        target,
+        "2024/01/second.png",
+        sha256="sha-2",
+    )
+    run_id, _cluster_id = insert_completed_run(target, (deleted_file_id,))
+    retained_run_id, _retained_cluster_id = insert_completed_run(target, (retained_file_id,))
 
     assert delete_clustering_run(target, run_id) is True
     conn = connect_openclip_db(target)
     try:
         assert conn.execute(
             "SELECT COUNT(*) FROM image_clustering_runs"
-        ).fetchone()[0] == 0
+        ).fetchone()[0] == 1
         assert conn.execute(
             "SELECT COUNT(*) FROM image_clusters"
-        ).fetchone()[0] == 0
+        ).fetchone()[0] == 1
         assert conn.execute(
             "SELECT COUNT(*) FROM image_cluster_members"
-        ).fetchone()[0] == 0
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT run_id FROM image_cluster_members"
+        ).fetchone()[0] == retained_run_id
         assert conn.execute(
             "SELECT COUNT(*) FROM image_embeddings"
-        ).fetchone()[0] == 1
+        ).fetchone()[0] == 2
     finally:
         conn.close()
 
@@ -522,9 +721,43 @@ def test_delete_run_cascades_only_grouping_data(tmp_path: Path) -> None:
     try:
         assert main_conn.execute(
             "SELECT COUNT(*) FROM files"
-        ).fetchone()[0] == 1
+        ).fetchone()[0] == 2
     finally:
         main_conn.close()
+
+
+def test_delete_run_rolls_back_all_grouping_rows_when_run_delete_fails(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "collection"
+    db.init_database(target)
+    file_id = insert_test_file(target, "2024/01/first.png", sha256="sha-1")
+    run_id, _cluster_id = insert_completed_run(target, (file_id,))
+    conn = connect_openclip_db(target)
+    try:
+        conn.execute(
+            """
+            CREATE TRIGGER reject_clustering_run_delete
+            BEFORE DELETE ON image_clustering_runs
+            BEGIN
+                SELECT RAISE(FAIL, 'test rollback');
+            END
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    with pytest.raises(sqlite3.IntegrityError, match="test rollback"):
+        delete_clustering_run(target, run_id)
+
+    conn = connect_openclip_db(target)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM image_clustering_runs").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM image_clusters").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM image_cluster_members").fetchone()[0] == 1
+    finally:
+        conn.close()
 
 
 def test_grouping_routes_block_lan_and_require_csrf_for_delete(

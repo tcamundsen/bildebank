@@ -22,6 +22,8 @@ RAW_SIDECAR_SQL_EXTENSION_FILTER = """
 RAW_SIDECAR_IMAGE_EXTENSIONS = {".jpg", ".jpeg"}
 RAW_SIDECAR_GROUP_EXTENSIONS = RAW_SIDECAR_EXTENSIONS | RAW_SIDECAR_IMAGE_EXTENSIONS
 RAW_SIDECAR_STEM_FALLBACK_EXTENSIONS = {".psd"} | RAW_SIDECAR_IMAGE_EXTENSIONS
+RAW_SIDECAR_IMAGE_NAME_QUERY_CHUNK_SIZE = 900
+SQLITE_CASEFOLD_FUNCTION = "bildebank_casefold"
 FILE_COLUMNS = (
     "id, target_path, target_path_key, original_filename, stored_filename, taken_date, date_source, "
     "metadata_datetime, "
@@ -306,6 +308,7 @@ def query_raw_sidecar_ids_by_image_id(conn: sqlite3.Connection) -> dict[int, int
 
 def raw_sidecar_groups(conn: sqlite3.Connection) -> dict[tuple[int, str, str, str], tuple[set[int], set[int]]]:
     groups: dict[tuple[int, str, str, str], tuple[set[int], set[int]]] = {}
+    image_names: set[str] = set()
     for row in conn.execute(
         f"""
         SELECT
@@ -320,31 +323,73 @@ def raw_sidecar_groups(conn: sqlite3.Connection) -> dict[tuple[int, str, str, st
         WHERE files.deleted_at IS NULL
           AND (
 {RAW_SIDECAR_SQL_EXTENSION_FILTER}
-              OR lower(files.original_filename) LIKE '%.jpg'
-              OR lower(files.original_filename) LIKE '%.jpeg'
           )
         """
     ):
         original_filename = str(row["original_filename"])
-        folded_filename = original_filename.casefold()
-        suffix = next(
-            (
-                candidate
-                for candidate in RAW_SIDECAR_GROUP_EXTENSIONS
-                if len(folded_filename) > len(candidate)
-                and folded_filename.endswith(candidate)
-            ),
-            "",
-        )
-        if suffix not in RAW_SIDECAR_GROUP_EXTENSIONS:
+        suffix = raw_sidecar_suffix(original_filename, RAW_SIDECAR_EXTENSIONS)
+        if not suffix:
             continue
         for key in raw_sidecar_group_keys(row, original_filename, suffix):
-            raw_ids, image_ids = groups.setdefault(key, (set(), set()))
-            if suffix in RAW_SIDECAR_EXTENSIONS:
-                raw_ids.add(int(row["id"]))
-            else:
-                image_ids.add(int(row["id"]))
+            raw_ids, _image_ids = groups.setdefault(key, (set(), set()))
+            raw_ids.add(int(row["id"]))
+            stem = key[2]
+            image_names.update(f"{stem}{extension}" for extension in RAW_SIDECAR_IMAGE_EXTENSIONS)
+
+    sorted_image_names = sorted(image_names)
+    if not sorted_image_names:
+        return groups
+    conn.create_function(
+        SQLITE_CASEFOLD_FUNCTION,
+        1,
+        sqlite_casefold,
+        deterministic=True,
+    )
+    for offset in range(0, len(sorted_image_names), RAW_SIDECAR_IMAGE_NAME_QUERY_CHUNK_SIZE):
+        name_chunk = sorted_image_names[offset : offset + RAW_SIDECAR_IMAGE_NAME_QUERY_CHUNK_SIZE]
+        placeholders = ",".join("?" for _name in name_chunk)
+        for row in conn.execute(
+            f"""
+            SELECT
+                files.id,
+                files.original_filename,
+                files.date_source,
+                files.metadata_datetime,
+                file_sources.source_id,
+                file_sources.source_path_key
+            FROM files
+            JOIN file_sources ON file_sources.file_id = files.id
+            WHERE files.deleted_at IS NULL
+              AND {SQLITE_CASEFOLD_FUNCTION}(files.original_filename) IN ({placeholders})
+            """,
+            name_chunk,
+        ):
+            original_filename = str(row["original_filename"])
+            suffix = raw_sidecar_suffix(original_filename, RAW_SIDECAR_IMAGE_EXTENSIONS)
+            if not suffix:
+                continue
+            for key in raw_sidecar_group_keys(row, original_filename, suffix):
+                group = groups.get(key)
+                if group is not None:
+                    group[1].add(int(row["id"]))
     return groups
+
+
+def sqlite_casefold(value: object) -> str:
+    return str(value).casefold()
+
+
+def raw_sidecar_suffix(original_filename: str, extensions: set[str]) -> str:
+    folded_filename = original_filename.casefold()
+    return next(
+        (
+            extension
+            for extension in extensions
+            if len(folded_filename) > len(extension)
+            and folded_filename.endswith(extension)
+        ),
+        "",
+    )
 
 
 def raw_sidecar_group_keys(row: Any, original_filename: str, suffix: str) -> tuple[tuple[int, str, str, str], ...]:

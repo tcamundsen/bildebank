@@ -186,6 +186,10 @@ class ServerBrowserCliTests(unittest.TestCase):
                 "bildebank.server_endpoints_browser.imported_source_by_id",
                 return_value=SimpleNamespace(id=9, name="Telefon"),
             ),
+            patch(
+                "bildebank.server_endpoints_browser.db.db_path_for_target",
+                return_value=Path("missing-test-database"),
+            ),
             patch("bildebank.server_endpoints_browser.respond_browser_source") as respond_browser_source,
         ):
             server_endpoints_faces.respond_person(handler, "Ada/item/1")
@@ -335,6 +339,9 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn("ArrowDown", SERVER_JS)
         self.assertIn("PageUp", SERVER_JS)
         self.assertIn("PageDown", SERVER_JS)
+        self.assertIn('event.key.toLowerCase() === "t"', SERVER_JS)
+        self.assertIn('document.querySelector("[data-random-link]")', SERVER_JS)
+        self.assertIn("randomLink.href", SERVER_JS)
         self.assertIn("function attachSwipeNavigation", SERVER_JS)
         self.assertIn("const minDistance = 40;", SERVER_JS)
         self.assertIn("const verticalDominanceRatio = 0.75;", SERVER_JS)
@@ -1173,6 +1180,10 @@ class ServerBrowserCliTests(unittest.TestCase):
                     gps_source="test",
                     gps_error=None,
                 )
+                conn.execute(
+                    "UPDATE files SET camera_make = ?, camera_model = ? WHERE id = 1",
+                    ("Test", "Camera 100"),
+                )
                 conn.commit()
             finally:
                 conn.close()
@@ -1205,10 +1216,17 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn("2024-01-02 (fra filnavn)", info_body)
         self.assertNotIn("<dt>Klokkeslett</dt>", info_body)
         self.assertIn("Filstørrelse", info_body)
+        self.assertIn("<dt>Filtype</dt>", info_body)
+        self.assertIn('href="/filter/extension%3Apng">PNG</a>', info_body)
         self.assertIn("Oppløsning", info_body)
         self.assertIn("100 x 80", info_body)
         self.assertIn("Kamera", info_body)
+        self.assertIn(
+            'href="/filter/camera%3A%27Test%20Camera%20100%27">Test Camera 100</a>',
+            info_body,
+        )
         self.assertIn("Kilder", info_body)
+        self.assertIn('href="/source/1"', info_body)
         self.assertIn("<dt>Kart</dt>", info_body)
         self.assertIn(
             'href="https://www.google.com/maps/search/?api=1&amp;query=59.9127300,10.7460900"',
@@ -1310,6 +1328,7 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn(str(source / "IMG_20240102.png"), local_html)
         self.assertNotIn(str(source / "IMG_20240102.png"), lan_share_html)
         self.assertIn(source.name, lan_share_html)
+        self.assertIn('href="/source/1"', lan_share_html)
 
     def test_run_server_item_info_api_rejects_unknown_and_deleted_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -4147,7 +4166,10 @@ class ServerBrowserCliTests(unittest.TestCase):
                 conn.close()
             self.assertIsNotNone(imported)
             imported_source = imported_source_browser_source(imported)
-            tag_source = tag_browser_source(db.SYSTEM_TAG_OUT_OF_FOCUS)
+            tag_source = tag_browser_source(
+                db.SYSTEM_TAG_OUT_OF_FOCUS,
+                system_key=db.SYSTEM_TAG_OUT_OF_FOCUS_KEY,
+            )
 
             hidden_browser_item = source_item_by_id(
                 target,

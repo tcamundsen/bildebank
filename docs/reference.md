@@ -14,8 +14,7 @@ Kommandoer merket **vindu** kjøres fra Bildebank-vinduet som åpnes med
 Merket **web** betyr at du kan få gjort det samme i nettleseren som det
 kommandoen gjør i PowerShell.
 
-Merket **devel** betyr at kommandoen ikke er ment for sluttbrukere. De som ikke
-er merket har jeg ikke sett over ennå.
+Merket **devel** betyr at kommandoen ikke er ment for sluttbrukere.
 
 ## Kom i gang
 
@@ -70,7 +69,7 @@ er merket har jeg ikke sett over ennå.
 
 - [`insightface`](web/insightface.md) - innføring
 - [`export-person`](export-person.md) **`vindu`**
-- [`Strategier for face-suggest`](face-suggest-strategier.md)
+- [`Strategier for face-suggest`](web/face-suggest-strategier.md)
 - [`face-scan`](face-scan.md) **`vindu`**
 - [`face-suggest`](face-suggest.md) **`web`**
 - [`face-reset`](face-reset.md) **`cli`**

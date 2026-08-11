@@ -152,6 +152,37 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "--min-samples",
         "4",
     ]
+    leiden_clustering = image_clustering_command(
+        collection,
+        filter_query="tag:Ferie",
+        algorithm="leiden",
+        neighbor_count=20,
+        neighbor_mode="mutual",
+        minimum_similarity=0.25,
+        weight_mode="cosine",
+        resolution=0.2,
+        random_seed=42,
+        hide_out_of_focus=False,
+    )
+    assert leiden_clustering[-17:] == [
+        "_image-clustering-worker",
+        "--algorithm",
+        "leiden",
+        "--filter",
+        "tag:Ferie",
+        "--neighbors",
+        "20",
+        "--neighbor-mode",
+        "mutual",
+        "--minimum-similarity",
+        "0.25",
+        "--weight-mode",
+        "cosine",
+        "--resolution",
+        "0.2",
+        "--seed",
+        "42",
+    ]
     with pytest.raises(ValueError, match="Ukjent grupperingsalgoritme"):
         image_clustering_command(
             collection,

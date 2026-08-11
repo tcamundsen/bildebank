@@ -179,7 +179,7 @@ pretrained = "laion2b_s34b_b79k"
             self.assertIn("image_clustering_runs", tables)
             self.assertIn("image_clusters", tables)
             self.assertIn("image_cluster_members", tables)
-            self.assertEqual(schema_version, "2")
+            self.assertEqual(schema_version, "3")
 
     def test_openclip_adopts_complete_unversioned_schema_without_losing_data(
         self,
@@ -210,7 +210,7 @@ pretrained = "laion2b_s34b_b79k"
                     conn.execute(
                         "SELECT value FROM meta WHERE key = 'schema_version'"
                     ).fetchone()[0],
-                    "2",
+                    "3",
                 )
                 row = conn.execute(
                     """
@@ -263,7 +263,7 @@ pretrained = "laion2b_s34b_b79k"
                     conn.execute(
                         "SELECT value FROM meta WHERE key = 'schema_version'"
                     ).fetchone()[0],
-                    "2",
+                    "3",
                 )
                 self.assertEqual(
                     conn.execute(
@@ -333,7 +333,7 @@ pretrained = "laion2b_s34b_b79k"
             try:
                 conn.execute(
                     """
-                    INSERT INTO meta(key, value) VALUES('schema_version', '3')
+                    INSERT INTO meta(key, value) VALUES('schema_version', '4')
                     ON CONFLICT(key) DO UPDATE SET value = excluded.value
                     """
                 )

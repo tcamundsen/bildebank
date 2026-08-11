@@ -35,6 +35,16 @@ OpenCV også systembibliotekene `libGL` og `GLib`:
 sudo apt install libgl1 libglib2.0-0
 ```
 
+For å lage preview av videoer som ikke kan vises i nettleseren trenger du FFmpeg.
+```bash
+sudo apt install ffmpeg
+```
+
+For å hente ut metadata fra bilder anbefales det at exiftool er installert:
+```bash
+sudo apt install exiftool
+```
+
 ## Installer programmet
 
 Velg en mappe for programkoden, klon repoet og installer Bildebank i en lokal `.venv`:
@@ -132,3 +142,10 @@ cd ~/kode/bildebank
 git pull --ff-only
 ./.venv/bin/python -m pip install -e .
 ```
+
+## Utviklere
+
+For å installere alt utviklere trenger kjøres:
+
+python -m pip install -e ".[dev]"
+python -m pytest

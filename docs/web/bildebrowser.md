@@ -1,22 +1,71 @@
-Litt skriblerier om programmet [kan du lese her](om-bildebank.md).
-[Hvordan importere de første bildene](kom-i-gang.md)
+# Se og finne bilder i Bildebank
 
-Oversikt over alle kommandoer [finner du her](../reference.md).
+Denne veiledningen handler om Bildebank i nettleseren. Den forklarer hvordan du
+kan bla i bildesamlingen, finne bestemte bilder og gjøre enkle endringer.
 
+Noen knapper og menyvalg vises bare når den tilhørende funksjonen er
+tilgjengelig. Hvis Bildebank er åpnet uten skrivetilgang, kan du se og bla i
+bildene, men knapper som endrer noe, er skjult.
 
-# Bildebrowser
+## Finn fram i bildesamlingen
 
-Her beskrives funksjonene til bildebrowseren i nettleseren, dvs nettsiden
-du får når du klikker **Start Bildebank i nettleser** fra Bildebank-vinduet.
+Forsiden viser bildesamlingen ordnet etter år. Hvert år har et eksempelbilde og
+viser hvor mange måneder og bilder året inneholder.
 
-Første side i bildebrowseren viser en side der du ser første bilde
-fra hvert år du har bilder fra. Når du klikker et bilde sendes du til
-månedsvisningen, som viser et bilde for hver måned du har bilder fra. Når du
-klikker på et bilde i månedsvisningen, åpnes bildesiden. Dette er visningen du
-kommer til å bruke mest.
+1. Klikk på et år for å se månedene i året.
+2. Klikk på en måned for å se alle bildene i måneden.
+3. Klikk på et miniatyrbilde for å åpne bildesiden.
 
-Du kan bla i filene med pilknappene på nest øverste linje på siden.
-Men aller enklest er det å bruke tastaturet:
+Øverst på siden vises en sti, for eksempel:
+
+```text
+År / 2024 / Januar / 14 / IMG_1234.JPG
+```
+
+Klikk på dagen for å gå til det første bildet fra samme dag. Klikk på måneden,
+året eller **År** for å gå tilbake til den tilsvarende oversikten. Klikk på
+filnavnet for å åpne **Bildeinfo**. Der finner du blant annet dato, filtype,
+størrelse, kameraopplysninger og hvor filen er lagret i bildesamlingen.
+Filtypen og kameraet er lenker til tilsvarende filtersøk. Hver importkilde er
+en lenke til alle aktive bilder fra den kilden.
+
+**Meny** øverst til høyre gir tilgang til søk, tilfeldige bilder, personer,
+steder, tagger, innstillinger og andre oversikter. Når du er inne i et
+søkeresultat eller en annen avgrenset visning, bruker du **Alle bilder** for å
+gå tilbake til hele bildesamlingen.
+
+På **Dashboard** er samlingstallene lenker til de tilsvarende bildene eller
+oversiktene. Du kan for eksempel åpne alle bilder, alle videoer, filer uten
+dato, slettede bilder eller importerte mapper direkte fra tallene.
+
+## Bildesiden
+
+Bildesiden viser ett bilde, én video eller én annen fil om gangen.
+
+- Klikk på et vanlig bilde for å åpne en større visning i en ny fane. Lukk
+  fanen for å gå tilbake til bildesiden.
+- Videoer har vanlige knapper for avspilling, lyd og spoling.
+- Filtyper nettleseren ikke kan vise som bilder, vises som en lenke til filen.
+- En RAW-, NEF- eller PSD-fil som hører sammen med et JPG-bilde, kan vises som
+  en egen knapp på JPG-bildets side.
+- Hold musepekeren over en knapp hvis du er usikker. De fleste knappene har en
+  kort forklaring.
+
+Sidefeltet ved bildet kan vise kommentarer, tagger, sted og personer i bildet.
+På en smal skjerm flyttes feltene over bildet i stedet for å ligge på siden.
+
+## Bla med knapper, tastatur eller berøring
+
+Knappene over bildet er samlet etter hva de blar mellom:
+
+- **År** går til forrige eller neste år.
+- **Måned** går til forrige eller neste måned.
+- **Bilde** går til forrige eller neste fil i den visningen du bruker.
+
+Hvis du for eksempel har åpnet bilder med en bestemt tagg eller et filtersøk,
+blar **Bilde** bare mellom bildene som hører til dette utvalget.
+
+Du kan også bruke tastaturet:
 
 | Tast | Hva skjer |
 | --- | --- |
@@ -26,97 +75,205 @@ Men aller enklest er det å bruke tastaturet:
 | Pil ned | Neste måned |
 | Page Up | Forrige år |
 | Page Down | Neste år |
+| T | Vis et tilfeldig bilde |
 
+Hurtigtastene gjør ingenting mens du skriver i et felt eller har et
+dialogvindu åpent. På en berøringsskjerm kan du sveipe mot venstre for neste
+bilde og mot høyre for forrige bilde.
 
-Hold musepekeren over knapper og lenker, så får du i de fleste tilfellene opp
-en liten hjelpetekst.
+## Se tilfeldige bilder
 
-Knappene med avkrysningsboks til venstre for bildet brukes for å sette
-tagger på bildet som vises. Du kan definere egne tagger ved å klikke
-[Tagger](/tags)-lenken øverst og til høyre på siden.
+Velg **Meny → Tilfeldig bilde**, eller trykk `T`. Dette er en enkel måte å gå
+på oppdagelsesferd i samlingen på. Trykk `T` flere ganger for å fortsette med
+nye tilfeldige bilder.
 
-Under **Personer i bildet** i venstrepanelet kan du trykke **[+]** for å få
-opp **Velg person**, **Legg til** og **Ferdig**. Dette brukes til å markere at
-en person er i bildet manuelt, noe som er nyttig hvis ansiktet til personen
-ikke gjenkjennes av insightface. Visningen av denne kan slås av og på i
-[innstillinger](/settings).
+Hvis du står i et filtersøk eller blar i bilder for en tagg, person, kilde,
+gruppe eller et definert sted, heter menyvalget **Tilfeldig i utvalget**.
+Da velges bildet bare blant bildene i denne visningen, og du fortsetter å bla
+innenfor det samme utvalget.
 
-Du får mer informasjon om bildet ved å klikke på filnavnet øverst på skjermen.
+Bildebank foretrekker bilder som ikke er registrert som sett. Når alle er
+sett, velges det blant bildene som det er lengst siden du så. Et bilde regnes
+først som sett når den vanlige bildesiden har vært synlig en liten stund; det
+er ikke nok at bildet har vært vist som et miniatyrbilde.
 
-Når ansiktsgjenkjenning er slått på, åpner **Ansiktstreff** en visning av de
-scannede ansiktene i bildet og inntil tre mulige personer for hvert ansikt.
-Treffene beregnes først når du trykker på knappen. Verdien ved hvert navn viser
-hvor høy threshold som kan brukes for akkurat det treffet.
+## Finn bestemte bilder
 
-## Kommentarer
+Bildebank har to forskjellige typer søk:
 
-Knappen **Kommentar** i venstrepanelet åpner et felt der du kan skrive eller
-endre én kommentar til bildet, videoen eller filen. Linjeskift bevares. Bruk
-**Fjern kommentar** hvis kommentaren skal tas bort; Bildebank ber om
-bekreftelse først.
+- **Filtersøk** finner bilder ut fra opplysninger som dato, filnavn, filtype,
+  kommentar, tagg, person eller sted.
+- **Bildesøk** prøver å finne bilder som visuelt passer til en beskrivelse.
 
-Kommentaren vises nederst på mediet i full bildevisning. Den vises også i
-personbrowser, kilde-, tagg-, sted- og filtersøkvisninger, men ikke på
-oversiktsbilder eller miniatyrer i søkeresultater. I read-only/LAN-modus kan
-kommentaren leses, men knappen for å redigere den er skjult.
+Bruk filtersøk når du vet noe konkret om bildet. Bruk bildesøk når du husker
+hva bildet viser, men ikke når eller hvor det ble tatt.
 
-`.NEF`, `.RAW` og `.PSD` vises som lenker til filer, ikke som vanlige bilder.
-Når en `.NEF`- eller `.PSD`-fil hører trygt sammen med en `.JPG`-fil fra samme
-mappe og samme import, skjules filen fra vanlig bildevisning. Da vises den i
-stedet som en lenke på JPG-bildets side.
+### Filtersøk
 
-AVI- og 3GP-videoer spilles av med en MP4-avspillingskopi når den finnes.
-Originalfilen kan da lastes ned med **AVI**- eller **3GP**-knappen i
-verktøylinjen over videoen.
+Åpne **Meny → Filtersøk**. Skriv ett eller flere kriterier og trykk **Søk**.
 
-## Hurtigtaster
+| Det du vil finne | Søk |
+| --- | --- |
+| Bilder fra 2024 | `year:2024` |
+| Bilder fra julaften, uansett år | `month:12 day:24` |
+| Videoer | `type:video` |
+| Et filnavn | `filename:IMG_1234` |
+| Bilder uten GPS | `missing:gps` |
+| Bilder med taggen Familie | `tag:Familie` |
+| Bilder av Kari | `person:Kari` |
+| Kommentarer som inneholder «hytta» | `comment:hytta` |
 
-Tastene `1`, `2`, `3`, `4` og `5` kan settes opp i **Innstillinger**. Hver
-tast kan ha sin egen handling:
+Flere kriterier betyr **og**. Søket
 
-- sette bildet til en valgt H3-celle når bildet mangler GPS
-- sette en forhåndsvalgt manuell dato
-- legge til en valgt person under **Personer i bildet**
+```text
+person:Kari month:7 type:image
+```
 
-Taster som ikke er satt opp gjør ingenting.
+viser derfor bilder av Kari fra juli. Bruk anførselstegn rundt navn med
+mellomrom:
 
-I **Innstillinger** kan du slå hurtigtastfunksjonen av og på. Når den er på,
-viser bildebrowseren hurtigtastene i venstrefeltet ved bildet, med korte linjer
-som for eksempel `1: H3 til Brevik`, `3: Legg til Viljar` eller
-`5: Sett dato til 30.12.48 ±1w`. Når funksjonen er av, virker ikke tastene.
+```text
+tag:"Ute av fokus"
+```
 
-## Manuell dato
+På resultatsiden kan du bla mellom treffene med de vanlige bilde-, måneds- og
+årsknappene. En [fullstendig oversikt over filtersøk](/help/web/filtersok.md)
+finnes på den egne hjelpesiden.
 
-Knappen 📅 lar deg sette manuell dato for bildet. Du kan velge eksakt dato,
-usikker dato eller et datointervall, og legge inn et notat. Bildebank lagrer
-dette i databasen og bruker datoen i bildebrowserens
-sortering og månedsvisning. Bildefilen flyttes ikke og endres ikke.
+### Bildesøk
 
-## Rotere bilder
+Hvis **Bildesøk** finnes i menyen, kan du søke etter innholdet i bildene. Det
+fungerer best med en kort beskrivelse på engelsk, for eksempel:
 
-På bildesider kan du bruke knappene **↺** og **↻** for å rotere
-visningen av bildet. Bildebank lagrer bare rotasjonen i databasen. Selve
-bildefilen i samlingen endres ikke. Når du klikker på bildet, åpnes en
-visningskopi med den lagrede rotasjonen.
+```text
+a child holding a cat
+a photo of a beach
+a red car in winter
+```
 
-## Personbrowser
+Feltet ved siden av søketeksten bestemmer hvor mange treff som skal vises.
+Første søk kan bruke litt tid mens søkefunksjonen gjøres klar.
 
-Hvis det står navnet til en person øverst til venstre i vinduet er det fordi du
-kjører personbrowseren, som viser bilder du har bekreftet og forslag fra
-`face-suggest` for denne personen. Dette moduset har du valgt for
-eksempel ved å klikke på knappen med navnet til personen.
+Bildesøk er ikke et vanlig nøkkelordsøk og gir ikke en sikker fasit. Det viser
+bildene Bildebank mener ligner mest på beskrivelsen, også når ingen bilder
+passer særlig godt. Prøv en annen eller mer presis beskrivelse hvis treffene
+er dårlige.
 
-- På siden **Personer** åpner **Referansebilder** en oversikt over bildene som
-  har bekreftede ansikter brukt som referanser av `face-suggest`. Tallet
-  **Foreslåtte bilder** under hvert bilde viser hvor mange forslag som peker
-  tilbake på de bekreftede ansiktene i akkurat dette bildet.
-- **Alle bilder** viser nettopp det. Hvis du viser et bilde via et filtersøk
-  eller personbrowseren, lar **Alle bilder**-lenken deg se bildet der det
-  står i hele samlingen.
-- Knappen 👤 slår av og på en ramme rundt ansiktet til personen du viser
-  personbrowseren av.
-- **[✓] Ta med forslag** i verktøylinjen betyr at browseren også viser
-  forslagene fra `face-suggest`.
-- **[ ] Ta med forslag** i verktøylinjen betyr at browseren bare viser bilder
-  du har bekreftet. Dette bør ideelt sett bare være 1-5 gode bilder av
-  personen.
+Søkeresultatet får sin egen adresse, som kan lagres som bokmerke eller deles.
+Klikk på et treff for å åpne den vanlige bildesiden. Der kan du bla til forrige
+og neste treff i rangert rekkefølge, gå tilbake til hele søkeresultatet eller
+velge **Tilfeldig i utvalget**.
+
+På en vanlig bildeside kan knappen **🔍≈** vises. Den finner andre bilder som
+ligner på bildet du ser på. Knappen vises bare når denne typen søk er
+tilgjengelig, og ikke på videosider. Resultatet fungerer på samme måte som et
+vanlig bildesøk, med blaing mellom treffene og en egen adresse.
+
+Hvis du bruker knappen mens du er inne i et utvalg, for eksempel en tagg, en
+person, en gruppe eller et filtersøk, leter Bildebank bare blant bildene i
+dette utvalget. Resultatsiden viser hvilket utvalg som ble brukt. Velg **Søk i
+alle bilder** der hvis du i stedet vil lete i hele bildesamlingen.
+
+## Finn bilder via tagger, personer og steder
+
+### Tagger
+
+Velg **Meny → Tagger** for å se alle tagger og hvor mange bilder som har hver
+tagg. Klikk på antallet for å åpne disse bildene.
+
+Du kan opprette en ny tagg på samme side. På bildesiden vises tagger som bildet
+allerede har, under **På bildet**. Klikk på en av dem for å fjerne den. Velg
+**Legg til tagg**, og skriv eventuelt i **Finn tagg**, for å finne og legge til
+en annen tagg. **Ute av fokus** har en egen knapp. Hvis sidefeltet inneholder
+mange valg, kan du rulle i det uten at bildet flyttes.
+
+Hvis du endrer navn på en tagg, endres navnet for alle bilder som bruker den.
+Hvis du sletter en tagg, fjernes bare selve taggen og koblingen til bildene;
+bildefilene slettes ikke.
+
+### Personer
+
+Hvis **Personer** finnes i menyen, viser siden registrerte personer og hvor
+mange bilder som er knyttet til hver person. Klikk på en person eller et
+bildetall for å åpne personens bilder.
+
+Navn under **Personer i bildet** på en bildeside er også lenker til alle
+bildene av den personen. Hvis knappen **[+]** vises, kan du bruke den til å
+legge til en registrert person manuelt.
+
+### Steder
+
+Velg **Meny → Steder** for å se bilder som har registrert GPS-posisjon eller
+tilhører et navngitt sted. Klikk på et sted for å åpne bildene derfra.
+
+Hvis knappen **🌐** vises på en bildeside, kan et bilde uten GPS knyttes til et
+forhåndsdefinert sted. Et allerede registrert sted vises i sidefeltet.
+
+## Gjør enkle endringer
+
+Endringsknappene nedenfor vises bare når Bildebank er åpnet med skrivetilgang.
+
+### Roter visningen av et bilde
+
+Bruk **↺** for å rotere mot venstre og **↻** for å rotere mot høyre. Bildebank
+lagrer hvordan bildet skal vises, men endrer ikke selve bildefilen. Den valgte
+rotasjonen brukes neste gang bildet vises.
+
+### Skriv en kommentar
+
+Klikk **Kommentar** i sidefeltet, skriv teksten og velg **Lagre**. Kommentaren
+vises sammen med bildet på bildesiden. Den kan også brukes i filtersøk.
+
+Åpne **Kommentar** igjen for å endre teksten eller velge **Fjern kommentar**.
+Dette påvirker ikke bildefilen.
+
+### Korriger datoen
+
+Klikk **📅** for å angi en eksakt dato, en usikker dato eller et datointervall.
+Du kan også skrive et kort notat om dateringen.
+
+Den manuelle datoen brukes når Bildebank sorterer og viser bildet etter dato.
+Bildefilen flyttes eller endres ikke. Åpne samme dialog igjen hvis datoen skal
+endres eller fjernes.
+
+### Flytt et bilde til slettede bilder
+
+Knappen **Slett** flytter bildet ut av den aktive bildesamlingen og til
+Bildebanks område for slettede bilder. Du må bekrefte handlingen. Bildet blir
+ikke slettet permanent.
+
+Hvis du angrer, åpner du **Meny → Innstillinger → Slettede bilder** og klikker
+**Undelete** ved bildet. Valgene for permanent sletting er egne handlinger og
+bør bare brukes når du faktisk ønsker at filen ikke lenger skal kunne
+gjenopprettes fra Bildebank.
+
+## Innstillinger som gjelder bildebrowseren
+
+Under **Meny → Innstillinger** finnes noen valg som påvirker vanlig bruk:
+
+- **Skjul bilder tagget “Ute av fokus”** fjerner disse bildene fra vanlig
+  blaing og søkeresultater. Bildene slettes ikke og kan fortsatt åpnes via
+  taggen **Ute av fokus** på siden **Tagger**.
+- **Regn stillbilder som sett etter** bestemmer hvor lenge en bildeside må være
+  synlig før den påvirker valget av tilfeldige bilder. Valget gjelder bare i
+  den aktuelle nettleseren.
+- **Hurtigtaster 1–5** kan brukes til ofte gjentatte handlinger, for eksempel å
+  sette en tagg, rotere et bilde eller angi dato, sted eller person. Når de er
+  aktivert, vises **Hurtigtaster aktivert** ved bildet. Klikk på overskriften
+  for å skjule eller vise forklaringene. På en smal skjerm er forklaringene
+  skjult til du åpner dem.
+
+`T` for tilfeldig bilde virker uavhengig av de konfigurerbare hurtigtastene
+`1` til `5`.
+
+## Hvis en knapp eller et menyvalg mangler
+
+Det betyr vanligvis én av disse tingene:
+
+- Bildebank er åpnet uten skrivetilgang, så endringer er ikke tillatt.
+- Funksjonen er ikke tilgjengelig for denne bildesamlingen.
+- Handlingen passer ikke til filen du ser på, for eksempel rotering av en
+  video eller bildelikhetssøk på en fil som ikke er et bilde.
+
+Du kan fortsatt bruke de vanlige år-, måneds- og bildevisningene selv om noen
+av tilleggsfunksjonene mangler.

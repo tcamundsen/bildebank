@@ -233,6 +233,7 @@ def test_windows_install_scripts_enforce_the_matching_hash_lock() -> None:
     assert '"download-openclip-model"' not in openclip_script
     assert '"--all-supported"' not in openclip_script
     assert "import open_clip" in openclip_script
+    assert "import igraph" in openclip_script
     assert "import sklearn" in openclip_script
     assert "import torch" in openclip_script
     assert "cache_dir=" not in openclip_script
@@ -250,5 +251,6 @@ def test_linux_openclip_install_leaves_model_download_to_launcher() -> None:
     assert "download-openclip-model" not in script
     assert "--all-supported" not in script
     assert "import open_clip" in script
+    assert "import igraph" in script
     assert "import sklearn" in script
     assert "import torch" in script

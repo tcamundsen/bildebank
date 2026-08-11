@@ -843,7 +843,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     image_clustering_worker.add_argument(
         "--algorithm",
-        choices=("minibatch_kmeans", "hdbscan"),
+        choices=("minibatch_kmeans", "hdbscan", "leiden"),
         default="minibatch_kmeans",
         help=argparse.SUPPRESS,
     )
@@ -868,6 +868,36 @@ def build_parser() -> argparse.ArgumentParser:
     image_clustering_worker.add_argument(
         "--min-samples",
         type=positive_int_arg,
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--neighbors",
+        type=positive_int_arg,
+        default=20,
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--neighbor-mode",
+        choices=("union", "mutual"),
+        default="union",
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--minimum-similarity",
+        type=float,
+        default=0.0,
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--weight-mode",
+        choices=("unweighted", "cosine"),
+        default="cosine",
+        help=argparse.SUPPRESS,
+    )
+    image_clustering_worker.add_argument(
+        "--resolution",
+        type=float,
+        default=0.2,
         help=argparse.SUPPRESS,
     )
     image_clustering_worker.add_argument(
@@ -3239,6 +3269,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  opprette pending_file_purges")
     if plan.creates_file_view_stats:
         print("  opprette file_view_stats")
+    if plan.adds_system_tag_keys:
+        print("  legge til stabile systemnøkler for systemtagger")
     if plan.adds_metadata_datetime_column:
         print("  legge til metadata_datetime i files")
     if plan.adds_comment_column:
@@ -3342,6 +3374,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Oppretter pending_file_purges.")
     if result.creates_file_view_stats:
         print("Oppretter file_view_stats.")
+    if result.adds_system_tag_keys:
+        print("Legger til stabile systemnøkler for systemtagger.")
     if result.adds_metadata_datetime_column:
         print("Legger til metadata_datetime i files.")
         print("Kjør bildebank refresh-metadata --rescan for å fylle tidspunkt for eksisterende filer.")

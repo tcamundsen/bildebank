@@ -13,6 +13,7 @@ from .formatting import format_bytes
 from .media import VIDEO_EXTENSIONS
 from .program_state import KnownSnapshotRepository, known_snapshot_repositories
 from .server_browser_queries import browser_item_ids
+from .server_filter import text_filter_url
 
 
 ShellPageRenderer = Callable[..., str]
@@ -65,6 +66,7 @@ def dashboard_page_html(
     openclip_enabled: bool = True,
     program_root: Path | None = None,
     hide_local_paths: bool = False,
+    read_only: bool = False,
 ) -> str:
     summary = dashboard_summary(target, program_root=program_root)
     actions = dashboard_actions(summary)
@@ -72,9 +74,9 @@ def dashboard_page_html(
         "Dashboard",
         f"""
         <nav class="subnav">
-          <a href="/settings">Innstillinger</a>
+          {'' if read_only else '<a href="/settings">Innstillinger</a>'}
           <a href="/sources">Importerte mapper</a>
-          <a href="/settings/removed">Slettede bilder</a>
+          {'' if read_only else '<a href="/settings/removed">Slettede bilder</a>'}
           <a href="/people">Personer</a>
           {"<a href='/grouping'>Gruppering</a>" if openclip_enabled else ""}
         </nav>
@@ -85,7 +87,7 @@ def dashboard_page_html(
           </div>
         </section>
         <section class="dashboard-grid" aria-label="Status">
-          {overview_section_html(summary)}
+          {overview_section_html(summary, show_removed_link=not read_only)}
           {control_section_html(summary)}
           {snapshot_repositories_section_html(summary, hide_local_paths=hide_local_paths)}
           {coverage_section_html(summary)}
@@ -162,7 +164,9 @@ def collection_size_totals(conn: sqlite3.Connection) -> dict[str, int]:
             totals["deleted"] += size_bytes
             continue
         totals["active"] += size_bytes
-        suffix = Path(str(row["stored_filename"])).suffix.lower()
+        filename = str(row["stored_filename"])
+        dot_index = filename.rfind(".")
+        suffix = filename[dot_index:].lower() if dot_index > 0 else ""
         totals["videos" if suffix in VIDEO_EXTENSIONS else "images"] += size_bytes
     return totals
 
@@ -197,11 +201,17 @@ def count_name_conflicts(conn: sqlite3.Connection) -> int:
 def count_undated_files(conn: sqlite3.Connection) -> int:
     return int(
         conn.execute(
-            """
+            f"""
             SELECT COUNT(*)
             FROM files
             WHERE deleted_at IS NULL
-              AND (taken_date IS NULL OR date_source = 'unknown')
+              AND NOT (
+                    (
+                        COALESCE(manual_date_from GLOB {db.DATE_GLOB_SQL}, 0)
+                    AND COALESCE(manual_date_to GLOB {db.DATE_GLOB_SQL}, 0)
+                    )
+                 OR COALESCE(taken_date GLOB {db.DATE_GLOB_SQL}, 0)
+              )
             """
         ).fetchone()[0]
     )
@@ -288,24 +298,29 @@ def scan_action(name: str, *, fact_rows: tuple[tuple[str, str], ...] = ()) -> Da
     )
 
 
-def overview_section_html(summary: DashboardSummary) -> str:
+def overview_section_html(
+    summary: DashboardSummary,
+    *,
+    show_removed_link: bool = True,
+) -> str:
     source_rows = "".join(
-        info_row_html(f"Kilder: {status}", str(count)) for status, count in summary.source_status_counts.items()
+        info_row_html(f"Kilder: {status}", str(count), "/sources")
+        for status, count in summary.source_status_counts.items()
     )
     if not source_rows:
-        source_rows = info_row_html("Kilder", "0")
+        source_rows = info_row_html("Kilder", "0", "/sources")
     return dashboard_card_html(
         "Samlingsoversikt",
         f"""
         <dl class="info-list">
-          {info_row_html("Aktive filer", count_and_size(summary.total_active, summary.total_active_size_bytes))}
-          {info_row_html("Bilder", count_and_size(summary.active_images, summary.active_image_size_bytes))}
-          {info_row_html("Videoer", count_and_size(summary.active_videos, summary.active_video_size_bytes))}
-          {info_row_html("Registrert sett", f"{summary.viewed_random_files} av {summary.random_view_files}")}
-          {info_row_html("Slettede bilder", count_and_size(summary.deleted_files, summary.deleted_file_size_bytes))}
+          {info_row_html("Aktive filer", count_and_size(summary.total_active, summary.total_active_size_bytes), "/")}
+          {info_row_html("Bilder", count_and_size(summary.active_images, summary.active_image_size_bytes), text_filter_url("type:image"))}
+          {info_row_html("Videoer", count_and_size(summary.active_videos, summary.active_video_size_bytes), text_filter_url("type:video"))}
+          {info_row_html("Registrert sett", f"{summary.viewed_random_files} av {summary.random_view_files}", "/random")}
+          {info_row_html("Slettede bilder", count_and_size(summary.deleted_files, summary.deleted_file_size_bytes), "/settings/removed" if show_removed_link else None)}
           {source_rows}
-          {info_row_html("Registrerte kildefiler", str(summary.source_file_count))}
-          {info_row_html("Duplikatkilder", str(summary.duplicate_source_count))}
+          {info_row_html("Registrerte kildefiler", str(summary.source_file_count), "/sources")}
+          {info_row_html("Duplikatkilder", str(summary.duplicate_source_count), "/sources")}
         </dl>
         """,
     )
@@ -330,7 +345,7 @@ def control_section_html(summary: DashboardSummary) -> str:
                   "Ved import får ulike filer med samme navn et nytt lagret filnavn."
               ),
           )}
-          {info_row_html("Filer uten dato", str(summary.undated_files), "/help/refresh-metadata.md")}
+          {info_row_html("Filer uten dato", str(summary.undated_files), text_filter_url("missing:date"))}
           {info_row_html("Uavklarte filflyttinger", str(summary.pending_file_moves), "/help/doctor.md")}
         </dl>
         """,

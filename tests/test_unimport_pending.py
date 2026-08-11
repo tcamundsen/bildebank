@@ -470,7 +470,7 @@ def test_unimport_removes_item_dependent_face_and_openclip_rows(
     try:
         assert openclip_conn.execute(
             "SELECT value FROM meta WHERE key = 'schema_version'"
-        ).fetchone()[0] == "2"
+        ).fetchone()[0] == "3"
         assert openclip_conn.execute(
             "SELECT COUNT(*) FROM image_embeddings"
         ).fetchone()[0] == 0

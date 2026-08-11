@@ -44,7 +44,7 @@ try {
     Write-Host "Kontrollerer OpenCLIP-avhengighetene"
     # Windows PowerShell 5.1 can corrupt embedded double quotes when a
     # multiline string is passed to a native executable as one -c argument.
-    $SmokeTest = "import open_clip; import sklearn; import torch; from importlib.metadata import version; print('OpenCLIP klar: open_clip_torch=' + version('open_clip_torch') + ', torch=' + torch.__version__ + ', scikit-learn=' + sklearn.__version__)"
+    $SmokeTest = "import igraph; import open_clip; import sklearn; import torch; from importlib.metadata import version; print('OpenCLIP klar: open_clip_torch=' + version('open_clip_torch') + ', torch=' + torch.__version__ + ', scikit-learn=' + sklearn.__version__ + ', igraph=' + igraph.__version__)"
     Invoke-Native -FilePath $VenvPython -ArgumentList @("-c", $SmokeTest)
     Write-Host "Ferdig. OpenCLIP-avhengighetene er installert."
     Write-Host "Last ned valgt modell separat fra Oppsett-fanen."

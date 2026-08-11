@@ -6,9 +6,11 @@ from typing import Any, Callable
 from .server_browser_sources import (
     BrowserSource,
     all_browser_source,
+    is_filtered_source,
     person_browser_source,
     source_item_url,
     source_month_url,
+    source_random_url,
     source_year_url,
 )
 
@@ -74,6 +76,77 @@ def message_html(message: str) -> str:
     return f'<p class="message">{html.escape(message)}</p>'
 
 
+def source_all_items_link_html(
+    source: BrowserSource,
+    item: Any | None = None,
+    *,
+    face_enabled: bool = True,
+    all_items_url: str | None = None,
+    all_items_label: str = "Alle bilder",
+) -> str:
+    all_label = html.escape(all_items_label)
+    if source == all_browser_source() and item is None:
+        return f'<a class="server-search-link" href="/">{all_label}</a>'
+    if (
+        source.source_id is not None
+        or source.geo_place_slug is not None
+        or source.tag_name is not None
+        or source.text_filter is not None
+        or source.search_run_id is not None
+        or source.cluster_id is not None
+    ):
+        all_url = all_items_url or (source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/")
+        return f'<a class="server-search-link" href="{html.escape(all_url)}">{all_label}</a>'
+    if source.person_name is not None and face_enabled:
+        all_url = all_items_url or (source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/")
+        return f'<a class="server-search-link" href="{html.escape(all_url)}">{all_label}</a>'
+    if all_items_url is not None:
+        return f'<a class="server-search-link" href="{html.escape(all_items_url)}">{all_label}</a>'
+    return ""
+
+
+def source_dropdown_menu_html(
+    source: BrowserSource,
+    *,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    links = []
+    if face_enabled:
+        links.append('<a class="server-search-link" href="/people">Personer</a>')
+    random_label = (
+        "Tilfeldig i utvalget"
+        if is_filtered_source(source)
+        else "Tilfeldig bilde"
+    )
+    random_url = source_random_url(source)
+    links.append(
+        f'<a class="server-search-link" href="{html.escape(random_url)}" '
+        'data-random-link aria-keyshortcuts="T" '
+        f'title="{random_label} (hurtigtast T)">{random_label}'
+        '<span class="menu-shortcut" aria-hidden="true">T</span></a>'
+    )
+    links.append('<a class="server-search-link" href="/filter">Filtersøk</a>')
+    links.append('<a class="server-search-link" href="/geo">Steder</a>')
+    links.append('<a class="server-search-link" href="/tags">Tagger</a>')
+    if openclip_enabled:
+        links.append('<a class="server-search-link" href="/search" data-search-preload>Bildesøk</a>')
+        links.append('<a class="server-search-link" href="/grouping">Gruppering</a>')
+    links.append('<a class="server-search-link" href="/dashboard">Dashboard</a>')
+    links.append('<a class="server-search-link" href="/help/web/bildebrowser">Hjelp</a>')
+    links.append('<a class="server-search-link" href="/settings">Innstillinger</a>')
+
+    items_html = "\n      ".join(links)
+    return f"""
+      <details class="header-menu-dropdown">
+        <summary class="server-search-link header-menu-toggle">☰ Meny</summary>
+        <div class="header-menu-content">
+          {items_html}
+        </div>
+      </details>
+    """.strip()
+
+
 def source_top_links_html(
     source: BrowserSource,
     item: Any | None = None,
@@ -82,30 +155,13 @@ def source_top_links_html(
     all_items_url: str | None = None,
     all_items_label: str = "Alle bilder",
 ) -> str:
-    links = [
-        '<a class="server-search-link" href="/random">Tilfeldig bilde</a>',
-        '<a class="server-search-link" href="/filter">Filtersøk</a>',
-        '<a class="server-search-link" href="/geo">Steder</a>',
-        '<a class="server-search-link" href="/tags">Tagger</a>',
-    ]
-    if face_enabled:
-        links.insert(0, '<a class="server-search-link" href="/people">Personer</a>')
-    all_label = html.escape(all_items_label)
-    if source == all_browser_source() and item is None:
-        links.insert(0, f'<a class="server-search-link" href="/">{all_label}</a>')
-    if (
-        source.source_id is not None
-        or source.geo_place_slug is not None
-        or source.tag_name is not None
-        or source.text_filter is not None
-        or source.cluster_id is not None
-    ):
-        all_url = all_items_url or (source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/")
-        links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">{all_label}</a>')
-    if source.person_name is not None and face_enabled:
-        all_url = all_items_url or (source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/")
-        links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">{all_label}</a>')
-    return "\n".join(links)
+    return source_all_items_link_html(
+        source,
+        item,
+        face_enabled=face_enabled,
+        all_items_url=all_items_url,
+        all_items_label=all_items_label,
+    )
 
 
 def source_action_links_html(
@@ -117,30 +173,22 @@ def source_action_links_html(
     all_items_url: str | None = None,
     all_items_label: str = "Alle bilder",
 ) -> str:
-    search_link = (
-        '<a class="server-search-link" href="/search" data-search-preload>Bildesøk</a>'
-        if openclip_enabled
-        else ""
+    all_items_link = source_all_items_link_html(
+        source,
+        item,
+        face_enabled=face_enabled,
+        all_items_url=all_items_url,
+        all_items_label=all_items_label,
     )
-    grouping_link = (
-        '<a class="server-search-link" href="/grouping">Gruppering</a>'
-        if openclip_enabled
-        else ""
+    dropdown_menu = source_dropdown_menu_html(
+        source,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
     )
     return f"""
     <div class="top-actions">
-      {source_top_links_html(
-          source,
-          item,
-          face_enabled=face_enabled,
-          all_items_url=all_items_url,
-          all_items_label=all_items_label,
-      )}
-      {search_link}
-      {grouping_link}
-      <a class="server-search-link" href="/dashboard">Dashboard</a>
-      <a class="server-search-link" href="/help/web/bildebrowser">Hjelp</a>
-      <a class="server-search-link" href="/settings">Innstillinger</a>
+      {all_items_link}
+      {dropdown_menu}
     </div>
     """
 

@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import importlib.metadata
 import json
+import math
+import random
 import sqlite3
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -29,8 +34,15 @@ DEFAULT_N_INIT = 10
 DEFAULT_MAX_ITER = 100
 DEFAULT_REASSIGNMENT_RATIO = 0.01
 DEFAULT_HDBSCAN_MIN_CLUSTER_SIZE = 5
+DEFAULT_LEIDEN_NEIGHBOR_COUNT = 20
+DEFAULT_LEIDEN_RESOLUTION = 0.2
+DEFAULT_LEIDEN_ITERATIONS = -1
+DEFAULT_LEIDEN_BETA = 0.01
+LEIDEN_INPUT_FINGERPRINT_VERSION = 1
+LEIDEN_KNN_CHUNK_SIZE = 256
 MINIBATCH_KMEANS_ALGORITHM = "minibatch_kmeans"
 HDBSCAN_ALGORITHM = "hdbscan"
+LEIDEN_ALGORITHM = "leiden"
 
 
 @dataclass(frozen=True)
@@ -117,7 +129,59 @@ class HdbscanParameters:
         }
 
 
-ClusteringAlgorithmParameters = ClusteringParameters | HdbscanParameters
+@dataclass(frozen=True)
+class LeidenParameters:
+    requested_k: int = DEFAULT_LEIDEN_NEIGHBOR_COUNT
+    neighbor_mode: str = "union"
+    minimum_similarity: float = 0.0
+    weight_mode: str = "cosine"
+    resolution: float = DEFAULT_LEIDEN_RESOLUTION
+    random_seed: int = DEFAULT_RANDOM_SEED
+    objective: str = "CPM"
+    n_iterations: int = DEFAULT_LEIDEN_ITERATIONS
+    beta: float = DEFAULT_LEIDEN_BETA
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.requested_k <= 200:
+            raise ValueError("Antall naboer må være mellom 1 og 200.")
+        if self.neighbor_mode not in {"union", "mutual"}:
+            raise ValueError("Nabomodus må være union eller mutual.")
+        if not math.isfinite(self.minimum_similarity) or not (
+            0.0 <= self.minimum_similarity <= 1.0
+        ):
+            raise ValueError("Minste likhet må være mellom 0 og 1.")
+        if self.weight_mode not in {"unweighted", "cosine"}:
+            raise ValueError("Kantvekter må være unweighted eller cosine.")
+        if not math.isfinite(self.resolution) or self.resolution <= 0.0:
+            raise ValueError("CPM-oppløsning må være større enn 0.")
+        if self.objective != "CPM":
+            raise ValueError("Leiden støtter foreløpig bare CPM.")
+        if self.n_iterations == 0:
+            raise ValueError("Antall Leiden-iterasjoner kan ikke være 0.")
+        if not math.isfinite(self.beta) or self.beta <= 0.0:
+            raise ValueError("Leiden beta må være større enn 0.")
+
+    @property
+    def algorithm(self) -> str:
+        return LEIDEN_ALGORITHM
+
+    def as_dict(self) -> dict[str, int | float | str]:
+        return {
+            "requested_k": self.requested_k,
+            "neighbor_mode": self.neighbor_mode,
+            "minimum_similarity": self.minimum_similarity,
+            "weight_mode": self.weight_mode,
+            "objective": self.objective,
+            "resolution": self.resolution,
+            "random_state": self.random_seed,
+            "n_iterations": self.n_iterations,
+            "beta": self.beta,
+        }
+
+
+ClusteringAlgorithmParameters = (
+    ClusteringParameters | HdbscanParameters | LeidenParameters
+)
 
 
 @dataclass(frozen=True)
@@ -143,6 +207,26 @@ class ClusteringResult:
     requested_cluster_count: int | None
     actual_cluster_count: int
     warning_message: str | None = None
+    leiden_graph_stats: LeidenGraphStats | None = None
+
+
+@dataclass(frozen=True)
+class LeidenGraphStats:
+    effective_neighbor_count: int
+    node_count: int
+    edge_count: int
+    isolated_file_count: int
+    threshold_removed_edge_count: int
+    nearest_similarity_median: float
+    kth_similarity_median: float
+
+
+@dataclass(frozen=True)
+class LeidenGraph:
+    edges: tuple[tuple[int, int], ...]
+    similarities: tuple[float, ...]
+    isolated_indexes: tuple[int, ...]
+    stats: LeidenGraphStats
 
 
 @dataclass(frozen=True)
@@ -209,6 +293,8 @@ def cluster_embedding_matrix(
     matrix: Any,
     file_ids: tuple[int, ...],
     parameters: ClusteringAlgorithmParameters,
+    *,
+    progress: ClusteringProgress | None = None,
 ) -> ClusteringResult:
     array = np.asarray(matrix, dtype=np.float32)
     if array.ndim != 2 or array.shape[0] != len(file_ids):
@@ -217,6 +303,13 @@ def cluster_embedding_matrix(
         )
     if tuple(sorted(file_ids)) != file_ids or len(set(file_ids)) != len(file_ids):
         raise ValueError("file_id-er må være unike og sortert.")
+    if isinstance(parameters, LeidenParameters):
+        return _cluster_embedding_matrix_leiden(
+            array,
+            file_ids,
+            parameters,
+            progress=progress,
+        )
     if isinstance(parameters, HdbscanParameters):
         return _cluster_embedding_matrix_hdbscan(array, file_ids, parameters)
     return _cluster_embedding_matrix_minibatch_kmeans(array, file_ids, parameters)
@@ -386,6 +479,324 @@ def _cluster_embedding_matrix_hdbscan(
     )
 
 
+def clustering_input_fingerprint(
+    matrix: Any,
+    file_ids: tuple[int, ...],
+    *,
+    model_name: str,
+    pretrained: str,
+) -> str:
+    array = np.asarray(matrix, dtype="<f4", order="C")
+    if array.ndim != 2 or array.shape[0] != len(file_ids):
+        raise ValueError(
+            "Embeddingmatrisen og file_id-listen stemmer ikke overens."
+        )
+    if tuple(sorted(file_ids)) != file_ids or len(set(file_ids)) != len(file_ids):
+        raise ValueError("file_id-er må være unike og sortert.")
+
+    digest = hashlib.sha256()
+    digest.update(b"bildebank-leiden-input\x00")
+    digest.update(struct.pack("<I", LEIDEN_INPUT_FINGERPRINT_VERSION))
+    for value in (model_name, pretrained):
+        encoded = value.encode("utf-8")
+        digest.update(struct.pack("<I", len(encoded)))
+        digest.update(encoded)
+    digest.update(struct.pack("<QQ", array.shape[0], array.shape[1]))
+    for index, file_id in enumerate(file_ids):
+        digest.update(struct.pack("<q", file_id))
+        digest.update(array[index].tobytes(order="C"))
+    return digest.hexdigest()
+
+
+def leiden_library_versions_json() -> str:
+    versions = {
+        package: importlib.metadata.version(package)
+        for package in ("igraph", "numpy")
+    }
+    return json.dumps(versions, sort_keys=True, separators=(",", ":"))
+
+
+def _cluster_embedding_matrix_leiden(
+    array: Any,
+    file_ids: tuple[int, ...],
+    parameters: LeidenParameters,
+    *,
+    progress: ClusteringProgress | None,
+) -> ClusteringResult:
+    if array.shape[0] < 2:
+        raise ValueError("Leiden-gruppering krever minst to gyldige bilder.")
+    effective_k = min(parameters.requested_k, array.shape[0] - 1)
+    _progress(
+        progress,
+        "neighbors",
+        requested_k=parameters.requested_k,
+        effective_k=effective_k,
+    )
+    neighbor_indexes, neighbor_similarities = _exact_cosine_neighbors(
+        array,
+        file_ids,
+        effective_k,
+    )
+    _progress(progress, "graph", neighbor_mode=parameters.neighbor_mode)
+    leiden_graph = _build_leiden_graph(
+        neighbor_indexes,
+        neighbor_similarities,
+        parameters,
+    )
+
+    labels = np.full(array.shape[0], -1, dtype=np.int64)
+    if leiden_graph.edges:
+        _progress(
+            progress,
+            "leiden",
+            nodes=array.shape[0] - len(leiden_graph.isolated_indexes),
+            edges=len(leiden_graph.edges),
+        )
+        _assign_leiden_labels(labels, leiden_graph, parameters)
+
+    _progress(progress, "ranking")
+    grouped: list[tuple[int, bytes | None, tuple[ClusterMemberResult, ...]]] = []
+    for label in sorted({int(value) for value in labels.tolist() if value >= 0}):
+        indexes = np.flatnonzero(labels == label)
+        center = np.asarray(array[indexes].mean(axis=0), dtype=np.float32)
+        center_norm = float(np.linalg.norm(center))
+        ranked_values: list[tuple[float | None, int]]
+        if center_norm > 0.0 and math.isfinite(center_norm):
+            center /= center_norm
+            ranked_values = sorted(
+                (
+                    (
+                        max(
+                            0.0,
+                            min(
+                                2.0,
+                                1.0
+                                - float(
+                                    np.dot(array[int(index)], center)
+                                ),
+                            ),
+                        ),
+                        int(file_ids[int(index)]),
+                    )
+                    for index in indexes
+                ),
+                key=lambda item: (item[0], item[1]),
+            )
+            center_blob: bytes | None = center.tobytes()
+        else:
+            ranked_values = [
+                (None, int(file_ids[int(index)]))
+                for index in sorted(
+                    indexes.tolist(),
+                    key=lambda value: file_ids[int(value)],
+                )
+            ]
+            center_blob = None
+        members = tuple(
+            ClusterMemberResult(file_id, distance, rank)
+            for rank, (distance, file_id) in enumerate(
+                ranked_values,
+                start=1,
+            )
+        )
+        grouped.append((label, center_blob, members))
+    grouped.sort(key=lambda item: (-len(item[2]), item[2][0].file_id))
+    clusters: list[ClusterResult] = [
+        ClusterResult(label, display_order, center, members)
+        for display_order, (label, center, members) in enumerate(
+            grouped,
+            start=1,
+        )
+    ]
+
+    if leiden_graph.isolated_indexes:
+        noise_members = tuple(
+            ClusterMemberResult(file_ids[index], None, rank)
+            for rank, index in enumerate(
+                sorted(
+                    leiden_graph.isolated_indexes,
+                    key=lambda value: file_ids[value],
+                ),
+                start=1,
+            )
+        )
+        clusters.append(
+            ClusterResult(
+                -1,
+                len(clusters) + 1,
+                None,
+                noise_members,
+                kind="noise",
+            )
+        )
+
+    warning_parts: list[str] = []
+    if effective_k != parameters.requested_k:
+        warning_parts.append(
+            f"Antall naboer ble redusert fra {parameters.requested_k} "
+            f"til {effective_k} fordi utvalget er lite."
+        )
+    if not grouped:
+        warning_parts.append(
+            "Leiden fant ingen grupper; alle bildene ble ugrupperte."
+        )
+    return ClusteringResult(
+        tuple(clusters),
+        None,
+        len(grouped),
+        " ".join(warning_parts) or None,
+        leiden_graph.stats,
+    )
+
+
+def _exact_cosine_neighbors(
+    array: Any,
+    file_ids: tuple[int, ...],
+    effective_k: int,
+) -> tuple[Any, Any]:
+    row_count = int(array.shape[0])
+    neighbor_indexes = np.empty((row_count, effective_k), dtype=np.int64)
+    neighbor_similarities = np.empty(
+        (row_count, effective_k),
+        dtype=np.float32,
+    )
+    for start in range(0, row_count, LEIDEN_KNN_CHUNK_SIZE):
+        stop = min(start + LEIDEN_KNN_CHUNK_SIZE, row_count)
+        similarities = np.asarray(
+            array[start:stop] @ array.T,
+            dtype=np.float32,
+        )
+        np.clip(similarities, -1.0, 1.0, out=similarities)
+        for local_index, row in enumerate(similarities):
+            matrix_index = start + local_index
+            row[matrix_index] = -np.inf
+            if effective_k == row_count - 1:
+                candidates = np.flatnonzero(np.isfinite(row))
+            else:
+                boundary = float(np.partition(row, -effective_k)[-effective_k])
+                candidates = np.flatnonzero(row >= boundary)
+            ranked = sorted(
+                (int(index) for index in candidates),
+                key=lambda index: (-float(row[index]), file_ids[index]),
+            )[:effective_k]
+            neighbor_indexes[matrix_index] = ranked
+            neighbor_similarities[matrix_index] = [
+                row[index] for index in ranked
+            ]
+    return neighbor_indexes, neighbor_similarities
+
+
+def _build_leiden_graph(
+    neighbor_indexes: Any,
+    neighbor_similarities: Any,
+    parameters: LeidenParameters,
+) -> LeidenGraph:
+    node_count, effective_k = neighbor_indexes.shape
+    directed: dict[tuple[int, int], float] = {}
+    for source in range(node_count):
+        for neighbor_rank in range(effective_k):
+            target = int(neighbor_indexes[source, neighbor_rank])
+            directed[(source, target)] = float(
+                neighbor_similarities[source, neighbor_rank]
+            )
+
+    candidate_pairs = {
+        (min(source, target), max(source, target))
+        for source, target in directed
+    }
+    edges: list[tuple[int, int]] = []
+    similarities: list[float] = []
+    removed = 0
+    degree = [0] * node_count
+    for first, second in sorted(candidate_pairs):
+        forward = directed.get((first, second))
+        reverse = directed.get((second, first))
+        if parameters.neighbor_mode == "mutual" and (
+            forward is None or reverse is None
+        ):
+            continue
+        similarity = max(
+            value for value in (forward, reverse) if value is not None
+        )
+        if similarity <= 0.0 or similarity < parameters.minimum_similarity:
+            removed += 1
+            continue
+        edges.append((first, second))
+        similarities.append(similarity)
+        degree[first] += 1
+        degree[second] += 1
+
+    isolated_indexes = tuple(
+        index for index, value in enumerate(degree) if value == 0
+    )
+    nearest_median = float(np.median(neighbor_similarities[:, 0]))
+    kth_median = float(np.median(neighbor_similarities[:, -1]))
+    return LeidenGraph(
+        tuple(edges),
+        tuple(similarities),
+        isolated_indexes,
+        LeidenGraphStats(
+            effective_neighbor_count=effective_k,
+            node_count=node_count,
+            edge_count=len(edges),
+            isolated_file_count=len(isolated_indexes),
+            threshold_removed_edge_count=removed,
+            nearest_similarity_median=max(-1.0, min(1.0, nearest_median)),
+            kth_similarity_median=max(-1.0, min(1.0, kth_median)),
+        ),
+    )
+
+
+def _assign_leiden_labels(
+    labels: Any,
+    leiden_graph: LeidenGraph,
+    parameters: LeidenParameters,
+) -> None:
+    # Lazy import keeps igraph out of launcher and server processes.
+    import igraph
+
+    isolated_indexes = set(leiden_graph.isolated_indexes)
+    active_indexes = tuple(
+        index
+        for index in range(len(labels))
+        if index not in isolated_indexes
+    )
+    dense_index = {
+        original_index: index
+        for index, original_index in enumerate(active_indexes)
+    }
+    graph = igraph.Graph(
+        n=len(active_indexes),
+        edges=[
+            (dense_index[first], dense_index[second])
+            for first, second in leiden_graph.edges
+        ],
+        directed=False,
+    )
+    weights = (
+        None
+        if parameters.weight_mode == "unweighted"
+        else leiden_graph.similarities
+    )
+    igraph.set_random_number_generator(random.Random(parameters.random_seed))
+    try:
+        partition = graph.community_leiden(
+            objective_function=parameters.objective,
+            weights=weights,
+            resolution=parameters.resolution,
+            beta=parameters.beta,
+            n_iterations=parameters.n_iterations,
+        )
+    finally:
+        igraph.set_random_number_generator(None)
+    for original_index, label in zip(
+        active_indexes,
+        partition.membership,
+        strict=True,
+    ):
+        labels[original_index] = int(label)
+
+
 def run_image_clustering(
     target: Path,
     config: OpenClipConfig,
@@ -453,6 +864,16 @@ def run_image_clustering(
                     "Fant ingen gyldige embeddings for det valgte utvalget "
                     "og modellen."
                 )
+            input_fingerprint: str | None = None
+            library_versions_json: str | None = None
+            if isinstance(parameters, LeidenParameters):
+                input_fingerprint = clustering_input_fingerprint(
+                    embeddings.matrix,
+                    embeddings.file_ids,
+                    model_name=config.model_name,
+                    pretrained=config.pretrained,
+                )
+                library_versions_json = leiden_library_versions_json()
             _progress(
                 progress,
                 "algorithm",
@@ -463,6 +884,7 @@ def run_image_clustering(
                 embeddings.matrix,
                 embeddings.file_ids,
                 parameters,
+                progress=progress,
             )
             _progress(
                 progress,
@@ -473,6 +895,8 @@ def run_image_clustering(
                 openclip_conn,
                 run_id,
                 clustering,
+                input_fingerprint=input_fingerprint,
+                library_versions_json=library_versions_json,
             )
             normal_clusters = tuple(
                 cluster
@@ -536,11 +960,19 @@ def delete_clustering_run(target: Path, run_id: int) -> bool:
     with TargetLock(target, command="delete-image-clustering-run"):
         conn = connect_openclip_db(target)
         try:
-            cursor = conn.execute(
-                "DELETE FROM image_clustering_runs WHERE id = ?",
-                (run_id,),
-            )
-            conn.commit()
+            with conn:
+                conn.execute(
+                    "DELETE FROM image_cluster_members WHERE run_id = ?",
+                    (run_id,),
+                )
+                conn.execute(
+                    "DELETE FROM image_clusters WHERE run_id = ?",
+                    (run_id,),
+                )
+                cursor = conn.execute(
+                    "DELETE FROM image_clustering_runs WHERE id = ?",
+                    (run_id,),
+                )
             return cursor.rowcount > 0
         finally:
             conn.close()
@@ -677,6 +1109,9 @@ def _store_completed_run(
     conn: sqlite3.Connection,
     run_id: int,
     result: ClusteringResult,
+    *,
+    input_fingerprint: str | None = None,
+    library_versions_json: str | None = None,
 ) -> None:
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -718,6 +1153,7 @@ def _store_completed_run(
                     for member in cluster.members
                 ),
             )
+        graph_stats = result.leiden_graph_stats
         conn.execute(
             """
             UPDATE image_clustering_runs
@@ -725,6 +1161,16 @@ def _store_completed_run(
                 clustered_file_count = ?,
                 actual_cluster_count = ?,
                 warning_message = ?,
+                input_fingerprint = ?,
+                input_fingerprint_version = ?,
+                effective_neighbor_count = ?,
+                graph_node_count = ?,
+                graph_edge_count = ?,
+                isolated_file_count = ?,
+                threshold_removed_edge_count = ?,
+                nearest_similarity_median = ?,
+                kth_similarity_median = ?,
+                library_versions_json = ?,
                 finished_at = CURRENT_TIMESTAMP,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -737,6 +1183,40 @@ def _store_completed_run(
                 ),
                 result.actual_cluster_count,
                 result.warning_message,
+                input_fingerprint,
+                (
+                    LEIDEN_INPUT_FINGERPRINT_VERSION
+                    if input_fingerprint is not None
+                    else None
+                ),
+                (
+                    graph_stats.effective_neighbor_count
+                    if graph_stats is not None
+                    else None
+                ),
+                graph_stats.node_count if graph_stats is not None else None,
+                graph_stats.edge_count if graph_stats is not None else None,
+                (
+                    graph_stats.isolated_file_count
+                    if graph_stats is not None
+                    else None
+                ),
+                (
+                    graph_stats.threshold_removed_edge_count
+                    if graph_stats is not None
+                    else None
+                ),
+                (
+                    graph_stats.nearest_similarity_median
+                    if graph_stats is not None
+                    else None
+                ),
+                (
+                    graph_stats.kth_similarity_median
+                    if graph_stats is not None
+                    else None
+                ),
+                library_versions_json,
                 run_id,
             ),
         )

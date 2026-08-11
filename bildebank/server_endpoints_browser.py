@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import urllib.parse
 from http import HTTPStatus
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import db
@@ -31,6 +32,7 @@ from .server_browser_sources import (
     imported_source_browser_source,
     parse_source_path,
     source_has_sql_filter,
+    source_item_url,
     tag_browser_source,
 )
 from .server_filter import text_filter_browser_source
@@ -44,8 +46,16 @@ from .server_pages import (
     source_month_page_html,
     source_year_months_page_html,
     source_years_page_html,
+    search_html,
+    similar_search_html,
     year_months_page_html,
     years_page_html,
+)
+from .server_search import (
+    ServerSearchStats,
+    ServerSimilarSearchStats,
+    load_stored_search_run,
+    stored_search_browser_source,
 )
 from .server_request import first_param, nonnegative_int_param, parse_file_id, positive_int_param
 from .server_response import add_csrf_to_html, read_only_html
@@ -58,9 +68,24 @@ def respond_browser_root(handler: BildebankRequestHandler) -> None:
     respond_years(handler)
 
 
-def respond_random_item(handler: BildebankRequestHandler) -> None:
-    browser_file_ids = handler.server.browser_item_ids(
-        hide_out_of_focus=handler.server.hide_out_of_focus
+def respond_random_item(
+    handler: BildebankRequestHandler,
+    source: BrowserSource | None = None,
+    *,
+    hide_out_of_focus: bool | None = None,
+) -> None:
+    hide_out_of_focus = (
+        handler.server.hide_out_of_focus
+        if hide_out_of_focus is None
+        else hide_out_of_focus
+    )
+    browser_file_ids = (
+        handler.server.browser_item_ids(hide_out_of_focus=hide_out_of_focus)
+        if source is None
+        else handler.server.source_item_order(
+            source,
+            hide_out_of_focus=hide_out_of_focus,
+        )[0]
     )
     browser_db_connection = getattr(handler, "browser_db_connection", None)
     conn, close_conn = (
@@ -78,11 +103,20 @@ def respond_random_item(handler: BildebankRequestHandler) -> None:
             conn.close()
     if file_id is None:
         handler.respond_text(
-            "Fant ingen aktive bilder eller videoer i bildesamlingen.",
+            (
+                "Fant ingen aktive bilder eller videoer i dette utvalget."
+                if source is not None
+                else "Fant ingen aktive bilder eller videoer i bildesamlingen."
+            ),
             status=HTTPStatus.NOT_FOUND,
         )
         return
-    handler.redirect(f"/item/{file_id}")
+    location = (
+        source_item_url(source, file_id)
+        if source is not None
+        else f"/item/{file_id}"
+    )
+    handler.redirect(location)
 
 
 def respond_item(handler: BildebankRequestHandler, raw_file_id: str) -> None:
@@ -163,6 +197,7 @@ def respond_item(handler: BildebankRequestHandler, raw_file_id: str) -> None:
             month_nav,
             face_enabled=handler.server.face_enabled,
             openclip_enabled=handler.server.openclip_enabled,
+            grouping_enabled=not getattr(handler.server, "lan_share", False),
             face_config=handler.server.config.face_recognition,
             manual_person_controls_enabled=handler.server.config.browser.manual_person_controls_enabled,
             person_reference_links_enabled=handler.server.config.browser.person_reference_links_enabled,
@@ -278,6 +313,71 @@ def respond_filter_source(handler: BildebankRequestHandler, raw_path: str) -> No
     )
 
 
+def respond_search_run(handler: BildebankRequestHandler, raw_path: str) -> None:
+    raw_run_id, page_mode, raw_value = parse_source_path(raw_path)
+    if not raw_run_id.isdigit() or int(raw_run_id) <= 0:
+        handler.respond_text("Ugyldig søkejobb.", status=HTTPStatus.BAD_REQUEST)
+        return
+    run = load_stored_search_run(handler.server.target, int(raw_run_id))
+    if run is None:
+        handler.respond_text("Fant ikke søkejobben.", status=HTTPStatus.NOT_FOUND)
+        return
+    source = stored_search_browser_source(handler.server.target, run)
+    if page_mode is not None:
+        respond_browser_source(
+            handler,
+            source,
+            page_mode,
+            raw_value,
+            hide_out_of_focus=handler.server.hide_out_of_focus,
+            item_not_found_message="Filen finnes ikke i dette søkeresultatet.",
+            invalid_page_message="Ugyldig søkeresultatside.",
+        )
+        return
+
+    item_ids, _ = handler.server.source_item_order(
+        source,
+        hide_out_of_focus=handler.server.hide_out_of_focus,
+    )
+    visible_ids = set(item_ids)
+    results = tuple(result for result in run.results if result.file_id in visible_ids)
+    reference_file_id = run.similar_reference_file_id
+    if reference_file_id is None:
+        handler.respond_html(
+            search_html(
+                handler.server,
+                ServerSearchStats(run.query, results, run.run_id),
+                run.result_limit,
+            )
+        )
+        return
+
+    from .server_browser_queries import active_item_by_id_including_hidden
+
+    reference_item = active_item_by_id_including_hidden(
+        handler.server.target,
+        reference_file_id,
+    )
+    reference_path = (
+        Path(str(reference_item["target_path"]))
+        if reference_item is not None
+        else Path(f"bilde-{reference_file_id}")
+    )
+    handler.respond_html(
+        similar_search_html(
+            handler.server,
+            ServerSimilarSearchStats(
+                reference_file_id,
+                reference_path,
+                results,
+                run.run_id,
+                run.similar_scope_title,
+                run.similar_scope_root_url,
+            ),
+        )
+    )
+
+
 def respond_imported_source(handler: BildebankRequestHandler, raw_path: str) -> None:
     raw_source_id, page_mode, raw_value = parse_source_path(raw_path)
     try:
@@ -305,7 +405,14 @@ def respond_tag(handler: BildebankRequestHandler, raw_path: str) -> None:
     raw_tag_name, page_mode, raw_value = parse_source_path(raw_path)
     tag_name = urllib.parse.unquote(raw_tag_name).strip()
     try:
-        source = tag_browser_source(tag_name)
+        system_key = None
+        if db.db_path_for_target(handler.server.target).is_file():
+            conn = db.connect_read_only(handler.server.target)
+            try:
+                system_key = db.system_tag_key_for_name(conn, tag_name)
+            finally:
+                conn.close()
+        source = tag_browser_source(tag_name, system_key=system_key)
     except ValueError as exc:
         handler.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
         return
@@ -412,6 +519,13 @@ def respond_browser_source(
     face_config: FaceRecognitionConfig | None = None,
     hide_out_of_focus: bool = False,
 ) -> None:
+    if page_mode == "random":
+        respond_random_item(
+            handler,
+            source,
+            hide_out_of_focus=hide_out_of_focus,
+        )
+        return
     if page_mode is None:
         handler.respond_html(
             source_years_page_html(
@@ -522,6 +636,7 @@ def respond_browser_source(
                     month_nav,
                     face_enabled=handler.server.face_enabled,
                     openclip_enabled=handler.server.openclip_enabled,
+                    grouping_enabled=not getattr(handler.server, "lan_share", False),
                     face_config=handler.server.config.face_recognition,
                     manual_person_controls_enabled=handler.server.config.browser.manual_person_controls_enabled,
                     person_reference_links_enabled=handler.server.config.browser.person_reference_links_enabled,

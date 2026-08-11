@@ -289,7 +289,7 @@ lagring uten å kreve en separat databaseserver.
 
 ## Databaseversjoner
 
-- gjeldende schema er v22
+- gjeldende schema er v23
 - eldste hoveddatabaseformat som støttes av gjeldende migrator er v5
 - v1–v4 er historiske, utfasete formater; eldre hjelpegrener i koden er ikke
   et løfte om at disse formatene kan oppgraderes direkte
@@ -309,7 +309,8 @@ lagring uten å kreve en separat databaseserver.
   devel-docs/database-v18-migration.md og
   devel-docs/database-v19-migration.md,
   devel-docs/database-v20-migration.md,
-  devel-docs/database-v21-migration.md
+  devel-docs/database-v21-migration.md og
+  devel-docs/database-v23-migration.md
 - v21 oppretter `file_tombstones` og den restriktive journalen
   `pending_file_purges`. SQLite-triggere håndhever at samme SHA-256 ikke kan
   finnes i både `files` og `file_tombstones`
@@ -317,9 +318,16 @@ lagring uten å kreve en separat databaseserver.
   endrer ikke mediefiler og oppretter ikke tombstones fra eksisterende
   papirkurvinnhold eller manglende filer
 - v22 legger til kommentarer og kamerafelter på `files`
-- ny runtime-kode skal anta v22, med mindre oppgaven eksplisitt gjelder
+- v23 legger til en stabil `tags.system_key` for systemtagger. Brukertagger har
+  `system_key=NULL`. Både bruker- og systemtagger er fortsatt koblet til bilder
+  med den lokale `tags.id` gjennom `file_tags`; navn og `name_key` er ikke
+  systemtaggens varige identitet
+- engangstaggen `duplicate_repair_review` vises i bildebrowserens taggsidepanel
+  og på `/tags` bare når minst ett bilde har taggen. Andre systemtagger, som
+  `out_of_focus`, kan fortsatt vises uten taggede bilder
+- ny runtime-kode skal anta v23, med mindre oppgaven eksplisitt gjelder
   migrering
-- den separate OpenCLIP-databasen har schema v2 og er beskrevet i
+- den separate OpenCLIP-databasen har schema v3 og er beskrevet i
   devel-docs/openclip-database.md
 
 ## Plattform
@@ -536,6 +544,11 @@ bruke felles funksjoner for selve browseren, for eksempel
 utvalg får samme blaing, rotering, bildeinfo, sletting og lenkestruktur uten at
 det lages egne parallelle browsere for hvert tilfelle.
 
+Tilfeldig bilde skal bruke det aktive browserutvalget når handlingen startes
+fra et filtrert `BrowserSource`, og beholde utvalgets item-URL ved redirect.
+Utvalget skal bruke samme prioritering av usette og lenge siden sette filer som
+den globale tilfeldige bilde-funksjonen.
+
 I read-only-modus skal også direkte medieendepunkter bare gi tilgang til
 aktive `files`-rader. At innstillinger og siden for fjernede filer er skjult,
 er ikke i seg selv en tilstrekkelig tilgangsgrense. Før serveren åpner en
@@ -636,6 +649,24 @@ for «ute av fokus» og lagres i dagens søketabeller som
 flyten skal ikke laste tekstmodellen, og knappen skal ikke vises for videoer,
 når OpenCLIP er deaktivert eller i read-only-modus.
 
+Et fullført tekst- eller bildelikhetssøk skal redirecte til en stabil
+GET-adresse for den lagrede søkekjøringen. Resultatene skal modelleres som et
+filtrert `BrowserSource`, med lagret rang som bildeorden. Dermed gjenbruker de
+vanlig full bildevisning, forrige/neste, tilfeldig bilde i utvalget og en
+tydelig lenke tilbake til søkeresultatet. GET-visningen skal bare lese den
+lagrede kjøringen og skal også kunne åpnes i read-only-modus; den skal aldri
+laste modellen eller starte et nytt søk.
+
+Når bildelikhetssøk startes fra et filtrert `BrowserSource`, skal det aktive
+utvalget være standard kandidatgrunnlag. Skjemaet sender utvalgets kanoniske
+rot-URL, og serveren skal rekonstruere og validere kilden før søket; klienten
+skal ikke få angi vilkårlige kandidat-ID-er. Referansebildet må fortsatt være
+medlem av utvalget. Kildens tittel og rot-URL lagres som en strukturert del av
+søkekjøringens eksisterende `query`-felt, slik at ingen skjemamigrering kreves
+og en bokmerket resultatside kan forklare omfanget. Resultatsiden skal tilby en
+sekundær POST-handling som kjører samme likhetssøk i hele bildesamlingen. Fra
+den globale bildebrowseren beholder knappen hele samlingen som kandidatgrunnlag.
+
 OpenCLIP-embeddings kan også brukes til reversible forslag til bildegrupper.
 Den tunge grupperingen startes bare fra Verktøy-fanen i launcheren og kjøres
 som en avbrytbar underprosess. Webserveren viser og kan eksplisitt slette
@@ -647,6 +678,11 @@ automatisk og lagrer støy som en egen gruppe som vises som «Ugrupperte
 bilder»; algoritmens effektive parametere og medlemsstyrke lagres med run-et.
 Oversikten viser algoritmen og de viktigste brukerinnstillingene på hvert
 run-panel; detaljsiden viser hele den lagrede parameter-JSON-en.
+Full bildevisning kan også vise hvilke ordinære grupper i fullførte kjøringer
+bildet inngår i, og lenke direkte til den eksisterende gruppebrowseren med
+bildet valgt. Dette er en historisk visning av avledede resultater, ikke en
+permanent egenskap ved bildet. Visningen skal fungere lokalt i read-only-modus,
+men skal skjules når OpenCLIP er deaktivert eller serveren deler over LAN.
 Grupperingssider er ikke tilgjengelige ved LAN-deling.
 Eksplisitt telling av thumbnails skal av samme grunn bruke beskyttet POST.
 Automatisk vedlikeholdsstatus kan forbli GET fordi den bare gjør read-only

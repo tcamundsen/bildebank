@@ -34,12 +34,27 @@ def database_dump(path: Path) -> str:
 def downgrade_current_database_to_v20(target: Path) -> None:
     conn = sqlite3.connect(target / DB_FILENAME)
     try:
+        conn.execute("DROP INDEX idx_tags_system_key_unique")
+        conn.execute("ALTER TABLE tags DROP COLUMN system_key")
         for trigger_name in db.FILE_PURGE_TRIGGER_NAMES:
             conn.execute(f"DROP TRIGGER {trigger_name}")
         conn.execute("DROP TABLE pending_file_purges")
         conn.execute("DROP TABLE file_tombstones")
         conn.execute(
             "UPDATE meta SET value = '20' WHERE key = 'schema_version'"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def downgrade_current_database_to_v22(target: Path) -> None:
+    conn = sqlite3.connect(target / DB_FILENAME)
+    try:
+        conn.execute("DROP INDEX idx_tags_system_key_unique")
+        conn.execute("ALTER TABLE tags DROP COLUMN system_key")
+        conn.execute(
+            "UPDATE meta SET value = '22' WHERE key = 'schema_version'"
         )
         conn.commit()
     finally:
@@ -68,8 +83,176 @@ class MigrateCliTests(unittest.TestCase):
         self.assertIn("idx_files_active_target_path_key", indexes)
         self.assertIn("idx_file_sources_source_id_id", indexes)
         self.assertIn("idx_errors_unresolved_stage_id", indexes)
+        self.assertIn("idx_tags_system_key_unique", indexes)
 
-    def test_migrate_check_v20_to_v22_changes_nothing(self) -> None:
+    def test_migrate_v22_adds_system_keys_without_changing_tag_ids_or_links(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"unchanged-image")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            conn = db.connect(target)
+            try:
+                file_id = int(conn.execute("SELECT id FROM files").fetchone()["id"])
+                out_of_focus_id = db.system_tag_id(
+                    conn,
+                    db.SYSTEM_TAG_OUT_OF_FOCUS_KEY,
+                )
+                duplicate_review_id = db.system_tag_id(
+                    conn,
+                    db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW_KEY,
+                )
+                user_tag_id = db.create_user_tag(conn, "Familie")
+                conn.execute(
+                    "INSERT INTO file_tags(file_id, tag_id) VALUES(?, ?)",
+                    (file_id, out_of_focus_id),
+                )
+                conn.execute(
+                    "INSERT INTO file_tags(file_id, tag_id) VALUES(?, ?)",
+                    (file_id, user_tag_id),
+                )
+                target_relative = Path(
+                    str(conn.execute("SELECT target_path FROM files").fetchone()["target_path"])
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            target_file = target / target_relative
+            target_bytes_before = target_file.read_bytes()
+            downgrade_current_database_to_v22(target)
+            database_path = target / DB_FILENAME
+            before_check = database_path.read_bytes()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "migrate", "--check"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Nåværende schema_version: 22", stdout)
+            self.assertIn("Ny schema_version: 23", stdout)
+            self.assertIn("stabile systemnøkler", stdout)
+            self.assertEqual(database_path.read_bytes(), before_check)
+
+            with mock.patch(
+                "bildebank.db_schema.hash_stable_collection_file",
+                side_effect=AssertionError("v22->v23 leste en samlingsfil"),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "migrate"]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Setter schema_version=23.", stdout)
+            self.assertEqual(target_file.read_bytes(), target_bytes_before)
+            conn = db.connect(target)
+            try:
+                rows = {
+                    str(row["system_key"]): (int(row["id"]), str(row["name"]))
+                    for row in conn.execute(
+                        "SELECT id, name, system_key FROM tags WHERE system_key IS NOT NULL"
+                    )
+                }
+                links = {
+                    int(row["tag_id"])
+                    for row in conn.execute(
+                        "SELECT tag_id FROM file_tags WHERE file_id = ?",
+                        (file_id,),
+                    )
+                }
+            finally:
+                conn.close()
+
+        self.assertEqual(
+            rows[db.SYSTEM_TAG_OUT_OF_FOCUS_KEY],
+            (out_of_focus_id, db.SYSTEM_TAG_OUT_OF_FOCUS),
+        )
+        self.assertEqual(
+            rows[db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW_KEY],
+            (duplicate_review_id, db.SYSTEM_TAG_DUPLICATE_REPAIR_REVIEW),
+        )
+        self.assertEqual(links, {out_of_focus_id, user_tag_id})
+
+    def test_migrate_v22_rolls_back_system_keys_on_late_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            downgrade_current_database_to_v22(target)
+            database_path = target / DB_FILENAME
+            before = database_dump(database_path)
+
+            with mock.patch(
+                "bildebank.db_schema.validate_database_health",
+                side_effect=RuntimeError("injisert v23-feil"),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "migrate"]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertIn("injisert v23-feil", stderr)
+            self.assertEqual(database_dump(database_path), before)
+
+    def test_current_schema_repair_does_not_reset_renamed_system_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = db.connect(target)
+            try:
+                out_of_focus_id = db.system_tag_id(
+                    conn,
+                    db.SYSTEM_TAG_OUT_OF_FOCUS_KEY,
+                )
+                conn.execute(
+                    """
+                    UPDATE tags
+                    SET name = 'Uskarpt', name_key = 'uskarpt'
+                    WHERE id = ?
+                    """,
+                    (out_of_focus_id,),
+                )
+                conn.execute("DELETE FROM meta WHERE key = 'collection_id'")
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "migrate"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            conn = db.connect(target)
+            try:
+                row = conn.execute(
+                    "SELECT id, name, name_key FROM tags WHERE system_key = ?",
+                    (db.SYSTEM_TAG_OUT_OF_FOCUS_KEY,),
+                ).fetchone()
+            finally:
+                conn.close()
+
+        self.assertEqual(
+            (int(row["id"]), str(row["name"]), str(row["name_key"])),
+            (out_of_focus_id, "Uskarpt", "uskarpt"),
+        )
+
+    def test_migrate_check_v20_to_v23_changes_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             init_database(target)
@@ -84,7 +267,7 @@ class MigrateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 20", stdout)
-            self.assertIn("Ny schema_version: 22", stdout)
+            self.assertIn("Ny schema_version: 23", stdout)
             self.assertIn("opprette file_tombstones", stdout)
             self.assertIn("opprette pending_file_purges", stdout)
             self.assertIn("Ingen endringer er gjort (--check).", stdout)
@@ -98,7 +281,7 @@ class MigrateCliTests(unittest.TestCase):
                 )
             )
 
-    def test_migrate_v20_to_v22_only_adds_empty_purge_and_view_stats_schema(self) -> None:
+    def test_migrate_v20_to_v23_only_changes_database_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -148,7 +331,7 @@ class MigrateCliTests(unittest.TestCase):
 
             with mock.patch(
                 "bildebank.db_schema.hash_stable_collection_file",
-                side_effect=AssertionError("v20->v22 leste en samlingsfil"),
+                side_effect=AssertionError("v20->v23 leste en samlingsfil"),
             ):
                 code, stdout, stderr = capture_cli(
                     ["--target", str(target), "migrate"]
@@ -156,7 +339,7 @@ class MigrateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 20", stdout)
-            self.assertIn("Setter schema_version=22.", stdout)
+            self.assertIn("Setter schema_version=23.", stdout)
             self.assertEqual(target_file.read_bytes(), target_bytes_before)
             conn = db.connect(target)
             try:

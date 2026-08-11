@@ -60,6 +60,7 @@ def index_html(server: Any, *, message: str = "") -> str:
         month_nav,
         face_enabled=server.face_enabled,
         openclip_enabled=server.openclip_enabled,
+        grouping_enabled=not getattr(server, "lan_share", False),
         face_config=server.config.face_recognition,
     )
 
@@ -123,6 +124,10 @@ def dashboard_page_html(server: Any) -> str:
         face_enabled=server.face_enabled,
         openclip_enabled=server.openclip_enabled,
         hide_local_paths=getattr(server, "lan_share", False),
+        read_only=(
+            getattr(server, "read_only", False)
+            or getattr(server, "lan_share", False)
+        ),
     )
 
 
@@ -239,6 +244,7 @@ def item_page_html(
     *,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    grouping_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     manual_person_controls_enabled: bool = True,
     person_reference_links_enabled: bool = False,
@@ -255,6 +261,7 @@ def item_page_html(
         page_html=page_html,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+        grouping_enabled=grouping_enabled,
         face_config=face_config,
         manual_person_controls_enabled=manual_person_controls_enabled,
         person_reference_links_enabled=person_reference_links_enabled,
@@ -274,6 +281,7 @@ def source_item_page_html(
     *,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    grouping_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     manual_person_controls_enabled: bool = True,
     person_reference_links_enabled: bool = False,
@@ -296,6 +304,7 @@ def source_item_page_html(
         page_html=page_html,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+        grouping_enabled=grouping_enabled,
         face_config=face_config,
         manual_person_controls_enabled=manual_person_controls_enabled,
         person_reference_links_enabled=person_reference_links_enabled,
