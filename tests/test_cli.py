@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+import re
 import sqlite3
 import tempfile
 import unittest
@@ -107,39 +109,68 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("Kom i gang:", stdout)
         self.assertIn("bildebank start", stdout)
         self.assertIn("Bildebank-vinduet kan opprette samling", stdout)
-        self.assertIn("Full kommandoliste:", stdout)
-        self.assertIn("docs\\reference.md", stdout)
-        self.assertIn("Noen avanserte oppgaver gjøres fortsatt fra PowerShell.", stdout)
+        self.assertIn("Kommandoer:", stdout)
+        self.assertRegex(stdout, r"(?m)^  create\s+Opprett bildesamling")
+        self.assertRegex(stdout, r"(?m)^  ffmpeg-install\s+Installer FFmpeg")
+        self.assertNotIn("Full kommandoliste:", stdout)
+        self.assertNotIn("docs\\reference.md", stdout)
+        self.assertNotIn("Noen avanserte oppgaver gjøres fortsatt fra PowerShell.", stdout)
         self.assertIn("bildebank <kommando> -h", stdout)
         self.assertNotIn('bildebank import --name "Mobil 2024" --dry-run "E:\\DCIM"', stdout)
         self.assertNotIn("Vanlige kommandoer:", stdout)
         self.assertEqual(stderr, "")
 
-    def test_main_help_points_to_window_and_remaining_cli_commands(self) -> None:
-        stdout_buffer = StringIO()
-        stderr_buffer = StringIO()
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
-            main(["-h"])
+    def test_main_help_lists_commands_and_points_to_window(self) -> None:
+        help_outputs = []
+        for help_option in ("-h", "--help"):
+            with self.subTest(help_option=help_option):
+                stdout_buffer = StringIO()
+                stderr_buffer = StringIO()
+                with (
+                    redirect_stdout(stdout_buffer),
+                    redirect_stderr(stderr_buffer),
+                    self.assertRaises(SystemExit) as raised,
+                ):
+                    main([help_option])
 
-        self.assertEqual(raised.exception.code, 0)
-        stdout = stdout_buffer.getvalue()
+                self.assertEqual(raised.exception.code, 0)
+                self.assertEqual(stderr_buffer.getvalue(), "")
+                help_outputs.append(stdout_buffer.getvalue())
+
+        self.assertEqual(help_outputs[0], help_outputs[1])
+        stdout = help_outputs[0]
         self.assertIn("usage: bildebank [-h] [--version] <kommando> [<args>]", stdout)
         self.assertIn("Bildebank 0.9.0", stdout)
         self.assertNotIn("--target", stdout)
         self.assertIn("Kom i gang:\n   bildebank start", stdout)
         self.assertIn("Bildebank-vinduet kan opprette samling", stdout)
+        self.assertIn("Kommandoer:", stdout)
+
+        parser = build_parser()
+        subparsers = next(
+            action
+            for action in parser._actions
+            if isinstance(action, argparse._SubParsersAction)
+        )
+        public_commands = [
+            action.dest
+            for action in subparsers._get_subactions()
+            if action.help != argparse.SUPPRESS
+        ]
+        for command in public_commands:
+            with self.subTest(command=command):
+                self.assertRegex(stdout, rf"(?m)^  {re.escape(command)}(?:\s|$)")
+
         self.assertNotIn("launcher", stdout)
-        self.assertIn("Full kommandoliste:", stdout)
-        self.assertIn("Noen avanserte oppgaver gjøres fortsatt fra PowerShell.", stdout)
+        self.assertNotIn("_image-clustering-worker", stdout)
+        self.assertNotIn("Full kommandoliste:", stdout)
+        self.assertNotIn("docs\\reference.md", stdout)
+        self.assertNotIn("Noen avanserte oppgaver gjøres fortsatt fra PowerShell.", stdout)
         self.assertIn("bildebank <kommando> -h", stdout)
         self.assertNotIn("Må fortsatt kjøres fra PowerShell:", stdout)
-        self.assertNotIn("status, errors, conflicts, show-conflict, non-metadata", stdout)
-        self.assertNotIn("Vanlige kommandoer:", stdout)
-        self.assertNotIn("HTML-eksport\n   make-thumbnails", stdout)
         self.assertNotIn("{create,add,import", stdout)
         self.assertNotIn("face-group", stdout)
         self.assertNotIn("face-person-add-group", stdout)
-        self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_download_openclip_model_can_install_all_pinned_models(self) -> None:
         calls = []

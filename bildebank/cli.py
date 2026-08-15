@@ -125,7 +125,12 @@ UNIMPORT_TARGET_PROGRESS: ProgressMeter | None = None
 class BildebankHelpFormatter(argparse.RawDescriptionHelpFormatter):
     def _format_action(self, action: argparse.Action) -> str:
         if isinstance(action, argparse._SubParsersAction):
-            return ""
+            format_action = super()._format_action
+            return "".join(
+                format_action(subaction)
+                for subaction in action._get_subactions()
+                if subaction.help != argparse.SUPPRESS
+            )
         return super()._format_action(action)
 
 
@@ -207,7 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--debug", action="store_true", help="Vis traceback ved feil. Må settes først")
     parser.add_argument("--target", type=Path, help=argparse.SUPPRESS)
 
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(title="Kommandoer", dest="command", required=True)
 
     create = add_command(
         subparsers,
@@ -1335,10 +1340,6 @@ def main_help_epilog() -> str:
         "Bildebank-vinduet kan opprette samling, importere bilder, starte nettleseren,"
     )
     lines.append("opprette snapshots og kjøre vanlig vedlikehold.")
-    lines.append("")
-    lines.append("Full kommandoliste:")
-    lines.append("   docs\\reference.md")
-    lines.append("   Noen avanserte oppgaver gjøres fortsatt fra PowerShell.")
     lines.append("")
     lines.append("Se hjelp for en kommando med:")
     lines.append("   bildebank <kommando> -h")
