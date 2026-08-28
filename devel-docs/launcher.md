@@ -110,8 +110,11 @@ at vinduet og en eventuell serverprosess avsluttes normalt.
 Tk rapporterer at vinduet er synlig. Målingen følger også den ekstra
 Windows-prosessen som `bildebank start` oppretter. Den skriver delmålinger for
 CLI/import, oppretting av Tk-roten, hver del av `_refresh_state()`, kontroll av
-pending deletes, bygging av fanene og første synlige vindu. Den asynkrone
-videopreviewkontrollen skal ikke inngå i tiden frem til `window_visible`.
+pending deletes, bygging av fanene og første synlige vindu. Når benchmarken er
+aktiv, forhåndsimporteres også de direkte modulene som `launcher_app` bruker,
+med ett målepunkt etter hver modul. Differansen fra forrige målepunkt viser
+hvilken importgren som tok tiden. Den asynkrone videopreviewkontrollen skal
+ikke inngå i tiden frem til `window_visible`.
 
 Kjør på Windows fra repositoryroten:
 

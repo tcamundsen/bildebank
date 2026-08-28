@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from bildebank import launcher
 
@@ -25,6 +25,24 @@ def test_launcher_main_runs_launcher_app() -> None:
 
     app_class.assert_called_once_with()
     app.run.assert_called_once_with()
+
+
+def test_launcher_benchmark_records_direct_launcher_app_imports() -> None:
+    with (
+        patch.object(launcher, "startup_benchmark_enabled", return_value=True),
+        patch.object(launcher, "record_startup_event") as record,
+        patch("importlib.import_module") as import_module,
+    ):
+        launcher._record_launcher_app_import_breakdown()
+
+    assert import_module.call_args_list == [
+        call(f".{module_name}", package="bildebank")
+        for module_name in launcher.LAUNCHER_APP_IMPORT_MODULES
+    ]
+    assert record.call_args_list == [
+        call(f"{module_name}_imported")
+        for module_name in launcher.LAUNCHER_APP_IMPORT_MODULES
+    ]
 
 
 def test_launcher_installs_windows_interrupt_handler() -> None:
