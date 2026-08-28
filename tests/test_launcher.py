@@ -94,9 +94,7 @@ def test_launcher_restarts_under_python_before_opening_window_on_windows(
             launcher.WINDOWS_LAUNCHER_CHILD_ENV: "1",
         },
     )
-    assert capsys.readouterr().out == (
-        "Bildebank starter. Vinduet åpnes om 3–10 sekunder. Vennligst vent …\n"
-    )
+    assert capsys.readouterr().out == "Bildebank starter. Vennligst vent …\n"
     app_class.assert_not_called()
 
 

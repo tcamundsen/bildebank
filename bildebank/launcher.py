@@ -59,7 +59,7 @@ def main() -> int:
             env=child_environment,
         )
         record_startup_event("windows_child_spawned")
-        print("Bildebank starter. Vinduet åpnes om 3–10 sekunder. Vennligst vent …")
+        print("Bildebank starter. Vennligst vent …")
         return 0
 
     record_startup_event("launcher_app_import_start")
