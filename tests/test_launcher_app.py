@@ -223,9 +223,19 @@ def test_refresh_state_applies_main_availability_to_advanced_start(tmp_path: Pat
     app.busy = False
     app._set_buttons_enabled = lambda _enabled: None
 
-    app._refresh_state()
+    with patch("bildebank.launcher_app.record_startup_event") as record:
+        app._refresh_state()
 
     assert availability == [False]
+    assert [call.args[0] for call in record.call_args_list] == [
+        "refresh_state_enter",
+        "refresh_main_tab_complete",
+        "refresh_snapshot_tab_complete",
+        "refresh_advanced_start_tab_complete",
+        "refresh_import_tab_complete",
+        "refresh_tools_tab_complete",
+        "refresh_buttons_complete",
+    ]
 
 
 def test_snapshot_creation_remains_available_for_recovery_without_main_database(

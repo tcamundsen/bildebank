@@ -28,6 +28,7 @@ from .launcher_commands import (
     make_video_previews_command,
     vacuum_command,
 )
+from .launcher_benchmark import record_startup_event
 from .launcher_status import (
     InsightFaceDependencyStatus,
     InsightFaceModelStatus,
@@ -183,6 +184,7 @@ class ToolsTab:
         return self._get_setup()
 
     def refresh(self, *, available: bool) -> list[Any]:
+        record_startup_event("tools_tab_refresh_enter")
         if self.face_scan_tooltip is not None:
             self.face_scan_tooltip.hide()
         if self.image_scan_tooltip is not None:
@@ -201,10 +203,13 @@ class ToolsTab:
                 self.button_frame,
                 text=TOOLS_UNAVAILABLE_MESSAGE,
             ).grid(row=0, column=0, padx=self.padx, pady=self.pady, sticky="w")
+            record_startup_event("tools_tab_refresh_unavailable")
             return []
 
         self._refresh_pending_deletes_status()
+        record_startup_event("tools_pending_deletes_status_complete")
         self._refresh_video_preview_status()
+        record_startup_event("tools_video_preview_status_complete")
         geo_button = self._button(
             self.button_frame,
             text="Les GPS fra bilder",
@@ -378,6 +383,7 @@ class ToolsTab:
             "OpenCLIP-data. Ingen bilder eller metadata endres.",
         )
         self.update_dependency_tooltips()
+        record_startup_event("tools_tab_widgets_complete")
         return [
             geo_button,
             face_button,

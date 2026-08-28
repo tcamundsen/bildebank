@@ -104,6 +104,7 @@ def test_tools_tab_builds_all_buttons_only_when_collection_is_available(tmp_path
     with (
         patch("bildebank.launcher_tools_tab.list_pending_deletes", return_value=[]),
         patch("bildebank.launcher_tools_tab.active_video_preview_candidates", return_value=[]),
+        patch("bildebank.launcher_tools_tab.record_startup_event") as record,
     ):
         buttons = tab.refresh(available=True)
 
@@ -123,6 +124,12 @@ def test_tools_tab_builds_all_buttons_only_when_collection_is_available(tmp_path
         "Eksporter person",
         "Videoavspilling: OK",
         "Grupper bilder …",
+    ]
+    assert [call.args[0] for call in record.call_args_list] == [
+        "tools_tab_refresh_enter",
+        "tools_pending_deletes_status_complete",
+        "tools_video_preview_status_complete",
+        "tools_tab_widgets_complete",
     ]
 
     assert tab.refresh(available=False) == []

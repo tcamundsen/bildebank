@@ -104,7 +104,8 @@ at vinduet og en eventuell serverprosess avsluttes normalt.
 `tools/benchmark_launcher.py` måler fra en ny launcherprosess startes til
 Tk rapporterer at vinduet er synlig. Målingen følger også den ekstra
 Windows-prosessen som `bildebank start` oppretter. Den skriver delmålinger for
-CLI/import, oppretting av Tk-roten, bygging av fanene og første synlige vindu.
+CLI/import, oppretting av Tk-roten, hver del av `_refresh_state()`, kontroll av
+pending deletes og videopreviews, bygging av fanene og første synlige vindu.
 
 Kjør på Windows fra repositoryroten:
 

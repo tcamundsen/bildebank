@@ -355,11 +355,13 @@ class LauncherApp:
         assert self.advanced_start_tab is not None
         assert self.snapshot_tab is not None
 
+        record_startup_event("refresh_state_enter")
         for tooltip in self.tooltips:
             tooltip.hide()
         self.tooltips = []
         self.buttons = []
         main_state = self.main_tab.refresh()
+        record_startup_event("refresh_main_tab_complete")
         self.buttons.extend(
             self.snapshot_tab.refresh(
                 create_available=snapshot_creation_available(
@@ -368,16 +370,21 @@ class LauncherApp:
                 )
             )
         )
+        record_startup_event("refresh_snapshot_tab_complete")
         self.advanced_start_tab.set_available(main_state.available)
+        record_startup_event("refresh_advanced_start_tab_complete")
         self.buttons.extend(
             self.import_tab.refresh(available=main_state.available)
         )
+        record_startup_event("refresh_import_tab_complete")
         self.buttons.extend(
             self.tools_tab.refresh(available=main_state.available)
         )
+        record_startup_event("refresh_tools_tab_complete")
         self.buttons.extend(main_state.buttons)
 
         self._set_buttons_enabled(not self.busy)
+        record_startup_event("refresh_buttons_complete")
 
     def _button(self, parent: Any, **kwargs: Any) -> Any:
         kwargs.setdefault("style", BUTTON_STYLE)
