@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
@@ -89,6 +90,14 @@ TOOLS_UNAVAILABLE_MESSAGE = (
 )
 
 
+def video_preview_missing_count(collection_path: Path) -> int:
+    candidates = active_video_preview_candidates(collection_path)
+    return sum(
+        existing_video_preview_path(collection_path, item) is None
+        for item in candidates
+    )
+
+
 class ButtonFactory(Protocol):
     def __call__(self, parent: Any, **kwargs: Any) -> Any: ...
 
@@ -133,6 +142,7 @@ class ToolsTab:
         root: Any,
         button: ButtonFactory,
         run_waiting_command: WaitingCommandRunner,
+        post_to_ui: Callable[[Callable[[], None]], bool],
         get_collection_path: Callable[[], Path],
         get_setup: Callable[[], ToolsSetup],
         log: Callable[[str], None],
@@ -150,6 +160,7 @@ class ToolsTab:
         self.root = root
         self._button = button
         self._run_waiting_command = run_waiting_command
+        self._post_to_ui = post_to_ui
         self._get_collection_path = get_collection_path
         self._get_setup = get_setup
         self._log = log
@@ -174,6 +185,11 @@ class ToolsTab:
         self.pending_deletes_status = "Ukjent"
         self.pending_deletes_count: int | None = None
         self.video_preview_missing_count: int | None = None
+        self.video_preview_status_refreshing = False
+        self.video_preview_button: Any | None = None
+        self._video_preview_status_scheduled = False
+        self._video_preview_status_running = False
+        self._video_preview_status_requested_while_running = False
 
     @property
     def collection_path(self) -> Path:
@@ -194,6 +210,7 @@ class ToolsTab:
         self.image_scan_button = None
         self.image_scan_tooltip = None
         self.clustering_button = None
+        self.video_preview_button = None
         for child in self.button_frame.winfo_children():
             child.destroy()
         if not available:
@@ -208,8 +225,6 @@ class ToolsTab:
 
         self._refresh_pending_deletes_status()
         record_startup_event("tools_pending_deletes_status_complete")
-        self._refresh_video_preview_status()
-        record_startup_event("tools_video_preview_status_complete")
         geo_button = self._button(
             self.button_frame,
             text="Les GPS fra bilder",
@@ -354,6 +369,7 @@ class ToolsTab:
             text=self._video_preview_button_text(),
             command=self._run_make_video_previews,
         )
+        self.video_preview_button = video_preview_button
         video_preview_button.grid(row=3, column=0, padx=self.padx, pady=self.pady, sticky="ew")
         self._add_tooltip(
             video_preview_button,
@@ -451,18 +467,73 @@ class ToolsTab:
             return f"Ventende filsletting: ! {self.pending_deletes_count}"
         return "Ventende filsletting: ukjent"
 
-    def _refresh_video_preview_status(self) -> None:
-        try:
-            candidates = active_video_preview_candidates(self.collection_path)
-            self.video_preview_missing_count = sum(
-                existing_video_preview_path(self.collection_path, item) is None
-                for item in candidates
+    def schedule_video_preview_status_refresh(self) -> None:
+        self.video_preview_missing_count = None
+        self.video_preview_status_refreshing = True
+        self._update_video_preview_button_text()
+        if self._video_preview_status_running:
+            self._video_preview_status_requested_while_running = True
+            return
+        if self._video_preview_status_scheduled:
+            return
+        self._video_preview_status_scheduled = True
+        self.root.after(200, self._start_video_preview_status_refresh)
+
+    def _start_video_preview_status_refresh(self) -> None:
+        self._video_preview_status_scheduled = False
+        if self._video_preview_status_running:
+            self._video_preview_status_requested_while_running = True
+            return
+        self._video_preview_status_running = True
+        collection_path = self.collection_path
+
+        def worker() -> None:
+            try:
+                missing_count = video_preview_missing_count(collection_path)
+                error: Exception | None = None
+            except Exception as exc:  # noqa: BLE001 - status errors are reported in the launcher
+                missing_count = None
+                error = exc
+            self._post_to_ui(
+                lambda: self._video_preview_status_finished(
+                    collection_path,
+                    missing_count,
+                    error,
+                )
             )
-        except Exception as exc:  # noqa: BLE001 - launcher should remain usable
-            self.video_preview_missing_count = None
-            self._log(f"Kunne ikke lese status for videoavspillingskopier: {exc}")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _video_preview_status_finished(
+        self,
+        collection_path: Path,
+        missing_count: int | None,
+        error: Exception | None,
+    ) -> None:
+        self._video_preview_status_running = False
+        rerun = (
+            self._video_preview_status_requested_while_running
+            or collection_path != self.collection_path
+        )
+        self._video_preview_status_requested_while_running = False
+        if rerun:
+            self.video_preview_status_refreshing = False
+            self.schedule_video_preview_status_refresh()
+            return
+        self.video_preview_status_refreshing = False
+        self.video_preview_missing_count = missing_count
+        if error is not None:
+            self._log(f"Kunne ikke lese status for videoavspillingskopier: {error}")
+        self._update_video_preview_button_text()
+        record_startup_event("tools_video_preview_status_complete")
+
+    def _update_video_preview_button_text(self) -> None:
+        if self.video_preview_button is not None:
+            self.video_preview_button.configure(text=self._video_preview_button_text())
 
     def _video_preview_button_text(self) -> str:
+        if self.video_preview_status_refreshing:
+            return "Videoavspilling: kontrollerer …"
         if self.video_preview_missing_count is None:
             return "Videoavspilling: ukjent"
         if self.video_preview_missing_count == 0:

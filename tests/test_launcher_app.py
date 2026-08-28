@@ -210,6 +210,7 @@ def test_launcher_app_starts_tab_status_refreshes(tmp_path: Path) -> None:
 def test_refresh_state_applies_main_availability_to_advanced_start(tmp_path: Path) -> None:
     app = LauncherApp.__new__(LauncherApp)
     availability: list[bool] = []
+    video_status_refreshes: list[str] = []
     app.main_tab = SimpleNamespace(
         refresh=lambda: SimpleNamespace(available=False, buttons=[]),
         migration_required=False,
@@ -218,7 +219,10 @@ def test_refresh_state_applies_main_availability_to_advanced_start(tmp_path: Pat
     app.advanced_start_tab = SimpleNamespace(set_available=availability.append)
     app.snapshot_tab = SimpleNamespace(refresh=lambda *, create_available: [])
     app.import_tab = SimpleNamespace(refresh=lambda *, available: [])
-    app.tools_tab = SimpleNamespace(refresh=lambda *, available: [])
+    app.tools_tab = SimpleNamespace(
+        refresh=lambda *, available: [],
+        schedule_video_preview_status_refresh=lambda: video_status_refreshes.append("scheduled"),
+    )
     app.tooltips = []
     app.busy = False
     app._set_buttons_enabled = lambda _enabled: None
@@ -227,6 +231,7 @@ def test_refresh_state_applies_main_availability_to_advanced_start(tmp_path: Pat
         app._refresh_state()
 
     assert availability == [False]
+    assert video_status_refreshes == []
     assert [call.args[0] for call in record.call_args_list] == [
         "refresh_state_enter",
         "refresh_main_tab_complete",

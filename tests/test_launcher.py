@@ -27,6 +27,17 @@ def test_launcher_main_runs_launcher_app() -> None:
     app.run.assert_called_once_with()
 
 
+def test_launcher_installs_windows_interrupt_handler() -> None:
+    with (
+        patch("bildebank.launcher.os.name", "nt"),
+        patch.object(launcher.signal, "SIGBREAK", 21, create=True),
+        patch("bildebank.launcher.signal.signal") as install_signal,
+    ):
+        launcher.install_windows_interrupt_handler()
+
+    install_signal.assert_called_once_with(21, launcher.signal.default_int_handler)
+
+
 def test_launcher_restarts_under_python_before_opening_window_on_windows(
     capsys,
 ) -> None:

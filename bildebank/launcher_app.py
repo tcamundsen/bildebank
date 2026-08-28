@@ -289,6 +289,7 @@ class LauncherApp:
             root=self.root,
             button=self._button,
             run_waiting_command=self._run_waiting_command,
+            post_to_ui=self._post_to_tk,
             get_collection_path=lambda: self.collection_path,
             get_setup=self._require_setup,
             log=self._log,
@@ -384,6 +385,8 @@ class LauncherApp:
         self.buttons.extend(main_state.buttons)
 
         self._set_buttons_enabled(not self.busy)
+        if main_state.available:
+            self.tools_tab.schedule_video_preview_status_refresh()
         record_startup_event("refresh_buttons_complete")
 
     def _button(self, parent: Any, **kwargs: Any) -> Any:

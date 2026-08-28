@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 
@@ -10,7 +11,16 @@ from .launcher_benchmark import record_startup_event
 WINDOWS_LAUNCHER_CHILD_ENV = "BILDEBANK_WINDOWS_LAUNCHER_CHILD"
 
 
+def install_windows_interrupt_handler() -> None:
+    if os.name != "nt":
+        return
+    sigbreak = getattr(signal, "SIGBREAK", None)
+    if sigbreak is not None:
+        signal.signal(sigbreak, signal.default_int_handler)
+
+
 def main() -> int:
+    install_windows_interrupt_handler()
     child_process = os.environ.get(WINDOWS_LAUNCHER_CHILD_ENV) == "1"
     record_startup_event(
         "launcher_child_enter" if child_process else "launcher_parent_enter"

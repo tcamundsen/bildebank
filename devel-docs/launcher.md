@@ -8,6 +8,7 @@ del uten å måtte kjenne hele Tk-applikasjonen.
 
 | Modul | Ansvar |
 |---|---|
+| `entrypoint.py` | Lett dispatch av `start`/`launcher` før den komplette CLI-en importeres. |
 | `launcher.py` | Stabilt offentlig `main()`-inngangspunkt. |
 | `launcher_app.py` | Rotvindu, notebook, felles logg, busy-status og koordinering mellom fanene. |
 | `launcher_main_tab.py` | Valg og oppretting av samling, server, oppdatering og migrering. |
@@ -43,6 +44,10 @@ kjørende `.exe`-fil.
 Statuskontrollen for InsightFace kjøres i en kortlivet Python-underprosess.
 InsightFace importerer OpenCV, og en import direkte i launcherprosessen ville
 holde `cv2.pyd` låst og blokkere reinstallasjon fra Oppsett-fanen på Windows.
+
+Status for AVI/3GP-avspillingskopier leses i en egen bakgrunnstråd etter at
+launcherens første GUI er bygget. Knappen viser at kontroll pågår og oppdateres
+på Tk-tråden. Filkontrollen skal ikke blokkere første synlige vindu.
 
 OpenCLIP-avhengigheter og modellnedlasting er separate handlinger i Oppsett-
 fanen. Automatisk klargjøring av bildesøk kjører bare trinnene som mangler.
@@ -105,7 +110,8 @@ at vinduet og en eventuell serverprosess avsluttes normalt.
 Tk rapporterer at vinduet er synlig. Målingen følger også den ekstra
 Windows-prosessen som `bildebank start` oppretter. Den skriver delmålinger for
 CLI/import, oppretting av Tk-roten, hver del av `_refresh_state()`, kontroll av
-pending deletes og videopreviews, bygging av fanene og første synlige vindu.
+pending deletes, bygging av fanene og første synlige vindu. Den asynkrone
+videopreviewkontrollen skal ikke inngå i tiden frem til `window_visible`.
 
 Kjør på Windows fra repositoryroten:
 
