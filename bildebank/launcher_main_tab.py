@@ -19,8 +19,6 @@ from .launcher_commands import (
     update_command,
 )
 from .launcher_runner import interrupt_process, interruptible_command_creationflags
-from .server_runtime import DEFAULT_PORT
-from .server_slideshow import DEFAULT_SLIDESHOW_DELAY_SECONDS
 from .launcher_status import (
     LauncherUpdateStatus,
     check_launcher_update_status,
@@ -28,6 +26,7 @@ from .launcher_status import (
     is_collection_created,
 )
 from .launcher_widgets import Tooltip
+from .server_defaults import DEFAULT_PORT, DEFAULT_SLIDESHOW_DELAY_SECONDS
 
 
 def open_server_browser_window(port: int = DEFAULT_PORT) -> bool:

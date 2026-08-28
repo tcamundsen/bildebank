@@ -75,6 +75,43 @@ class FakeRoot(FakeWidget):
         pass
 
 
+def test_launcher_run_records_visible_window_and_auto_closes() -> None:
+    app = LauncherApp.__new__(LauncherApp)
+    actions: list[object] = []
+
+    class Root:
+        def after_idle(self, callback: object) -> None:
+            actions.append(("after_idle", callback))
+
+        def mainloop(self) -> None:
+            actions.append("mainloop")
+            idle_callback = actions[0][1]
+            idle_callback()  # type: ignore[operator]
+
+        def winfo_viewable(self) -> bool:
+            return True
+
+        def after(self, delay: int, callback: object) -> None:
+            actions.append(("after", delay, callback))
+
+    app.root = Root()
+    app.tk = SimpleNamespace(TclError=RuntimeError)
+    app._destroy_root = lambda: None
+
+    with (
+        patch("bildebank.launcher_app.startup_benchmark_enabled", return_value=True),
+        patch("bildebank.launcher_app.startup_benchmark_auto_close", return_value=True),
+        patch("bildebank.launcher_app.record_startup_event") as record,
+    ):
+        app.run()
+
+    assert actions[1] == "mainloop"
+    assert actions[2][0:2] == ("after", 100)
+    assert record.call_args_list[0].args == ("mainloop_enter",)
+    assert record.call_args_list[1].args == ("window_visible",)
+    assert record.call_args_list[2].args == ("mainloop_exit",)
+
+
 def fake_tab(**kwargs: object) -> SimpleNamespace:
     return SimpleNamespace(
         frame=FakeWidget(kwargs["notebook"]),
@@ -173,6 +210,7 @@ def test_launcher_app_starts_tab_status_refreshes(tmp_path: Path) -> None:
 def test_refresh_state_applies_main_availability_to_advanced_start(tmp_path: Path) -> None:
     app = LauncherApp.__new__(LauncherApp)
     availability: list[bool] = []
+    video_status_refreshes: list[str] = []
     app.main_tab = SimpleNamespace(
         refresh=lambda: SimpleNamespace(available=False, buttons=[]),
         migration_required=False,
@@ -181,14 +219,28 @@ def test_refresh_state_applies_main_availability_to_advanced_start(tmp_path: Pat
     app.advanced_start_tab = SimpleNamespace(set_available=availability.append)
     app.snapshot_tab = SimpleNamespace(refresh=lambda *, create_available: [])
     app.import_tab = SimpleNamespace(refresh=lambda *, available: [])
-    app.tools_tab = SimpleNamespace(refresh=lambda *, available: [])
+    app.tools_tab = SimpleNamespace(
+        refresh=lambda *, available: [],
+        schedule_video_preview_status_refresh=lambda: video_status_refreshes.append("scheduled"),
+    )
     app.tooltips = []
     app.busy = False
     app._set_buttons_enabled = lambda _enabled: None
 
-    app._refresh_state()
+    with patch("bildebank.launcher_app.record_startup_event") as record:
+        app._refresh_state()
 
     assert availability == [False]
+    assert video_status_refreshes == []
+    assert [call.args[0] for call in record.call_args_list] == [
+        "refresh_state_enter",
+        "refresh_main_tab_complete",
+        "refresh_snapshot_tab_complete",
+        "refresh_advanced_start_tab_complete",
+        "refresh_import_tab_complete",
+        "refresh_tools_tab_complete",
+        "refresh_buttons_complete",
+    ]
 
 
 def test_snapshot_creation_remains_available_for_recovery_without_main_database(

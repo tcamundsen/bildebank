@@ -4,8 +4,11 @@ import json
 import sys
 from pathlib import Path
 
-from .server_runtime import DEFAULT_HOST, DEFAULT_PORT
-from .server_slideshow import DEFAULT_SLIDESHOW_DELAY_SECONDS
+from .server_defaults import (
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    DEFAULT_SLIDESHOW_DELAY_SECONDS,
+)
 
 
 def bildebank_command(*args: str | Path) -> list[str]:

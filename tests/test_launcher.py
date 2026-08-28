@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from bildebank import launcher
 
@@ -12,6 +13,22 @@ def test_launcher_module_is_a_thin_public_entrypoint() -> None:
     assert not hasattr(launcher, "LauncherApp")
     assert not hasattr(launcher, "ImportTab")
     assert not hasattr(launcher, "ToolsTab")
+
+
+def test_launcher_app_import_does_not_load_server_runtime() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import bildebank.launcher_app; "
+            "print('bildebank.server_runtime' in sys.modules)",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.strip() == "False"
 
 
 def test_launcher_main_runs_launcher_app() -> None:
@@ -25,6 +42,35 @@ def test_launcher_main_runs_launcher_app() -> None:
 
     app_class.assert_called_once_with()
     app.run.assert_called_once_with()
+
+
+def test_launcher_benchmark_records_direct_launcher_app_imports() -> None:
+    with (
+        patch.object(launcher, "startup_benchmark_enabled", return_value=True),
+        patch.object(launcher, "record_startup_event") as record,
+        patch("importlib.import_module") as import_module,
+    ):
+        launcher._record_launcher_app_import_breakdown()
+
+    assert import_module.call_args_list == [
+        call(f".{module_name}", package="bildebank")
+        for module_name in launcher.LAUNCHER_APP_IMPORT_MODULES
+    ]
+    assert record.call_args_list == [
+        call(f"{module_name}_imported")
+        for module_name in launcher.LAUNCHER_APP_IMPORT_MODULES
+    ]
+
+
+def test_launcher_installs_windows_interrupt_handler() -> None:
+    with (
+        patch("bildebank.launcher.os.name", "nt"),
+        patch.object(launcher.signal, "SIGBREAK", 21, create=True),
+        patch("bildebank.launcher.signal.signal") as install_signal,
+    ):
+        launcher.install_windows_interrupt_handler()
+
+    install_signal.assert_called_once_with(21, launcher.signal.default_int_handler)
 
 
 def test_launcher_restarts_under_python_before_opening_window_on_windows(
@@ -48,9 +94,7 @@ def test_launcher_restarts_under_python_before_opening_window_on_windows(
             launcher.WINDOWS_LAUNCHER_CHILD_ENV: "1",
         },
     )
-    assert capsys.readouterr().out == (
-        "Bildebank starter. Vinduet åpnes om 3–10 sekunder. Vennligst vent …\n"
-    )
+    assert capsys.readouterr().out == "Bildebank starter. Vennligst vent …\n"
     app_class.assert_not_called()
 
 

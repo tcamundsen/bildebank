@@ -8,6 +8,7 @@ del uten å måtte kjenne hele Tk-applikasjonen.
 
 | Modul | Ansvar |
 |---|---|
+| `entrypoint.py` | Lett dispatch av `start`/`launcher` før den komplette CLI-en importeres. |
 | `launcher.py` | Stabilt offentlig `main()`-inngangspunkt. |
 | `launcher_app.py` | Rotvindu, notebook, felles logg, busy-status og koordinering mellom fanene. |
 | `launcher_main_tab.py` | Valg og oppretting av samling, server, oppdatering og migrering. |
@@ -43,6 +44,10 @@ kjørende `.exe`-fil.
 Statuskontrollen for InsightFace kjøres i en kortlivet Python-underprosess.
 InsightFace importerer OpenCV, og en import direkte i launcherprosessen ville
 holde `cv2.pyd` låst og blokkere reinstallasjon fra Oppsett-fanen på Windows.
+
+Status for AVI/3GP-avspillingskopier leses i en egen bakgrunnstråd etter at
+launcherens første GUI er bygget. Knappen viser at kontroll pågår og oppdateres
+på Tk-tråden. Filkontrollen skal ikke blokkere første synlige vindu.
 
 OpenCLIP-avhengigheter og modellnedlasting er separate handlinger i Oppsett-
 fanen. Automatisk klargjøring av bildesøk kjører bare trinnene som mangler.
@@ -98,3 +103,31 @@ python -m mypy bildebank
 På Windows skal launcheren i tillegg startes via den vanlige kommandoen.
 Kontroller at alle faner åpner, at minst én relevant handling kan startes, og
 at vinduet og en eventuell serverprosess avsluttes normalt.
+
+## Benchmark av oppstart
+
+`tools/benchmark_launcher.py` måler fra en ny launcherprosess startes til
+Tk rapporterer at vinduet er synlig. Målingen følger også den ekstra
+Windows-prosessen som `bildebank start` oppretter. Den skriver delmålinger for
+CLI/import, oppretting av Tk-roten, hver del av `_refresh_state()`, kontroll av
+pending deletes, bygging av fanene og første synlige vindu. Når benchmarken er
+aktiv, forhåndsimporteres også de direkte modulene som `launcher_app` bruker,
+med ett målepunkt etter hver modul. Differansen fra forrige målepunkt viser
+hvilken importgren som tok tiden. Den asynkrone videopreviewkontrollen skal
+ikke inngå i tiden frem til `window_visible`.
+
+Kjør på Windows fra repositoryroten:
+
+```powershell
+.\.venv\Scripts\python.exe tools\benchmark_launcher.py --repeat 3 --json-output launcher-startup.json
+```
+
+Benchmarkvinduet lukkes automatisk etter at det er blitt synlig. Vanlig
+launcheroppstart påvirkes ikke. En eksplisitt kommando kan angis etter `--`,
+for eksempel for å måle det installerte konsollinngangspunktet:
+
+```powershell
+.\.venv\Scripts\python.exe tools\benchmark_launcher.py --repeat 3 -- bildebank start
+```
+
+På Linux/WSL brukes tilsvarende kommando med `.venv/bin/python`.

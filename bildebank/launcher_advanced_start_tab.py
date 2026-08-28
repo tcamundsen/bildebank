@@ -3,14 +3,18 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from .cli_server import lan_share_urls
-from .server_slideshow import DEFAULT_SLIDESHOW_DELAY_SECONDS
-from .server_runtime import DEFAULT_PORT
+from .server_defaults import DEFAULT_PORT, DEFAULT_SLIDESHOW_DELAY_SECONDS
 
 NORMAL_MODE = "normal"
 READ_ONLY_MODE = "read-only"
 LAN_SHARE_MODE = "lan-share"
 SLIDESHOW_MODE = "slideshow"
+
+
+def lan_share_urls(port: int) -> list[str]:
+    from .cli_server import lan_share_urls as find_lan_share_urls
+
+    return find_lan_share_urls(port)
 
 
 class ServerStarter(Protocol):

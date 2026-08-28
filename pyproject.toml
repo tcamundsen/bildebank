@@ -32,7 +32,7 @@ openclip = [
 ]
 
 [project.scripts]
-bildebank = "bildebank.cli:main"
+bildebank = "bildebank.entrypoint:main"
 
 [tool.setuptools.packages.find]
 include = ["bildebank*"]

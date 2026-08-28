@@ -12,13 +12,14 @@ from .config import AppConfig
 from .media import media_kind
 from .server_browser_queries import source_item_ids
 from .server_browser_sources import all_browser_source
+from .server_defaults import DEFAULT_SLIDESHOW_DELAY_SECONDS as _DEFAULT_SLIDESHOW_DELAY_SECONDS
 from .server_filter import text_filter_browser_source
 
 if TYPE_CHECKING:
     from .server_handler import BildebankRequestHandler
 
 
-DEFAULT_SLIDESHOW_DELAY_SECONDS = 10
+DEFAULT_SLIDESHOW_DELAY_SECONDS = _DEFAULT_SLIDESHOW_DELAY_SECONDS
 
 
 @dataclass(frozen=True)

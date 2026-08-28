@@ -24,6 +24,11 @@ from .launcher_widgets import (
     ask_string_dialog,
     show_log_review_question,
 )
+from .launcher_benchmark import (
+    record_startup_event,
+    startup_benchmark_auto_close,
+    startup_benchmark_enabled,
+)
 
 if os.name == "nt":
     PADX = 2
@@ -56,12 +61,15 @@ def snapshot_creation_available(
 
 class LauncherApp:
     def __init__(self) -> None:
+        record_startup_event("launcher_app_init_enter")
         import tkinter as tk
         from tkinter import ttk
 
+        record_startup_event("tkinter_imported")
         self.tk = tk
         self.ttk = ttk
         self.config = load_launcher_config()
+        record_startup_event("launcher_config_loaded")
         self.collection_path = self.config.collection_path
         self.busy = False
         self.closing = False
@@ -69,6 +77,7 @@ class LauncherApp:
         self.background_cancellable = False
 
         self.root = tk.Tk()
+        record_startup_event("tk_root_created")
         self.root.title("Bildebank")
         self.root.minsize(640, 460)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -95,18 +104,38 @@ class LauncherApp:
             on_output=self._log_process_output,
         )
         self._build_gui()
+        record_startup_event("launcher_gui_built")
         assert self.main_tab is not None
         self.main_tab.update_migration_status()
+        record_startup_event("migration_status_updated")
         self._refresh_state()
+        record_startup_event("launcher_state_refreshed")
         self.main_tab.start_update_status_refresh()
         assert self.setup is not None
         self.setup.start_status_refresh()
         self._log(f"Valgt bildesamling: {self.collection_path}")
         self.main_tab.show_initial_migration_status()
         self.setup.log_unsupported_installers()
+        record_startup_event("launcher_app_init_complete")
 
     def run(self) -> None:
+        if startup_benchmark_enabled():
+            self.root.after_idle(self._record_startup_window_visible)
+        record_startup_event("mainloop_enter")
         self.root.mainloop()
+        record_startup_event("mainloop_exit")
+
+    def _record_startup_window_visible(self) -> None:
+        try:
+            visible = bool(self.root.winfo_viewable())
+        except self.tk.TclError:
+            return
+        if not visible:
+            self.root.after(10, self._record_startup_window_visible)
+            return
+        record_startup_event("window_visible")
+        if startup_benchmark_auto_close():
+            self.root.after(100, self._destroy_root)
 
     def _require_setup(self) -> SetupTab:
         assert self.setup is not None
@@ -260,6 +289,7 @@ class LauncherApp:
             root=self.root,
             button=self._button,
             run_waiting_command=self._run_waiting_command,
+            post_to_ui=self._post_to_tk,
             get_collection_path=lambda: self.collection_path,
             get_setup=self._require_setup,
             log=self._log,
@@ -326,11 +356,13 @@ class LauncherApp:
         assert self.advanced_start_tab is not None
         assert self.snapshot_tab is not None
 
+        record_startup_event("refresh_state_enter")
         for tooltip in self.tooltips:
             tooltip.hide()
         self.tooltips = []
         self.buttons = []
         main_state = self.main_tab.refresh()
+        record_startup_event("refresh_main_tab_complete")
         self.buttons.extend(
             self.snapshot_tab.refresh(
                 create_available=snapshot_creation_available(
@@ -339,16 +371,23 @@ class LauncherApp:
                 )
             )
         )
+        record_startup_event("refresh_snapshot_tab_complete")
         self.advanced_start_tab.set_available(main_state.available)
+        record_startup_event("refresh_advanced_start_tab_complete")
         self.buttons.extend(
             self.import_tab.refresh(available=main_state.available)
         )
+        record_startup_event("refresh_import_tab_complete")
         self.buttons.extend(
             self.tools_tab.refresh(available=main_state.available)
         )
+        record_startup_event("refresh_tools_tab_complete")
         self.buttons.extend(main_state.buttons)
 
         self._set_buttons_enabled(not self.busy)
+        if main_state.available:
+            self.tools_tab.schedule_video_preview_status_refresh()
+        record_startup_event("refresh_buttons_complete")
 
     def _button(self, parent: Any, **kwargs: Any) -> Any:
         kwargs.setdefault("style", BUTTON_STYLE)

@@ -88,6 +88,7 @@ def test_tools_tab_builds_all_buttons_only_when_collection_is_available(tmp_path
         root=FakeWidget(),
         button=FakeWidget,
         run_waiting_command=lambda *_args, **_kwargs: None,
+        post_to_ui=lambda callback: (callback(), True)[1],
         get_collection_path=lambda: tmp_path / "samling",
         get_setup=ready_setup,
         log=lambda _message: None,
@@ -103,7 +104,11 @@ def test_tools_tab_builds_all_buttons_only_when_collection_is_available(tmp_path
 
     with (
         patch("bildebank.launcher_tools_tab.list_pending_deletes", return_value=[]),
-        patch("bildebank.launcher_tools_tab.active_video_preview_candidates", return_value=[]),
+        patch(
+            "bildebank.launcher_tools_tab.active_video_preview_candidates",
+            return_value=[],
+        ) as video_candidates,
+        patch("bildebank.launcher_tools_tab.record_startup_event") as record,
     ):
         buttons = tab.refresh(available=True)
 
@@ -121,9 +126,15 @@ def test_tools_tab_builds_all_buttons_only_when_collection_is_available(tmp_path
         "Rydd databaser",
         "Ventende filsletting: OK",
         "Eksporter person",
-        "Videoavspilling: OK",
+        "Videoavspilling: ukjent",
         "Grupper bilder …",
     ]
+    assert [call.args[0] for call in record.call_args_list] == [
+        "tools_tab_refresh_enter",
+        "tools_pending_deletes_status_complete",
+        "tools_tab_widgets_complete",
+    ]
+    video_candidates.assert_not_called()
 
     assert tab.refresh(available=False) == []
     assert [child.options.get("text") for child in tab.button_frame.winfo_children()] == [
@@ -165,6 +176,7 @@ def test_ai_tool_buttons_are_disabled_while_setup_status_refreshes(
         root=FakeWidget(),
         button=FakeWidget,
         run_waiting_command=lambda *_args, **_kwargs: None,
+        post_to_ui=lambda callback: (callback(), True)[1],
         get_collection_path=lambda: tmp_path / "samling",
         get_setup=lambda: setup,
         log=lambda _message: None,
@@ -195,6 +207,67 @@ def test_ai_tool_buttons_are_disabled_while_setup_status_refreshes(
     setup.status_refreshing = False
     tab.set_dependency_buttons_enabled(True)
     assert tab.clustering_button.options["state"] == "normal"
+
+
+def test_video_preview_status_runs_after_delay_and_updates_button(tmp_path: Path) -> None:
+    tab = bare_tools_tab(tmp_path, ready_setup())
+    displayed_text: list[str] = []
+    scheduled_delays: list[int] = []
+    tab.video_preview_missing_count = None
+    tab.video_preview_status_refreshing = False
+    tab.video_preview_button = SimpleNamespace(
+        configure=lambda **options: displayed_text.append(str(options["text"]))
+    )
+    tab._video_preview_status_scheduled = False
+    tab._video_preview_status_running = False
+    tab._video_preview_status_requested_while_running = False
+    tab._post_to_ui = lambda callback: (callback(), True)[1]
+
+    def after(delay: int, callback: object) -> None:
+        scheduled_delays.append(delay)
+        callback()  # type: ignore[operator]
+
+    tab.root = SimpleNamespace(after=after)
+
+    class ImmediateThread:
+        def __init__(self, *, target, daemon: bool) -> None:
+            self.target = target
+            assert daemon
+
+        def start(self) -> None:
+            self.target()
+
+    with (
+        patch("bildebank.launcher_tools_tab.threading.Thread", ImmediateThread),
+        patch("bildebank.launcher_tools_tab.video_preview_missing_count", return_value=3),
+        patch("bildebank.launcher_tools_tab.record_startup_event") as record,
+    ):
+        tab.schedule_video_preview_status_refresh()
+
+    assert scheduled_delays == [200]
+    assert displayed_text == [
+        "Videoavspilling: kontrollerer …",
+        "Lag videoavspilling: 3 mangler",
+    ]
+    record.assert_called_once_with("tools_video_preview_status_complete")
+
+
+def test_video_preview_status_discards_result_after_collection_change(tmp_path: Path) -> None:
+    tab = bare_tools_tab(tmp_path, ready_setup())
+    tab._get_collection_path = lambda: tmp_path / "ny-samling"
+    tab._video_preview_status_running = True
+    tab._video_preview_status_requested_while_running = False
+    tab.video_preview_status_refreshing = True
+
+    with patch.object(tab, "schedule_video_preview_status_refresh") as schedule:
+        tab._video_preview_status_finished(
+            tmp_path / "gammel-samling",
+            0,
+            None,
+        )
+
+    schedule.assert_called_once_with()
+    assert not tab.video_preview_status_refreshing
 
 
 def test_clustering_waits_for_setup_status_instead_of_offering_install(
