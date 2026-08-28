@@ -75,6 +75,43 @@ class FakeRoot(FakeWidget):
         pass
 
 
+def test_launcher_run_records_visible_window_and_auto_closes() -> None:
+    app = LauncherApp.__new__(LauncherApp)
+    actions: list[object] = []
+
+    class Root:
+        def after_idle(self, callback: object) -> None:
+            actions.append(("after_idle", callback))
+
+        def mainloop(self) -> None:
+            actions.append("mainloop")
+            idle_callback = actions[0][1]
+            idle_callback()  # type: ignore[operator]
+
+        def winfo_viewable(self) -> bool:
+            return True
+
+        def after(self, delay: int, callback: object) -> None:
+            actions.append(("after", delay, callback))
+
+    app.root = Root()
+    app.tk = SimpleNamespace(TclError=RuntimeError)
+    app._destroy_root = lambda: None
+
+    with (
+        patch("bildebank.launcher_app.startup_benchmark_enabled", return_value=True),
+        patch("bildebank.launcher_app.startup_benchmark_auto_close", return_value=True),
+        patch("bildebank.launcher_app.record_startup_event") as record,
+    ):
+        app.run()
+
+    assert actions[1] == "mainloop"
+    assert actions[2][0:2] == ("after", 100)
+    assert record.call_args_list[0].args == ("mainloop_enter",)
+    assert record.call_args_list[1].args == ("window_visible",)
+    assert record.call_args_list[2].args == ("mainloop_exit",)
+
+
 def fake_tab(**kwargs: object) -> SimpleNamespace:
     return SimpleNamespace(
         frame=FakeWidget(kwargs["notebook"]),

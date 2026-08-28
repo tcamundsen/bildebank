@@ -98,3 +98,26 @@ python -m mypy bildebank
 På Windows skal launcheren i tillegg startes via den vanlige kommandoen.
 Kontroller at alle faner åpner, at minst én relevant handling kan startes, og
 at vinduet og en eventuell serverprosess avsluttes normalt.
+
+## Benchmark av oppstart
+
+`tools/benchmark_launcher.py` måler fra en ny launcherprosess startes til
+Tk rapporterer at vinduet er synlig. Målingen følger også den ekstra
+Windows-prosessen som `bildebank start` oppretter. Den skriver delmålinger for
+CLI/import, oppretting av Tk-roten, bygging av fanene og første synlige vindu.
+
+Kjør på Windows fra repositoryroten:
+
+```powershell
+.\.venv\Scripts\python.exe tools\benchmark_launcher.py --repeat 3 --json-output launcher-startup.json
+```
+
+Benchmarkvinduet lukkes automatisk etter at det er blitt synlig. Vanlig
+launcheroppstart påvirkes ikke. En eksplisitt kommando kan angis etter `--`,
+for eksempel for å måle det installerte konsollinngangspunktet:
+
+```powershell
+.\.venv\Scripts\python.exe tools\benchmark_launcher.py --repeat 3 -- bildebank start
+```
+
+På Linux/WSL brukes tilsvarende kommando med `.venv/bin/python`.
