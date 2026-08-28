@@ -29,6 +29,7 @@ from .server_browser_sources import (
     BrowserSource,
     source_includes_deleted,
 )
+from .server_defaults import DEFAULT_HOST, DEFAULT_PORT
 from .server_faces import (
     current_face_db_path,
 )
@@ -37,8 +38,6 @@ from .server_search import (
 )
 from .server_slideshow import Slideshow, build_slideshow
 
-DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 8765
 BROWSER_NAVIGATION_CACHE_CHECK_INTERVAL_SECONDS = 1.0
 
 
