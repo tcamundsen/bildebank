@@ -15,20 +15,22 @@ def test_launcher_module_is_a_thin_public_entrypoint() -> None:
     assert not hasattr(launcher, "ToolsTab")
 
 
-def test_launcher_app_import_does_not_load_server_runtime() -> None:
+def test_launcher_app_import_does_not_load_deferred_modules() -> None:
     result = subprocess.run(
         [
             sys.executable,
             "-c",
             "import sys; import bildebank.launcher_app; "
-            "print('bildebank.server_runtime' in sys.modules)",
+            "print([module for module in "
+            "('bildebank.server_runtime', 'bildebank.image_clustering', 'numpy') "
+            "if module in sys.modules])",
         ],
         check=True,
         capture_output=True,
         text=True,
     )
 
-    assert result.stdout.strip() == "False"
+    assert result.stdout.strip() == "[]"
 
 
 def test_launcher_main_runs_launcher_app() -> None:

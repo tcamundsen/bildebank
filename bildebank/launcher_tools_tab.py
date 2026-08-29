@@ -45,7 +45,6 @@ from .launcher_widgets import (
     image_clustering_dialog,
     select_person_dialog,
 )
-from .image_clustering import parse_clustering_selection
 from .pending_deletes import list_pending_deletes
 from .thumbnails import plan_legacy_thumbnail_cleanup
 from .video_previews import active_video_preview_candidates, existing_video_preview_path
@@ -719,6 +718,8 @@ class ToolsTab:
         if values is None:
             self._log("Bildegruppering avbrutt.")
             return
+        from .image_clustering import parse_clustering_selection
+
         try:
             selection = parse_clustering_selection(
                 self.collection_path,
