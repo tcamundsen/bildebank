@@ -11,12 +11,17 @@ options:
 ```
 <!-- CLI-HELP-END -->
 
-Åpne programmappen `bildebank` i Filutforsker og dobbeltklikk på
+Etter installasjon eller oppdatering på Windows lages en snarvei som heter
+**Bildebank** på skrivebordet ditt hvis den mangler. Dobbeltklikk på snarveien
+for å åpne Bildebank-vinduet. Eksisterende snarveier beholdes.
+
+Du kan også åpne programmappen `bildebank` i Filutforsker og dobbeltklikke på
 `start-bildebank.cmd` for å åpne Bildebank-vinduet. Hvis Windows skjuler
 filendelser, vises filen som `start-bildebank`.
 
-Du kan også lage en snarvei til filen på skrivebordet. Lag en snarvei, ikke
-en kopi av selve filen: startfilen må ligge i programmappen for å virke.
+Hvis du vil lage snarveien selv, kan du lage en snarvei til filen på
+skrivebordet. Lag en snarvei, ikke en kopi av selve filen: startfilen må ligge
+i programmappen for å virke.
 
 Hvis oppstarten feiler, blir vinduet med feilmeldingen stående til du trykker
 en tast.

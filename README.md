@@ -48,8 +48,10 @@ kan du for eksempel kjøre:
 powershell.exe -ExecutionPolicy Bypass -File .\setup-windows.ps1 -InstallDir "$HOME\kode\bildebank-test" -CommandName bb2
 ```
 
-Når scriptet er ferdig, **lukk PowerShell og åpne PowerShell på nytt**. Da skal du
-kunne skrive:
+Når scriptet er ferdig, kan du dobbeltklikke på snarveien **Bildebank** på
+skrivebordet for å starte programmet. En eksisterende snarvei beholdes.
+
+Du kan også **lukke PowerShell og åpne PowerShell på nytt** og skrive:
 
 ```powershell
 bildebank start

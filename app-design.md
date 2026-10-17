@@ -250,6 +250,13 @@ bruk ved neste installasjon, oppdatering eller eksplisitte reinstallasjon.
 
 ## Programoppdatering
 
+Etter vellykket installasjon eller programoppdatering på Windows skal
+`Bildebank.lnk` opprettes på den kjørende brukerens Windows-registrerte
+skrivebord hvis den mangler. Snarveien skal peke til `start-bildebank.cmd` i
+programmappen. Eksisterende snarveier beholdes. Feil ved opprettingen skal
+varsles uten å gjøre en fullført installasjon eller oppdatering mislykket.
+Vanlig programstart skal ikke opprette snarveier.
+
 Programoppdatering skal nekte å starte når Git-repoet har lokale endringer i
 sporede filer. Usporede filer skal bevares og skal ikke i seg selv blokkere en
 oppdatering. `git pull --ff-only` skal fortsatt få stoppe trygt hvis en usporet

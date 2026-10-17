@@ -31,6 +31,14 @@ gjenopprette den gamle versjonen og ber deg kjøre `bildebank update` én gang
 til. Hvis trygg gjenoppretting ikke er mulig, beholdes markøren og Bildebank
 stopper uten å overskrive lokale endringer.
 
+På Windows lages skrivebordssnarveien **Bildebank** hvis den mangler.
+Eksisterende snarveier beholdes. Hvis snarveien ikke kan lages, vises en
+melding; selve programoppdateringen er fortsatt fullført.
+
+Hvis du oppdaterer fra en eldre versjon uten automatisk snarvei, kan du måtte
+kjøre oppdateringen én gang til for å få snarveien. Den første oppdateringen
+kjører fortsatt det gamle oppdateringsscriptet.
+
 Oppdateringen kontrollerer også den lokale FFmpeg-installasjonen. Dermed får
 eksisterende brukere støtten som trengs for AVI-avspillingskopier, ikke bare
 nye installasjoner. Hvis FFmpeg-nedlastingen feiler, beholdes den fullførte

@@ -367,6 +367,13 @@ try {
     Pop-Location
 }
 
+try {
+    & (Join-Path $RepoDir "create-desktop-shortcut.ps1") -RepoDir $RepoDir
+} catch {
+    Write-Host "Kunne ikke lage skrivebordssnarvei: $($_.Exception.Message)"
+    Write-Host "Bildebank er oppdatert. Du kan starte med start-bildebank.cmd i programmappen."
+}
+
 Write-Step "Ferdig"
 Write-Host "Test gjerne:"
 Write-Host "  bildebank --help"

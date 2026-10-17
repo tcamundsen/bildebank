@@ -4,7 +4,7 @@ Installerer Bildebank på Windows.
 
 .DESCRIPTION
 Scriptet installerer nødvendige avhengigheter, kloner Bildebank fra GitHub,
-setter opp Python-miljø og lager kommandoen bildebank.
+setter opp Python-miljø, lager kommandoen bildebank og en skrivebordssnarvei.
 
 .PARAMETER InstallDir
 Mappen der Bildebank skal installeres.
@@ -790,6 +790,13 @@ try {
         }
     }
     throw "Installasjonen feilet: $setupError"
+}
+
+try {
+    & (Join-Path $repoDir "create-desktop-shortcut.ps1") -RepoDir $repoDir
+} catch {
+    Write-Host "Kunne ikke lage skrivebordssnarvei: $($_.Exception.Message)"
+    Write-Host "Bildebank er installert. Du kan starte med start-bildebank.cmd i programmappen."
 }
 
 Write-Step "Ferdig"
