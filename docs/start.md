@@ -11,14 +11,21 @@ options:
 ```
 <!-- CLI-HELP-END -->
 
-`start` åpner Bildebank-vinduet.
+Åpne programmappen `bildebank` i Filutforsker og dobbeltklikk på
+`start-bildebank.cmd` for å åpne Bildebank-vinduet. Hvis Windows skjuler
+filendelser, vises filen som `start-bildebank`.
+
+Du kan også lage en snarvei til filen på skrivebordet. Lag en snarvei, ikke
+en kopi av selve filen: startfilen må ligge i programmappen for å virke.
+
+Hvis oppstarten feiler, blir vinduet med feilmeldingen stående til du trykker
+en tast.
+
+Fra PowerShell kan du åpne det samme vinduet med kommandoen `start`:
 
 ```powershell
 bildebank start
 ```
-
-Dette er den vanlige måten å starte Bildebank på når du vil bruke vinduet i
-stedet for å skrive kommandoer i PowerShell.
 
 I fanen **Verktøy** kan **Grupper bilder …** lage forslag til grupper av
 lignende bilder når bildesøk er klargjort. Du velger antall grupper, et
