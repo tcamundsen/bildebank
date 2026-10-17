@@ -1772,9 +1772,11 @@ def face_matches_item_html(
     return f"""
     <section class="face-detail" data-face-match-detail="{face_id}">
       <div class="face-detail-title">face-id {face_id}, deteksjon {require_float(face["score"], "score"):.3f}</div>
-      <div class="lightbox-media"{rotation_style_attr(item)}>
-        <img src="{html.escape(image_url)}" alt="">
-        {box}
+      <div class="face-media-frame">
+        <div class="lightbox-media"{rotation_style_attr(item)}>
+          <img src="{html.escape(image_url)}" alt="">
+          {box}
+        </div>
       </div>
       {matches_html}
     </section>
@@ -1800,9 +1802,11 @@ def face_overlay_item_html(item: Any, image_url: str, face: dict[str, object], p
     <section class="face-detail" data-face-detail="{face_id}">
       <div class="face-detail-title">face-id {face_id}, deteksjon {require_float(face["score"], "score"):.3f}</div>
       {suggestion_html}
-      <div class="lightbox-media"{rotation_style_attr(item)}>
-        <img src="{html.escape(image_url)}" alt="">
-        {box}
+      <div class="face-media-frame">
+        <div class="lightbox-media"{rotation_style_attr(item)}>
+          <img src="{html.escape(image_url)}" alt="">
+          {box}
+        </div>
       </div>
       <div class="assign-row">{people_buttons}</div>
       <form class="new-person-form" data-new-person-form>

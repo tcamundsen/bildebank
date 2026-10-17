@@ -342,6 +342,7 @@
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke laste ansikter.");
       faceList.innerHTML = payload.html || "";
+      initializeFaceMediaFrames(faceList);
       bindFaceAssignmentHandlers(faceList);
       facesLoaded = true;
     } catch (error) {
@@ -351,6 +352,7 @@
   async function openFacesOverlay() {
     if (!faceOverlay) return;
     faceOverlay.hidden = false;
+    scheduleQuarterTurnFit();
     await loadFacesOverlay();
     closeFacesButton?.focus();
   }
@@ -383,6 +385,7 @@
   async function openFaceMatchesOverlay() {
     const overlay = ensureFaceMatchesOverlay();
     overlay.hidden = false;
+    scheduleQuarterTurnFit();
     const list = overlay.querySelector("[data-face-matches-list]");
     const fileId = openFaceMatchesButton?.dataset.faceMatchesItem || "";
     if (!list || !fileId || faceMatchesLoaded || faceMatchesLoading) return;
@@ -393,6 +396,7 @@
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke beregne ansiktstreff.");
       list.innerHTML = payload.html || "";
+      initializeFaceMediaFrames(list);
       faceMatchesLoaded = true;
     } catch (error) {
       list.replaceChildren(faceStatusMessage(error.message || "Kunne ikke beregne ansiktstreff."));
@@ -441,6 +445,38 @@
   function closeInfoOverlay() {
     if (!infoOverlay) return;
     infoOverlay.hidden = true;
+  }
+  function fitFaceMediaFrame(frame) {
+    const media = frame.querySelector(".lightbox-media");
+    const img = media?.querySelector("img");
+    if (!media || !img?.naturalWidth || !img.naturalHeight) return;
+    const availableWidth = frame.parentElement.clientWidth;
+    if (!availableWidth) return;
+    const rotation = Number(media.dataset.viewRotation) || 0;
+    const quarterTurn = rotation === 90 || rotation === 270;
+    const displayWidth = quarterTurn ? img.naturalHeight : img.naturalWidth;
+    const displayHeight = quarterTurn ? img.naturalWidth : img.naturalHeight;
+    const scale = Math.min(1, availableWidth / displayWidth);
+    // Reserve the rotated bounds while the image and face box rotate together.
+    frame.style.width = `${displayWidth * scale}px`;
+    frame.style.height = `${displayHeight * scale}px`;
+    media.style.width = `${img.naturalWidth * scale}px`;
+    media.style.height = `${img.naturalHeight * scale}px`;
+    media.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+    frame.dataset.fitted = "";
+  }
+  function initializeFaceMediaFrames(root) {
+    root.querySelectorAll(".face-media-frame").forEach(frame => {
+      const img = frame.querySelector("img");
+      img?.addEventListener("load", () => fitFaceMediaFrame(frame), {once: true});
+      fitFaceMediaFrame(frame);
+    });
+    if ("ResizeObserver" in window) {
+      const observer = new ResizeObserver(() => {
+        root.querySelectorAll(".face-media-frame").forEach(fitFaceMediaFrame);
+      });
+      observer.observe(root);
+    }
   }
   function fitQuarterTurnMediaLink(img) {
     const link = img.closest(".media-link.quarter-turn");
@@ -502,6 +538,7 @@
     });
   }
   function fitQuarterTurnMedia() {
+    document.querySelectorAll(".face-overlay:not([hidden]) .face-media-frame").forEach(fitFaceMediaFrame);
     document.querySelectorAll('.stage .media-link.quarter-turn > img[data-view-rotation="90"], .stage .media-link.quarter-turn > img[data-view-rotation="270"]').forEach(img => {
       if (img instanceof HTMLImageElement) fitQuarterTurnMediaLink(img);
     });
