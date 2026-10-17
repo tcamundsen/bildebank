@@ -48,6 +48,16 @@ feilmeldingen. Feilen kan også ses senere med:
 bildebank face-report
 ```
 
+Hvis to maskiner finner ulikt antall ansikter i samme bilde, kan du
+dobbeltklikke på `diagnose-face-scan.cmd` i programmappen på begge maskinene.
+Velg det aktuelle bildet i filvelgeren. Skriptet tester bildet direkte uten
+å bruke lagrede skanneresultater, og lagrer rapporten `face-scan-diagnose.txt`
+i programmappen. Rapporten viser bibliotekversjoner, konfigurert kjøring,
+kontrollsummer for modellfilene og bildet, og antall funne ansikter med score.
+Du kan også dra bildefilen over på `diagnose-face-scan.cmd`. Skriptet endrer
+ingen bilder, innstillinger eller databaser og laster ikke ned modeller.
+Kjører du det igjen, erstattes den forrige rapporten.
+
 ## Valg
 
 ### `--limit ANTALL`
