@@ -67,6 +67,7 @@ FACE_DB_DIRNAME = FACE_DATABASE_DIR.name
 FACE_SCHEMA_VERSION = 5
 FACE_MODEL_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 FACE_SUGGEST_BATCH_SIZE = 5000
+DEFAULT_FACE_DETECTION_THRESHOLD = 0.5
 FACE_SCAN_RUN_META_KEY = "face_scan_run_id"
 FACE_SCHEMA_REQUIRED_COLUMNS = {
     "meta": {"key", "value"},
@@ -1809,11 +1810,14 @@ def scan_faces(
     config: FaceRecognitionConfig,
     *,
     limit: int | None = None,
+    detection_threshold: float = DEFAULT_FACE_DETECTION_THRESHOLD,
     progress: FaceScanProgress | None = None,
     show_model_output: bool = False,
     force: bool = False,
     discard_confirmed_face_links: bool = False,
 ) -> FaceScanStats:
+    if not 0.0 <= detection_threshold <= 1.0:
+        raise ValueError("Deteksjonsterskelen må være mellom 0.0 og 1.0.")
     if discard_confirmed_face_links and not force:
         raise ValueError(
             "Bekreftede ansiktskoblinger kan bare forkastes ved tvungen ny skanning."
@@ -1874,7 +1878,7 @@ def scan_faces(
         if not insightface_model_files_exist(config):
             progress("download_model", 0, len(rows_to_scan), stats, None)
     with suppress_model_output(enabled=not show_model_output):
-        app = load_face_app(config)
+        app = load_face_app(config, detection_threshold=detection_threshold)
     for scan_index, candidate in enumerate(rows_to_scan, start=1):
         row = candidate.row
         target_path = target / candidate.relative_path
@@ -2206,7 +2210,11 @@ def delete_file_face_data(conn: sqlite3.Connection, file_id: int) -> None:
     conn.execute("DELETE FROM faces WHERE file_id = ?", (file_id,))
 
 
-def load_face_app(config: FaceRecognitionConfig):
+def load_face_app(
+    config: FaceRecognitionConfig,
+    *,
+    detection_threshold: float = DEFAULT_FACE_DETECTION_THRESHOLD,
+):
     try:
         from insightface.app import FaceAnalysis
     except ImportError as exc:
@@ -2224,7 +2232,11 @@ def load_face_app(config: FaceRecognitionConfig):
                 "Kunne ikke laste InsightFace-modellen "
                 f"{config.model_name!r}. Modellen mangler detection-del eller har feil mappestruktur."
             ) from exc
-    app.prepare(ctx_id=-1 if config.provider == "cpu" else 0, det_size=(640, 640))
+    app.prepare(
+        ctx_id=-1 if config.provider == "cpu" else 0,
+        det_size=(640, 640),
+        det_thresh=detection_threshold,
+    )
     remove_insightface_model_zip(config)
     return app
 

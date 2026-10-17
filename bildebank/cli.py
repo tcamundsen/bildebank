@@ -28,6 +28,7 @@ from .exiftool import install_managed_exiftool
 from .exiftool_probe import exiftool_metadata_gaps
 from .export_person import PersonExportInterrupted
 from .face import (
+    DEFAULT_FACE_DETECTION_THRESHOLD,
     LEGACY_FACE_DB_FILENAME,
     face_database_dir,
 )
@@ -1091,6 +1092,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Scanning etter ansikter",
     )
     face_scan.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal sjekkes")
+    face_scan.add_argument(
+        "--detection-threshold",
+        type=similarity_threshold_arg,
+        default=DEFAULT_FACE_DETECTION_THRESHOLD,
+        metavar="TERSKEL",
+        help=(
+            "Deteksjonsterskel mellom 0.0 og 1.0. Lavere verdi kan finne flere "
+            f"ansikter og gi flere feiltreff. Standard: {DEFAULT_FACE_DETECTION_THRESHOLD}"
+        ),
+    )
     face_scan.add_argument(
         "--force",
         action="store_true",

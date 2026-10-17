@@ -8,6 +8,7 @@ from . import db
 from .config import CONFIG_FILENAME, load_config
 from .export_person import export_person
 from .face import (
+    DEFAULT_FACE_DETECTION_THRESHOLD,
     AddFaceToPersonResult,
     DeletePersonResult,
     FaceResetResult,
@@ -68,6 +69,7 @@ def run_face_command(args: argparse.Namespace, target: Path, *, repo_root: Path)
             target,
             repo_root=repo_root,
             limit=args.limit,
+            detection_threshold=args.detection_threshold,
             force=args.force,
             discard_confirmed_person_links=args.discard_confirmed_person_links,
             show_model_output=args.show_model_output,
@@ -213,6 +215,7 @@ def run_face_scan(
     *,
     repo_root: Path,
     limit: int | None,
+    detection_threshold: float = DEFAULT_FACE_DETECTION_THRESHOLD,
     force: bool = False,
     discard_confirmed_person_links: bool = False,
     show_model_output: bool = False,
@@ -236,11 +239,13 @@ def run_face_scan(
         if answer != phrase:
             print("Avbrutt. Ingen ansiktsdata er endret.")
             return 0
+    print(f"Face-scan: deteksjonsterskel={detection_threshold:g}")
     try:
         stats = scan_faces(
             target,
             config,
             limit=limit,
+            detection_threshold=detection_threshold,
             progress=print_face_scan_progress,
             show_model_output=show_model_output,
             force=force,

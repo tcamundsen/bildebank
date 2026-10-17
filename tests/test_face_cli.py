@@ -10,7 +10,8 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 from io import BytesIO, StringIO
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from PIL import Image
 
@@ -151,6 +152,30 @@ model_name = "buffalo_l"
         self.assertIn("--model", stdout)
         self.assertNotIn("--no-browser", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
+
+    def test_face_scan_help_documents_detection_threshold(self) -> None:
+        with redirect_stdout(StringIO()) as stdout, self.assertRaises(SystemExit) as raised:
+            main(["face-scan", "--help"])
+
+        self.assertEqual(raised.exception.code, 0)
+        help_text = " ".join(stdout.getvalue().split())
+        self.assertIn("--detection-threshold TERSKEL", help_text)
+        self.assertIn("Standard: 0.5", help_text)
+        self.assertIn("feiltreff", help_text)
+
+    def test_face_scan_rejects_invalid_detection_threshold_before_scanning(self) -> None:
+        with patch("bildebank.cli_face.scan_faces") as scan:
+            for value in ("-0.1", "1.1", "nan", "inf", "-inf", "0,3", "abc"):
+                with (
+                    self.subTest(value=value),
+                    redirect_stdout(StringIO()),
+                    redirect_stderr(StringIO()) as stderr,
+                    self.assertRaises(SystemExit) as raised,
+                ):
+                    main(["face-scan", f"--detection-threshold={value}"])
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn("mellom 0.0 og 1.0", stderr.getvalue())
+        scan.assert_not_called()
 
     def test_face_person_rename_help_documents_names(self) -> None:
         stdout_buffer = StringIO()
@@ -592,7 +617,8 @@ model_name = "buffalo_l"
                 warnings.warn("internal model warning", FutureWarning, stacklevel=1)
                 return [FakeFace()]
 
-        def fake_load_face_app(config):
+        def fake_load_face_app(config, *, detection_threshold):
+            self.assertEqual(detection_threshold, 0.5)
             print("internal model load stdout")
             print("internal model load stderr", file=sys.stderr)
             return FakeApp()
@@ -618,6 +644,7 @@ model_name = "buffalo_l"
                 code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--limit", "1"])
 
             self.assertEqual(code, 0, stderr)
+            self.assertIn("deteksjonsterskel=0.5", stdout)
             self.assertIn("Face-scan: 1 bildefiler skal kontrolleres.", stdout)
             self.assertIn("Face-scan: 1 nye eller endrede bilder skal scannes.", stdout)
             self.assertIn("Face-scan: ansiktsmodellen finnes ikke lokalt.", stdout)
@@ -642,12 +669,16 @@ model_name = "buffalo_l"
                 patch("bildebank.face.load_face_app", side_effect=AssertionError("should not load model")),
                 patch("bildebank.face.read_image", side_effect=AssertionError("should not read image")),
             ):
-                code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--limit", "1"])
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "face-scan", "--limit", "1",
+                     "--detection-threshold", "0.3"]
+                )
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Face-scan: kontrollert=1/1", stdout)
             self.assertIn("hoppet_over=1", stdout)
             self.assertIn("scannet=0", stdout)
+            self.assertIn("deteksjonsterskel=0.3", stdout)
 
             code, stdout, stderr = capture_cli(["--target", str(target), "face-report"])
 
@@ -661,6 +692,47 @@ model_name = "buffalo_l"
             self.assertIn("Personer registrert: 0", stdout)
             self.assertIn("Bilder med ansikter, men ingen bekreftet person: 1", stdout)
             self.assertIn("IMG_20240102.jpg", stdout)
+
+    def test_face_scan_passes_detection_threshold_to_insightface(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.enable_face_recognition_config()
+            config = load_config(self.program_root).face_recognition
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name,
+                         "--quiet", str(source)]), 0,
+            )
+            app = Mock()
+            app.get.return_value = []
+            insightface_app = SimpleNamespace(FaceAnalysis=Mock(return_value=app))
+            modules = {
+                "insightface": SimpleNamespace(app=insightface_app),
+                "insightface.app": insightface_app,
+            }
+            for threshold in (None, "0.3", "0.0", "1.0"):
+                args = ["--target", str(target), "face-scan", "--force"]
+                if threshold is not None:
+                    args.extend(["--detection-threshold", threshold])
+                with (
+                    self.subTest(threshold=threshold),
+                    patch.dict(sys.modules, modules),
+                    patch("bildebank.face.normalize_insightface_model_layout"),
+                    patch("bildebank.face.ensure_insightface_model"),
+                    patch("bildebank.face.read_image", return_value=object()),
+                ):
+                    code, stdout, stderr = capture_cli(args)
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIn("scannet=1", stdout)
+                    app.prepare.assert_called_with(
+                        ctx_id=-1, det_size=(640, 640),
+                        det_thresh=0.5 if threshold is None else float(threshold),
+                    )
+            self.assertEqual(app.get.call_count, 4)
+            self.assertEqual(insightface_app.FaceAnalysis.call_args.kwargs["name"], config.model_name)
 
     def test_face_scan_prints_file_path_when_image_fails(self) -> None:
         class FakeApp:
@@ -779,6 +851,8 @@ model_name = "buffalo_l"
                         str(target),
                         "face-scan",
                         "--force",
+                        "--detection-threshold",
+                        "0.3",
                         "--limit",
                         "1",
                     ]
